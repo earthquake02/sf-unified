@@ -1,0 +1,41 @@
+# 单仓工程：纳管根文档／docs／app 程序。
+# 白名单口径：/* 先全挡，再逐类放行；其余（tools/、release/、node_modules/、.zcode/、data/ 等）一律不入库。
+/*
+!/.gitignore
+!/.gitattributes
+!/*.md
+!/docs/
+!/docs/**
+!/app/
+!/app/**
+
+# 本地工单区不入库（.scratch/<feature>/）
+/.scratch/
+
+# Rust 编译目录（源码在 app/server-rs，产物不入库）
+/app/server-rs/target/
+/app/server-rs/gen/
+/app/server-rs/permissions/
+/app/server-rs/target-frozen/
+# 检测工具原位本地化：app/tests 与 tools/ 一样不入 git
+/app/tests/
+# 书与素材永不入 git——预置挡板（data/ 本身已由白名单挡住，此处防御性保留）
+/data/books/
+/data/sources/
+# 凭据与 DPAPI 密文永不入库，所有允许纳管的目录同受此挡板约束
+*.xy-config.json
+*.lx-config.json
+**/_工坊/机密/
+# 编辑前备份（index.html.bak-* / .bak_* 等连字符与下划线两种后缀）不入库
+*.bak-*
+*.bak_*
+# Python 字节码缓存不入库
+__pycache__/
+*.pyc
+# 自动化与一次性脚本不入库：PowerShell/JS/MJS/Python 属本地自动化与探针件，仓库不需要任何脚本文件
+*.ps1
+*.js
+*.mjs
+*.py
+# 书内容/运行态数据快照不入库（数据文件夹整份导出副本）
+**/_shot-data/

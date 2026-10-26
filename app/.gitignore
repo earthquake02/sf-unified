@@ -1,0 +1,13 @@
+.DS_Store
+Thumbs.db
+.xy-config.json
+.lx-config.json
+.lx-models-cache.json
+# 本地服务底座运行态：不入库
+故事工坊设置.json
+故事工坊设置.json.tmp
+# 运行日志（程序旁；正式形态无控制台的补偿）
+故事工坊日志.txt
+
+# 助理增强批浏览器临时 Edge 配置目录（锁住删不掉时忽略）
+tests/.asst-enh*/

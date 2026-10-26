@@ -1,0 +1,37 @@
+{
+  "_说明": "novelcrafter 内置章节大纲结构模板，可应用于新小说生成卷/章骨架",
+  "presets": [
+    {
+      "name": "3 Act Structure",
+      "outline": "\nAct 1 - The Beginning:\nChapter 1:\nChapter 2:\nChapter 3:\nChapter 4:\nChapter 5:\nChapter 6:\n\nAct 2 - The Middle:\nChapter 7:\nChapter 8:\nChapter 9:\nChapter 10:\nChapter 11:\nChapter 12:\n\nAct 3 - The End:\nChapter 13:\nChapter 14:\nChapter 15:\nChapter 16:\nChapter 17:\nChapter 18:\n    "
+    },
+    {
+      "name": "Save the Cat",
+      "outline": "\nAct 1 - The Beginning:\nChapter 1:\nChapter 2:\nChapter 3:\nChapter 4:\nChapter 5:\nChapter 6:\n\nAct 2A - The Middle (Part 1):\nChapter 7:\nChapter 8:\nChapter 9:\n\nAct 2B - The Middle (Part 2):\nChapter 10:\nChapter 11:\nChapter 12:\nChapter 13:\n\nAct 3 - The End:\nChapter 14:\nChapter 15:\n    "
+    },
+    {
+      "name": "Hero's Journey",
+      "outline": "\nAct 1 - Departure:\nChapter 1:\nChapter 2:\nChapter 3:\nChapter 4:\nChapter 5:\n\nAct 2 - Descent and Initiation:\nChapter 6:\nChapter 7:\nChapter 8:\nChapter 9:\n\nAct 3 - Return and Reintegration:\nChapter 10:\nChapter 11:\nChapter 12:\n    "
+    },
+    {
+      "name": "Freytag's Pyramid",
+      "outline": "\nAct 1 - Introduction:\nChapter 1:\nChapter 2:\n\nAct 2 - Rising Action:\nChapter 3:\nChapter 4:\n\nAct 3 - Climax:\nChapter 5:\nChapter 6:\n\nAct 4 - Falling Action:\nChapter 7:\nChapter 8:\n\nAct 5 - Catastrophe:\nChapter 9:\n    "
+    },
+    {
+      "name": "Dan Harmon's Story Circle",
+      "outline": "\nAct 1 - Zone of Comfort:\nChapter 1:\nChapter 2:\n\nAct 2 - Desire for Action:\nChapter 3:\nChapter 4:\n\nAct 3 - Unfamiliar Situation:\nChapter 5:\nChapter 6:\n\nAct 4 - Adaptation and Progress:\nChapter 7:\nChapter 8:\n\nAct 5 - Achieved Goal at a Cost:\nChapter 9:\nChapter 10:\n\nAct 6 - Unexpected Consequences:\nChapter 11:\nChapter 12:\n\nAct 7 - Return to Familiar Situation:\nChapter 13:\nChapter 14:\n\nAct 8 - Changed After Journey:\nChapter 15:\n    "
+    },
+    {
+      "name": "Fichtean Curve",
+      "outline": "\nAct 1 - Rising Action:\nChapter 1:\nChapter 2:\nChapter 3:\nChapter 4:\nChapter 5:\n\nAct 2 - Climax:\nChapter 6:\nChapter 7:\n\nAct 3 - Falling Action:\nChapter 8:\n    "
+    },
+    {
+      "name": "Derek Murphy's 24 chapters",
+      "outline": "\nAct 1 - Hero & Ordinary World:\nChapter 1:\nChapter 2:\nChapter 3:\nChapter SECTION BREAK:\nChapter 4:\nChapter 5:\nChapter 6:\n\nAct 2A - Exploring New World:\nChapter 7:\nChapter 8:\nChapter 9:\nChapter SECTION BREAK:\nChapter 10:\nChapter 11:\nChapter 12:\n\nAct 2B - Bad Guys Close In:\nChapter SECTION BREAK:\nChapter 13:\nChapter 14:\nChapter 15:\nChapter SECTION BREAK:\nChapter 16:\nChapter 17:\nChapter 18:\nChapter SECTION BREAK:\n\nAct 3 - Defeat and Victory:\nChapter 19:\nChapter 20:\nChapter 21:\nChapter SECTION BREAK:\nChapter 22:\nChapter 23:\nChapter 24:\nChapter SECTION BREAK:\nChapter 25:\n"
+    },
+    {
+      "name": "Story Clock",
+      "outline": "\nAct Prologue:\nChapter Prologue:\nOpen with the evil that exists that the hero doesn't know about. Do not mention the hero yet.\n\nAct 1:\nChapter 1:\nIntroduce the hero and their world. Demonstrate hero’s strength and weakness. Hero’s weakness is the villain’s strength.\n\nChapter 2:\nSomething overwhelming happens to hero that upends their entire life.\n\nChapter 3:\nHero tries to get back to where they started, can’t get back, and stops trying.\n\nAct 2:\nChapter 4:\nThe hero doesn't know what to do with their life. They find a sidekick. Something minor compels the hero into action.\n\nChapter 5:\nThe hero makes a plan and things seem to be working well.\n\nChapter 6:\nHero’s plan doesn’t work and they fail. This is what the world will look like if the hero never succeeds.\n\nAct 3:\nChapter 7:\nHero goes on offense, but things get even worse.\n\nChapter 8:\nHero tries again, seems like victory.\n\nChapter 9:\nFalse victory and hero loses all hope.\n\nAct 4:\nChapter 10:\nIn despair, hero has an epiphany.\n\nChapter 11:\nArmed with a new approach, hero fights back.\n\nChapter 12:\nHero wins.\n"
+    }
+  ]
+}

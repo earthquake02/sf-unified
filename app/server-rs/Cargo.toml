@@ -1,0 +1,43 @@
+[package]
+name = "sf-server"
+version = "1.2.0"
+edition = "2021"
+description = "故事工坊本地服务与壳窗口"
+publish = false
+
+[[bin]]
+name = "sf-server"
+path = "src/main.rs"
+
+[features]
+# 发布形态（票11）：内嵌程序页与入门功能卡图、状态报 frozen、无控制台单 exe。
+# 开发构建不带本特性，仍从仓库源码目录读页面，冒烟断言 frozen=false。
+frozen = []
+
+[dependencies]
+axum = "0.8"
+base64 = "0.22"
+getrandom = "0.3"
+http-body-util = "0.1"
+html-escape = "0.2"
+percent-encoding = "2"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "system-proxy", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+socket2 = "0.6"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "time", "sync", "io-util", "process"] }
+tauri = { version = "2.12", features = ["tray-icon", "image-ico"] }
+url = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+
+[build-dependencies]
+tauri-build = "2"
+
+# 发布形态的体积收紧（行为不变）：去符号、thin LTO、单编译单元。
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

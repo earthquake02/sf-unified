@@ -1,0 +1,40 @@
+{
+  "_format": "novel-studio-import-v1",
+  "_说明": "从 novelcrafter 导出的你的账号数据（novels.getAll + data.getAll），可在本地应用「设置 → 数据管理」中导入",
+  "novels": [
+    {
+      "id": "nc_2q8piZu6YDAqEs9OccJ77jFdHGp",
+      "title": "地球巡旅",
+      "author": "星空灵核",
+      "genre": "",
+      "language": "en-US",
+      "tense": "past",
+      "defaultPov": "",
+      "synopsis": "",
+      "targetWords": 0,
+      "createdAt": "2024-12-13T01:43:04.026Z"
+    }
+  ],
+  "acts": [],
+  "chapters": [],
+  "scenes": [],
+  "codexEntries": [
+    {
+      "id": "nc_2q8qHPGJtyGlVOjW34srmyEuveh",
+      "novelId": "nc_2q8piZu6YDAqEs9OccJ77jFdHGp",
+      "name": "Prose Style Guide",
+      "aliases": [],
+      "tags": ["AI"],
+      "category": "其他",
+      "fields": {},
+      "description": "",
+      "notes": "",
+      "connections": [],
+      "parentId": null,
+      "alwaysInclude": true,
+      "doNotTrack": true,
+      "hideFromAi": false
+    }
+  ],
+  "snippets": []
+}

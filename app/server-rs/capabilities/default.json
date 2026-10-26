@@ -1,0 +1,16 @@
+{
+  "identifier": "shell",
+  "windows": ["main", "quick"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "dialog:default",
+    "allow-pick-folder",
+    "allow-shell-close-answer",
+    "allow-shell-quit"
+  ]
+}

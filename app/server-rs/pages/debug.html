@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>故事工坊 · 本地服务</title>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 18px 60px;background:#f6f7f9;color:#1f2430;
+     font:15px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px}
+.sub{margin:0 0 22px;color:#5b6474;font-size:13.5px}
+.card{background:#fff;border:1px solid #e3e6ec;border-radius:12px;padding:18px 20px;margin:0 0 16px;
+      box-shadow:0 1px 2px rgba(20,30,60,.04)}
+.card h2{font-size:15px;margin:0 0 6px}
+.hint{margin:0 0 12px;color:#5b6474;font-size:13px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input[type=text]{flex:1 1 320px;min-width:220px;padding:9px 12px;border:1px solid #cfd5df;border-radius:8px;
+      font:14px/1.4 ui-monospace,"Consolas","Microsoft YaHei",monospace}
+button,.btn{padding:9px 16px;border:0;border-radius:8px;background:#2f6fed;color:#fff;font-size:14px;cursor:pointer;
+      text-decoration:none;display:inline-block}
+button.ghost,.btn.ghost{background:#eef1f6;color:#2b3444}
+button:disabled{opacity:.5;cursor:default}
+.msg{margin-top:10px;font-size:13.5px;min-height:20px}
+.ok{color:#1a7f4b}.warn{color:#a4620a}.err{color:#c0392b}
+pre.out{margin:12px 0 0;padding:12px 14px;background:#0f172a;color:#d8e0f0;border-radius:8px;
+      font:12.5px/1.6 ui-monospace,"Consolas",monospace;white-space:pre-wrap;word-break:break-all;min-height:64px}
+footer{color:#8b93a3;font-size:12.5px;text-align:center;margin-top:26px}
+kbd{background:#eef1f6;border-radius:4px;padding:1px 5px;font:12px ui-monospace,monospace}
+/* H2：服务失联/已重启的常驻提示（浮层，不动布局；服务回来即消失） */
+#linkBar{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:60;max-width:760px;
+      background:#3a1d1d;border:1px solid #c0392b;color:#fca5a5;border-radius:10px;padding:10px 16px;
+      font-size:13px;line-height:1.7;box-shadow:0 6px 20px rgba(0,0,0,.28)}
+#linkBar.on{display:block}
+#linkBar .btn{margin-left:10px;vertical-align:middle;background:#c0392b}
+</style>
+</head>
+<body>
+<main>
+  <h1>故事工坊 <span style="font-weight:400;color:#5b6474;font-size:14px">本地服务</span></h1>
+  <p class="sub">端口 <b id="port">—</b> · 仅本机可访问（127.0.0.1） · 版本 <span id="ver">—</span> ·
+     运行方式 <span id="form">—</span> · 状态 <span id="lock">—</span> · 构建 <span id="build">—</span></p>
+
+  <section class="card">
+    <h2>① 数据文件夹</h2>
+    <p class="hint">书稿数据放在这里（每本书一个子文件夹）。路径不存在会自动创建；不用浏览器授权。</p>
+    <div class="row">
+      <input type="text" id="root" placeholder="例如 D:\故事工坊数据" spellcheck="false" autocomplete="off">
+      <button id="browse" class="ghost" style="display:none" title="用系统「选择文件夹」对话框挑一个（只在你点它时才弹）"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /> </svg></span> 浏览…</button>
+      <button id="save">保存并检查</button>
+    </div>
+    <div class="msg" id="rootMsg"></div>
+  </section>
+
+  <section class="card">
+    <h2>② 读写自检</h2>
+    <p class="hint">测试数据文件夹是否可正常读写。</p>
+    <div class="row">
+      <button id="test">写入并读回测试</button>
+      <button id="open" class="ghost">打开数据文件夹</button>
+    </div>
+    <pre class="out" id="out">尚未测试。</pre>
+  </section>
+
+  <section class="card">
+    <h2>③ 写作应用</h2>
+    <p class="hint">应用页由本服务提供，<b>数据读写也走本服务</b>：所有小说、设定、提示词与设置均保存在上方指定的数据文件夹中；AI 服务的 <b>API Key 使用当前 Windows 账号加密存储</b>，导出包不含 Key 明文。<br>
+    直接用 <code>file://</code> 双击 index.html 只会显示引导页（拿不到数据文件夹）。<br>
+    <span id="hostNote"></span></p>
+    <div class="row"><a class="btn ghost" href="/index.html" target="_blank" rel="noopener">打开写作应用</a></div>
+  </section>
+
+  <footer id="foot">故事工坊本地服务 · 关闭服务窗口即停止服务（页面会随即失效）</footer>
+</main>
+<div id="linkBar"></div>
+<script>
+(function(){
+  var T = window.__SF_TOKEN__, P = window.__SF_PORT__;
+  var $ = function(id){ return document.getElementById(id); };
+  var SHELL = (window.__SF_SHELL__ === true);          // 壳形态（H2）：本窗口＝程序本体
+  function api(url, opt){
+    opt = opt || {};
+    opt.headers = Object.assign({'X-SF-Token': T}, opt.headers || {});
+    return fetch(url, opt);
+  }
+  function show(el, cls, text){ el.className = 'msg ' + cls; el.textContent = text; }
+  function fmt(j){ return JSON.stringify(j, null, 2); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+  /* ---- H2 宿主可见性（三态口径）：有桥＝本窗口；无桥＋壳承载＝那个壳窗口；无桥＋A 形态＝服务窗口 ---- */
+  function hostWording(inShellWin){
+    if (inShellWin){
+      $('foot').innerHTML = '故事工坊本地服务（壳形态）· <b>关掉本窗口＝停止服务</b>（数据已写入数据文件夹，不会丢）';
+      $('hostNote').innerHTML = '本窗口就是程序本体：<b>关掉这个窗口＝停止服务</b>；数据在数据文件夹里，关掉不会丢。';
+    }else if (SHELL){
+      $('foot').innerHTML = '故事工坊本地服务（壳形态）· <b>关掉「故事工坊」窗口＝停止服务</b>（本页只是浏览器标签，关它不停服务）';
+      $('hostNote').innerHTML = '服务由「故事工坊」窗口承载：<b>关掉那个窗口＝停止服务</b>（本页只是浏览器标签）。';
+    }else{
+      $('foot').innerHTML = '故事工坊本地服务 · <b>关掉那个服务窗口＝停止服务</b>（本页会随即失效）';
+      $('hostNote').innerHTML = '本页只是浏览器的标签页；<b>关掉「故事工坊.exe」的服务窗口＝停止服务</b>。';
+    }
+  }
+  hostWording(false);      // 先按「浏览器标签」口径写（A 形态恒正确；壳窗口里 ≤3 秒后由桥探测纠正）
+
+  /* ---- H2 失联提示：服务停了/重启换了令牌 → 常驻提示与「重新加载」出口 ---- */
+  function linkBar(on, text){
+    var el = $('linkBar');
+    if (on){ el.innerHTML = esc(text) + ' <button class="btn" id="linkReload">重新加载</button>';
+             el.classList.add('on');
+             var b = $('linkReload'); if (b) b.onclick = function(){ location.reload(); }; }
+    else { el.innerHTML = ''; el.classList.remove('on'); }
+  }
+  var linkDown = false;
+  async function linkPing(){
+    try{
+      var r = await api('/api/sys/status');
+      var j = await r.json();
+      // 403（重启后令牌换了）同样算「失联或已重启」：fetch 对 4xx 不 reject，必须自己判 ok（复核 R2）
+      if (!r.ok || !j || j.ok !== true) throw new Error('status ' + r.status);
+      if (linkDown){ linkDown = false; linkBar(false); refresh(); }
+    }catch(e){
+      linkDown = true;
+      linkBar(true, '⚠ 本地服务已失联或已重启：控制台页读不到服务了。若程序/窗口已关掉，请重新双击「故事工坊.exe」；若还在运行，点「重新加载」换用新令牌。');
+      show($('rootMsg'), 'warn', '本地服务已失联或已重启——见下方提示（数据在数据文件夹里，不会丢）。');
+    }
+  }
+
+  async function refresh(){
+    try{
+      var j = await (await api('/api/sys/status')).json();
+      $('port').textContent = j.port;
+      $('ver').textContent = j.ver;
+      $('form').textContent = j.frozen ? '独立程序' : '源码运行';
+      $('build').textContent = (j.appHash || '').slice(0, 8) || '—';
+      var lk = j.lock || {};
+      $('lock').textContent = lk.pid ? ('运行中（PID ' + lk.pid + '）') : '未运行';
+      if (j.dataRoot){
+        $('root').value = j.dataRoot;
+        show($('rootMsg'), 'ok', '已就绪：' + j.dataRoot + (j.dataOk ? '' : '（文件夹当前不可用，请重新保存）'));
+        $('test').disabled = !j.dataOk;
+      }else{
+        show($('rootMsg'), 'warn', '尚未设置数据文件夹——填一个路径，或留空直接点「保存并检查」（将在程序所在文件夹创建「故事工坊数据」并选用）。');
+        $('test').disabled = true;
+      }
+      if (linkDown){ linkDown = false; linkBar(false); }
+    }catch(e){ show($('rootMsg'), 'err', '无法连接本地服务：' + e); }
+  }
+
+  /* 保存并检查＝唯一写入口（手填与「浏览…」两条路都走它） */
+  async function saveRoot(){
+    var v = $('root').value.trim();
+    show($('rootMsg'), 'warn', '正在检查…');
+    try{
+      var r = await api('/api/sys/config', {method:'POST', headers:{'Content-Type':'application/json'},
+                                            body: JSON.stringify({dataRoot: v})});
+      var j = await r.json();
+      if (j.ok){ $('root').value = j.dataRoot; show($('rootMsg'), 'ok', '已就绪：' + j.dataRoot + (j.created ? '（已新建）' : '')); }
+      else { show($('rootMsg'), 'err', j.message || j.error); }
+    }catch(e){ show($('rootMsg'), 'err', '保存失败：' + e); }
+    refresh();
+  }
+  $('save').onclick = saveRoot;
+
+  /* ---- H2：壳形态才有的原生「选择文件夹」对话框（仅用户点击时弹；浏览器形态不显示本按钮） ----
+     探测必须在「桥已注入」之后（BG-152，复核 R1 实测：解析期一次性探测恒拿不到桥，须轮询兜底）。 */
+  function shellBridge(){
+    try{ return (window.__TAURI__ && window.__TAURI__.core &&
+                 typeof window.__TAURI__.core.invoke === 'function') ? window.__TAURI__.core : null; }
+    catch(e){ return null; }
+  }
+  var browseBound = false;
+  function bindBrowse(){
+    if (browseBound) return true;
+    var b = shellBridge();
+    if (!b) return false;
+    browseBound = true;
+    $('browse').style.display = '';
+    hostWording(true);                       // 桥在场＝本页就在壳窗口里（三态口径的「本窗口」态）
+    $('browse').onclick = async function(){
+      try{
+        var r = await b.invoke('pick_folder');
+        if (!r){ show($('rootMsg'), 'warn', '没有选择文件夹（也可以手动填路径）。'); return; }
+        $('root').value = r;
+        show($('rootMsg'), 'warn', '已选择：' + r + '——正在保存…');
+        saveRoot();
+      }catch(e){ show($('rootMsg'), 'err', '选择文件夹失败：' + e); }
+    };
+    return true;
+  }
+  var bTries = 0;
+  var bTimer = setInterval(function(){ if (bindBrowse() || ++bTries > 80) clearInterval(bTimer); }, 250);   // 兜底：注入晚于页面脚本也能绑上（上限 20 秒，防慢机器）
+
+  $('open').onclick = async function(){
+    var r = await api('/api/sys/open-data', {method:'POST'});
+    var j = await r.json();
+    if (!j.ok) $('out').textContent = '打开数据文件夹失败：' + (j.message || j.error);
+  };
+
+  $('test').onclick = async function(){
+    var out = $('out'); out.textContent = '写入中…';
+    var rel = '_工坊/竖切自检.txt';
+    var text = '故事工坊 G1 竖切自检\n写入时间：' + new Date().toLocaleString('zh-CN') +
+               '\n随机数：' + Math.random().toString(36).slice(2) + '\n';
+    try{
+      var t0 = performance.now();
+      var w = await (await api('/api/fs/write', {method:'POST', headers:{'Content-Type':'application/json'},
+                       body: JSON.stringify({path: rel, text: text})})).json();
+      if (!w.ok){ out.textContent = '写入失败：' + fmt(w); return; }
+      var rd = await (await api('/api/fs/read?path=' + encodeURIComponent(rel))).json();
+      if (!rd.ok){ out.textContent = '读回失败：' + fmt(rd); return; }
+      var same = (rd.text === text);
+      out.textContent =
+        '写入路径：' + w.path + '\n' +
+        '数据文件夹：' + $('root').value + '\n' +
+        '字节数：' + w.bytes + '（读回 ' + rd.bytes + '）\n' +
+        'sha256：' + w.hash + '\n' +
+        '读回一致：' + (same ? '✔ 是（逐字相等）' : '✘ 否（内容不一致）') + '\n' +
+        '本次耗时：' + Math.round(performance.now() - t0) + ' ms\n' +
+        '浏览器弹窗：无（本通路不使用任何浏览器授权 API）';
+    }catch(e){ out.textContent = '自检异常：' + e; }
+  };
+
+  refresh();
+  if (typeof setInterval === 'function') setInterval(linkPing, 4000);   // 服务回来即自动消条
+})();
+</script>
+</body>
+</html>

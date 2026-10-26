@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速记片段</title>
+<style>
+  :root{
+    --bg:#09090b; --bg2:#18181b; --bg3:#27272a; --line:#52525b;
+    --tx:#d6d3d1; --tx2:#a8a29e; --tx3:#71717a; --ac:#c9a66b;
+    --paper:#18181b; --ink:#d6d3d1; --err:#c0392b; --warn:#b26a00;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;display:flex;flex-direction:column;background:var(--paper);color:var(--tx);font:13px/1.55 "Microsoft YaHei",system-ui,sans-serif}
+  #bar{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:7px 12px 5px;border-bottom:1px dashed var(--line);color:var(--tx2);font-size:12px;user-select:none;background:var(--bg2)}
+  #book{max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:var(--tx2);border-bottom:1px dotted var(--line)}
+  #book:hover{color:var(--tx)}
+  #book.none{cursor:default;border-bottom:0;color:var(--err)}
+  #state{margin-left:auto;flex:0 0 auto;color:var(--tx3)}
+  #state.err{color:var(--err)}
+  #state.warn{color:var(--warn)}
+  #paper{flex:1 1 auto;display:flex;padding:6px 12px 12px;background:var(--paper)}
+  textarea{flex:1;width:100%;border:0;outline:0;resize:none;background:transparent;color:var(--ink);font:14px/1.75 "Microsoft YaHei",system-ui,sans-serif;padding:6px 2px}
+  textarea::placeholder{color:var(--tx3)}
+  textarea:disabled{color:var(--tx3)}
+  #act{display:none;margin:0 12px 10px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg3);color:var(--err);font-size:12px;align-items:center;gap:8px}
+  #act.on{display:flex}
+  #act button{margin-left:auto;flex:0 0 auto;border:1px solid var(--line);background:var(--bg2);color:var(--err);border-radius:6px;padding:3px 10px;font:inherit;cursor:pointer}
+  #hint{display:none;padding:18px 16px;color:var(--tx2);font-size:12.5px;line-height:1.8;background:var(--bg)}
+  #hint.on{display:block}
+</style>
+</head>
+<body>
+<div id="bar"><span id="book" title="点击切换目标书">载入中…</span><span id="state"></span></div>
+<div id="hint"></div>
+<div id="paper"><textarea id="note" placeholder="即刻记录灵感……" disabled></textarea></div>
+<div id="act"><span>文件已被其他窗口改动，本笔未写入。</span><button type="button" id="force">以本窗为准重写</button></div>
+<script>
+(function(){
+  'use strict';
+
+  /* 跟随主窗口【设置→外观】：读 _工坊/settings.json 的 appearance，落到 CSS 变量（与主页出厂六套同色） */
+  var APPEAR_FACTORY=[
+    {id:'moyan',bg:'#09090b',bg2:'#18181b',bg3:'#27272a',line:'#52525b',tx:'#d6d3d1',tx2:'#a8a29e',tx3:'#71717a',ac:'#c9a66b',paper:'#18181b',ink:'#d6d3d1'},
+    {id:'xuantie',bg:'#0c0e12',bg2:'#151820',bg3:'#1e2430',line:'#3a4254',tx:'#e2e6ee',tx2:'#9aa3b5',tx3:'#6b7385',ac:'#8b9cb3',paper:'#151820',ink:'#e2e6ee'},
+    {id:'qingrang',bg:'#0f1410',bg2:'#171d18',bg3:'#222a22',line:'#3a463a',tx:'#dce6dc',tx2:'#9aab9a',tx3:'#6e7d6e',ac:'#6b9b6e',paper:'#171d18',ink:'#dce6dc'},
+    {id:'xuanzhi',bg:'#f5f0e6',bg2:'#faf6ee',bg3:'#ebe4d4',line:'#d9d0bc',tx:'#3a3428',tx2:'#6b6354',tx3:'#8a8170',ac:'#8b5a2b',paper:'#faf6ee',ink:'#3a3428'},
+    {id:'sujian',bg:'#f7f5f0',bg2:'#fffcf7',bg3:'#eeeae2',line:'#ddd8ce',tx:'#2c2a26',tx2:'#5c5952',tx3:'#8a8680',ac:'#5a6b4e',paper:'#fffcf7',ink:'#2c2a26'},
+    {id:'yuebai',bg:'#f4f6f8',bg2:'#ffffff',bg3:'#e8ecf0',line:'#d0d5dc',tx:'#2a3038',tx2:'#5a6570',tx3:'#8a93a0',ac:'#5b7c99',paper:'#ffffff',ink:'#2a3038'}
+  ];
+  function appearResolve(raw){
+    var base=APPEAR_FACTORY[0], out={};
+    for(var k in base) out[k]=base[k];
+    if(!raw||typeof raw!=='object') return out;
+    var hex=/^#[0-9a-fA-F]{6}$/;
+    ['bg','bg2','bg3','line','tx','tx2','tx3','ac','paper','ink'].forEach(function(k){
+      var v=String(raw[k]||'').trim(); if(hex.test(v)) out[k]=v.toLowerCase();
+    });
+    return out;
+  }
+  function applyAppearance(raw){
+    var a=appearResolve(raw), root=document.documentElement;
+    root.style.setProperty('--bg',a.bg); root.style.setProperty('--bg2',a.bg2);
+    root.style.setProperty('--bg3',a.bg3); root.style.setProperty('--line',a.line);
+    root.style.setProperty('--tx',a.tx); root.style.setProperty('--tx2',a.tx2);
+    root.style.setProperty('--tx3',a.tx3); root.style.setProperty('--ac',a.ac);
+    root.style.setProperty('--paper',a.paper); root.style.setProperty('--ink',a.ink);
+    try{
+      var bg=(a.bg||'#000').replace('#','');
+      var n=bg.length===3?bg.split('').map(function(c){return c+c}).join(''):bg;
+      var r=parseInt(n.slice(0,2),16),g=parseInt(n.slice(2,4),16),b=parseInt(n.slice(4,6),16);
+      var lum=(0.2126*r+0.7152*g+0.0722*b)/255;
+      root.style.colorScheme=lum<0.45?'dark':'light';
+    }catch(e){root.style.colorScheme='dark'}
+  }
+  function loadAppearance(){
+    return api('GET','/api/fs/read?path='+encodeURIComponent('_工坊/settings.json')).then(function(r){
+      var appearance=null;
+      try{ if(r.status===200&&r.body&&r.body.text) appearance=JSON.parse(r.body.text).appearance; }catch(e){}
+      applyAppearance(appearance);
+    }).catch(function(){ applyAppearance(null); });
+  }
+
+  var T=window.__SF_TOKEN__||'';
+  var NOTE=document.getElementById('note');
+  var BOOK=document.getElementById('book');
+  var STATE=document.getElementById('state');
+  var HINT=document.getElementById('hint');
+  var ACT=document.getElementById('act');
+  var FORCE=document.getElementById('force');
+  var PING_KEY='sf-quick-ping';
+  var BOOK_KEY='sf-quick-book';
+  var books=[],bookIdx=0;
+  var st=null;            // {dir,path,hash,id,title,createdAt,rev}
+  var timer=null,busy=false,queued=false,conflict=false,resetWhenIdle=false;
+
+  function api(method,path,body){
+    var opt={method:method,headers:{'x-sf-token':T}};
+    if(body!==undefined){opt.headers['content-type']='application/json';opt.body=JSON.stringify(body)}
+    return fetch(path,opt).then(function(r){
+      return r.json().catch(function(){return {}}).then(function(j){return {status:r.status,body:j||{}}});
+    });
+  }
+  function setState(text,cls){STATE.textContent=text||'';STATE.className=cls||''}
+
+  /* 路径段安全化：与主页面 g3Seg 同口径（非法字符→_、空白归一、尾点空白剥除、保留名加前导 _、40 帽） */
+  function seg(s){
+    var x=String(s==null?'':s).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/[\\/:*?"<>|]/g,'_').replace(/\s+/g,' ').trim().replace(/[. ]+$/,'');
+    if(/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(x))x='_'+x;
+    if(x.length>40)x=x.slice(0,33)+'~'+hash6(s);
+    return x||'未命名';
+  }
+  function hash6(s){var h=2166136261,t=String(s);for(var i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36).slice(0,6)}
+  function uid(){return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+  function mdEsc(s){return String(s==null?'':s).replace(/^\\/gm,'\\\\').replace(/^#/gm,'\\#')}
+  /* 文件文本与主页面片段投影逐字节同形（g3YamlLine＋g3MdWrite）；否则主窗写盘/CAS 会打架 */
+  function mdText(){
+    var fm='';
+    fm+='_format: '+JSON.stringify('novel-studio-entry-v1')+'\n';
+    fm+='id: '+JSON.stringify(st.id)+'\n';
+    fm+='title: '+JSON.stringify(st.title)+'\n';
+    fm+='tags: '+JSON.stringify(['灵感'])+'\n';
+    fm+='createdAt: '+JSON.stringify(st.createdAt)+'\n';
+    return '---\n'+fm+'---\n'+'\n# 正文\n\n'+mdEsc(NOTE.value)+'\n';
+  }
+  /* ping 主页面增量感知；删除时 st 已置空，必须显式传被删目标（2026-10-23 复验修复：否则删除 ping 静默丢失） */
+  function ping(del,s){
+    s=s||st;if(!s)return;
+    try{localStorage.setItem(PING_KEY,JSON.stringify({dir:s.dir,path:s.path,id:s.id,del:!!del,at:Date.now()}))}catch(e){}
+  }
+
+  function renderBook(){
+    if(!books.length){BOOK.textContent='（没有可用作品）';BOOK.className='none';return}
+    var b=books[bookIdx];
+    BOOK.textContent='记入：'+b.dir;
+    BOOK.className='';
+    BOOK.title='点击切换目标书（共 '+books.length+' 本）';
+  }
+  function loadBooks(){
+    setState('载入…');
+    return api('GET','/api/fs/list?path=').then(function(r){
+      if(r.status!==200){
+        books=[];
+        var noRoot=r.status===409;
+        HINT.innerHTML=noRoot?'还没有设置数据文件夹。请先在主窗口「设置 → 数据管理」里指定数据文件夹，再回来速记。'
+          :'数据文件夹读取失败（'+(r.body.message||r.body.error||('HTTP '+r.status))+'）。请回主窗口检查。';
+        HINT.className='on';BOOK.textContent='未就绪';BOOK.className='none';
+        NOTE.disabled=true;setState('');return;
+      }
+      var dirs=(r.body.entries||[]).filter(function(e){return e&&e.type==='dir'&&e.name!=='_工坊'});
+      return Promise.all(dirs.map(function(d){
+        return api('GET','/api/fs/stat?path='+encodeURIComponent(d.name+'/项目.json')).then(function(s){
+          return (s.status===200&&s.body.type==='file')?{dir:d.name,mtime:s.body.mtime||0}:null;
+        }).catch(function(){return null});
+      })).then(function(rows){
+        books=rows.filter(Boolean);
+        var want='';try{want=localStorage.getItem(BOOK_KEY)||''}catch(e){}
+        var idx=books.findIndex(function(b){return b.dir===want});
+        if(idx<0){
+          var best=-1,bi=0;
+          books.forEach(function(b,i){if(b.mtime>best){best=b.mtime;bi=i}});
+          idx=books.length?bi:0;
+        }
+        bookIdx=idx;
+        renderBook();
+        if(!books.length){
+          HINT.innerHTML='数据文件夹里还没有作品。请先在主窗口新建一部小说，再回来速记。';
+          HINT.className='on';NOTE.disabled=true;setState('');
+        }else{
+          HINT.className='';NOTE.disabled=false;
+          setState(st?'':'自动保存');
+        }
+      });
+    }).catch(function(e){
+      HINT.innerHTML='连不上本地服务。请确认故事工坊在运行（本窗关掉后可从托盘左键再打开）。';
+      HINT.className='on';NOTE.disabled=true;BOOK.textContent='未就绪';BOOK.className='none';setState('');
+    });
+  }
+
+  function resetEntry(){
+    st=null;conflict=false;ACT.className='';
+    NOTE.value='';
+    NOTE.disabled=!books.length;
+    setState(books.length?'自动保存':'');
+  }
+  /* 每次打开窗口＝新起一条：挂起的写/删先在途落定再清纸（旧条已存不清）。
+     2026-10-23 复验修复竞态：旧版 save() 后同步 resetEntry() 把 st 置空，在途写回回调对 null 赋 hash 抛错、
+     busy 永卡 true（此窗再也存不了），冲突态还静默丢弃未存文本。现经 resetWhenIdle＋settle() 落定后清纸。 */
+  window.__sfQuickNew=function(){
+    if(timer){clearTimeout(timer);timer=null}
+    if(conflict)return;                          // 冲突未决：保留文本与冲突条，等作者处置
+    resetWhenIdle=true;
+    if(busy)return;                              // 在途写回：落定后由 settle() 清纸
+    if(NOTE.value.trim()||st){save();return}     // 有挂起的写/删：先落定，settle() 再清纸
+    resetWhenIdle=false;resetEntry();            // 无事可存：直接新起一条
+  };
+  /* 一次写回链彻底落定（busy 解除）的统一收尾：有排队续存优先，再执行推迟的切书/清纸。 */
+  function settle(){
+    busy=false;
+    if(queued){queued=false;save();return}
+    if(switchAfterSettle){switchBook();return}
+    if(resetWhenIdle){resetWhenIdle=false;resetEntry()}
+  }
+  /* 切书同样要等写回落定（2026-10-23 同批复验修复：旧版点击即切，409 重试会把条建进新书、回调对空 st 抛错卡死） */
+  var switchAfterSettle=false;
+  function switchBook(){
+    switchAfterSettle=false;resetWhenIdle=false;
+    bookIdx=(bookIdx+1)%books.length;
+    try{localStorage.setItem(BOOK_KEY,books[bookIdx].dir)}catch(e){}
+    resetEntry();renderBook();
+  }
+
+  function schedule(){
+    if(timer)clearTimeout(timer);
+    timer=setTimeout(function(){timer=null;save()},500);
+  }
+  function save(){
+    if(conflict){setState('有冲突未解决','warn');return}
+    if(busy){queued=true;return}
+    var text=NOTE.value;
+    if(!books.length)return;
+    var b=books[bookIdx];
+    if(!text.trim()){
+      if(!st){setState('');return}
+      busy=true;
+      var gone=st;st=null;
+      api('POST','/api/fs/delete',{path:gone.path}).then(function(r){
+        if(r.status===200){ping(true,gone);setState('已清空（文件进回收站）')}
+        else setState('清空失败：'+(r.body.message||('HTTP '+r.status)),'err');
+      }).catch(function(){setState('清空失败（连不上服务）','err')}).then(settle);
+      return;
+    }
+    busy=true;
+    if(!st){
+      /* 首次非空：新建。文件名撞（409：目标已存在）按「 (2)…」确定性去重（服务端 write 不做去重） */
+      var d=new Date();
+      var title='灵感 '+(d.getMonth()+1)+'-'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      var base=seg(title),tryNo=1;
+      st={dir:b.dir,path:b.dir+'/片段/'+base+'.md',hash:'',id:uid(),title:title,createdAt:new Date().toISOString(),rev:0};
+      createWith(tryNo);
+    }else{
+      update(null);
+    }
+  }
+  function createWith(tryNo){
+    var b=books[bookIdx];
+    var name=seg(st.title)+(tryNo>1?' ('+tryNo+')':'');
+    st.path=b.dir+'/片段/'+name+'.md';
+    api('POST','/api/fs/write',{path:st.path,text:mdText(),baseHash:''}).then(function(r){
+      if(r.status===200){
+        st.hash=r.body.hash||'';setState('已保存 '+NOTE.value.length+' 字');ping(false);
+        settle();
+        return;
+      }
+      if(r.status===409&&tryNo<9){createWith(tryNo+1);return}
+      st=null;
+      setState('保存失败：'+(r.body.message||('HTTP '+r.status)),'err');
+      settle();
+    }).catch(function(){setState('保存失败（连不上服务）','err');settle()});
+  }
+  function update(force){
+    var body={path:st.path,text:mdText()};
+    if(!force)body.baseHash=st.hash;
+    api('POST','/api/fs/write',body).then(function(r){
+      if(r.status===200){
+        st.hash=r.body.hash||'';conflict=false;ACT.className='';
+        setState('已保存 '+NOTE.value.length+' 字');ping(false);
+        settle();
+        return;
+      }
+      if(r.status===409){
+        busy=false;conflict=true;resetWhenIdle=false;queued=false;ACT.className='on';   // 冲突态不续存不清纸，等作者处置
+        setState('未写入：文件被他方改动','warn');
+        return;
+      }
+      setState('保存失败：'+(r.body.message||('HTTP '+r.status)),'err');
+      settle();
+    }).catch(function(){setState('保存失败（连不上服务）','err');settle()});
+  }
+
+  NOTE.addEventListener('input',function(){ACT.className='';schedule()});
+  FORCE.addEventListener('click',function(){if(st&&conflict){busy=true;update(true)}});
+  BOOK.addEventListener('click',function(){
+    if(books.length<2)return;
+    if(timer){clearTimeout(timer);timer=null}
+    if(conflict)return;                          // 冲突未决：不切书，保留文本等作者处置
+    if(busy){switchAfterSettle=true;return}      // 在途写回：落定后由 settle() 切书
+    if(NOTE.value.trim()||st){switchAfterSettle=true;save();return}   // 挂起的写/删先落定（存入当前书），再切
+    switchBook();
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      e.preventDefault();
+      try{window.__TAURI__.window.getCurrentWindow().hide()}catch(err){}
+    }
+  });
+  window.addEventListener('focus',function(){loadAppearance();if(!books.length)loadBooks()});
+  /* 速记体验重做票04：失焦（点了窗外/窗口被隐藏）立即冲刷挂起的写/删——隐藏态 WebView 计时器会被节流，
+     靠下一次打开补存不如当场落定；save() 自带在途排队与冲突态保护。 */
+  window.addEventListener('blur',function(){
+    if(conflict)return;
+    try{if(NOTE.value.trim()||st)save()}catch(e){}
+  });
+
+  if(!T){HINT.innerHTML='页面令牌缺失（请从托盘重新打开）。';HINT.className='on';return}
+  loadAppearance().then(function(){return loadBooks()});
+})();
+</script>
+</body>
+</html>

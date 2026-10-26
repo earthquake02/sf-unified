@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>故事工坊</title>
+<style>
+:root{
+  --bg:#141416; --bg2:#1c1c1f; --card:#232326; --line:#3a3a42;
+  --tx:#e8e6e1; --tx2:#a8a49c; --tx3:#6e6a64;
+  --ac:#c9a66b; --ac2:#d8c192; --ac-dim:rgba(201,166,107,.14);
+  --ok:#7aab7e; --warn:#c9a66b; --err:#c07070; --field:#18181b;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; min-height:100vh;
+  font:14px/1.55 system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(201,166,107,.08), transparent 55%),
+    var(--bg);
+  color:var(--tx);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:28px 16px 40px;
+}
+.card{
+  width:min(520px,96vw);
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:28px 28px 24px;
+  box-shadow:0 20px 56px rgba(0,0,0,.5), 0 0 0 1px rgba(201,166,107,.04);
+}
+.brand{display:flex; align-items:center; gap:12px; margin-bottom:18px}
+.logo{
+  width:40px; height:40px; border-radius:10px;
+  background:linear-gradient(145deg,#3a3428,#2a261f);
+  border:1px solid rgba(201,166,107,.35);
+  display:grid; place-items:center;
+  color:var(--ac2); font-size:18px; font-weight:600; flex-shrink:0;
+}
+.brand h1{margin:0; font-size:18px; font-weight:600; color:var(--ac2); letter-spacing:.02em}
+.brand .sub{margin:2px 0 0; font-size:12.5px; color:var(--tx3)}
+.welcome{margin:0 0 6px; font-size:15px; font-weight:500; color:var(--tx)}
+.why{margin:0 0 20px; font-size:13px; color:var(--tx2); line-height:1.65}
+.why strong{color:var(--tx); font-weight:500}
+.field-lab{
+  display:flex; align-items:baseline; justify-content:space-between;
+  margin-bottom:7px; font-size:12.5px; color:var(--tx2);
+}
+.field-lab span{color:var(--tx3); font-size:11.5px}
+.path-row{display:flex; gap:8px; align-items:stretch}
+.path-row input{
+  flex:1; min-width:0; padding:10px 12px;
+  border:1px solid var(--line); border-radius:8px;
+  background:var(--field); color:var(--tx);
+  font:13px/1.4 ui-monospace,"Consolas","Microsoft YaHei",monospace;
+}
+.path-row input:focus{
+  outline:none; border-color:rgba(201,166,107,.55);
+  box-shadow:0 0 0 3px var(--ac-dim);
+}
+.path-row input::placeholder{color:var(--tx3)}
+.btn{
+  appearance:none; border:1px solid var(--line); background:var(--bg2);
+  color:var(--tx); border-radius:8px; padding:9px 14px;
+  font-size:13px; cursor:pointer; line-height:1.3;
+  white-space:nowrap; display:inline-flex; align-items:center; gap:5px;
+}
+.btn:hover{border-color:rgba(201,166,107,.4); background:var(--ac-dim)}
+.btn:disabled{opacity:.5; cursor:default}
+.btn.pri{
+  width:100%; justify-content:center;
+  margin-top:16px; padding:11px 16px; font-size:14.5px; font-weight:500;
+  background:#3a3428; border-color:rgba(201,166,107,.45); color:var(--ac2);
+}
+.btn.pri:hover{background:#463e30; border-color:rgba(201,166,107,.65)}
+.hint-default{
+  margin:10px 0 0; font-size:12.5px; color:var(--tx3); line-height:1.55;
+  word-break:break-all;
+}
+.hint-default code{
+  font:12px/1.4 ui-monospace,"Consolas","Microsoft YaHei",monospace;
+  color:var(--tx2); background:var(--field); padding:1px 6px; border-radius:4px;
+}
+.hint-default.filled{color:var(--tx2)}
+.hint-default.filled code{color:var(--ac2)}
+.msg{margin:10px 0 0; font-size:12.5px; min-height:18px; line-height:1.5}
+.msg.ok{color:var(--ok)}.msg.warn{color:var(--warn)}.msg.err{color:var(--err)}
+.once{margin:18px 0 0; font-size:12px; color:var(--tx3); text-align:center; line-height:1.5}
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">故</div>
+    <div>
+      <h1>故事工坊</h1>
+      <p class="sub">本机写作，稿件只存在你选的文件夹里</p>
+    </div>
+  </div>
+
+  <p class="welcome">欢迎使用故事工坊</p>
+  <p class="why">
+    作品、设定和提示词都会保存在一个<strong>数据文件夹</strong>里——
+    就像给书稿指定一个抽屉。你可以现在挑一个位置，也可以直接开始，程序会在安装目录旁建好默认文件夹。
+  </p>
+
+  <div class="field-lab">
+    <label for="root">数据文件夹</label>
+    <span>可留空，用默认位置</span>
+  </div>
+  <div class="path-row">
+    <input type="text" id="root" placeholder="留空则使用默认位置" spellcheck="false" autocomplete="off">
+    <button type="button" class="btn" id="browse" style="display:none" title="用系统对话框选择文件夹">浏览…</button>
+  </div>
+  <p class="hint-default" id="hint">未选择时，将使用默认位置</p>
+  <div class="msg" id="rootMsg"></div>
+
+  <button type="button" class="btn pri" id="start">开始使用</button>
+  <p class="once">选好一次后，下次打开会直接进入写作，不再显示此页。</p>
+</div>
+<script>
+(function(){
+  var T = window.__SF_TOKEN__, P = window.__SF_PORT__;
+  var $ = function(id){ return document.getElementById(id); };
+  var curDefault = '';
+  function api(url, opt){
+    opt = opt || {};
+    opt.headers = Object.assign({'X-SF-Token': T}, opt.headers || {});
+    return fetch(url, opt);
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+  function showMsg(cls, text){
+    var el = $('rootMsg');
+    el.className = 'msg' + (cls ? ' ' + cls : '');
+    el.textContent = text || '';
+  }
+  function refreshHint(){
+    var v = ($('root').value || '').trim();
+    var hint = $('hint');
+    if (v){
+      hint.className = 'hint-default filled';
+      hint.innerHTML = '将使用：<code>' + esc(v) + '</code>';
+    } else {
+      hint.className = 'hint-default';
+      hint.innerHTML = '未选择时，将使用：<code id="defPath">' + esc(curDefault || '（程序目录下的「故事工坊数据」）') + '</code>';
+    }
+  }
+  async function refresh(){
+    try{
+      var j = await (await api('/api/sys/status')).json();
+      curDefault = j.defaultDataRoot || curDefault || '';
+      if (j.dataRoot){
+        $('root').value = j.dataRoot;
+        showMsg('ok', '已就绪：' + j.dataRoot + (j.dataOk ? '' : '（文件夹当前不可用，请重新选择）'));
+      } else {
+        showMsg('', '');
+      }
+      refreshHint();
+    }catch(e){
+      showMsg('err', '无法连接本地服务：' + e);
+    }
+  }
+  async function startUse(){
+    var v = ($('root').value || '').trim();
+    showMsg('warn', '正在准备…');
+    $('start').disabled = true;
+    try{
+      var r = await api('/api/sys/config', {method:'POST', headers:{'Content-Type':'application/json'},
+                                            body: JSON.stringify({dataRoot: v})});
+      var j = await r.json();
+      if (j.ok){
+        $('root').value = j.dataRoot;
+        showMsg('ok', '已就绪：' + j.dataRoot + (j.created ? '（已新建）' : ''));
+        refreshHint();
+        setTimeout(function(){ location.href = '/index.html'; }, 280);
+      } else {
+        showMsg('err', j.message || j.error || '未能开始');
+        $('start').disabled = false;
+      }
+    }catch(e){
+      showMsg('err', '开始失败：' + e);
+      $('start').disabled = false;
+    }
+  }
+  function shellBridge(){
+    try{
+      return (window.__TAURI__ && window.__TAURI__.core &&
+              typeof window.__TAURI__.core.invoke === 'function') ? window.__TAURI__.core : null;
+    }catch(e){ return null; }
+  }
+  var browseBound = false;
+  function bindBrowse(){
+    if (browseBound) return true;
+    var b = shellBridge();
+    if (!b) return false;
+    browseBound = true;
+    $('browse').style.display = '';
+    $('browse').onclick = async function(){
+      try{
+        var r = await b.invoke('pick_folder');
+        if (!r){ showMsg('warn', '没有选择文件夹（也可以手动填路径，或留空用默认）。'); return; }
+        $('root').value = r;
+        refreshHint();
+        showMsg('warn', '已选择：' + r);
+      }catch(e){ showMsg('err', '选择文件夹失败：' + e); }
+    };
+    return true;
+  }
+  var bTries = 0;
+  var bTimer = setInterval(function(){ if (bindBrowse() || ++bTries > 80) clearInterval(bTimer); }, 250);   // 兜底：注入晚于页面脚本也能绑上（BG-152 教训：探测必须在桥已注入之后；上限 20 秒，防慢机器）
+
+  $('root').addEventListener('input', refreshHint);
+  $('start').onclick = startUse;
+  refresh();
+})();
+</script>
+</body>
+</html>
