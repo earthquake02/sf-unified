@@ -1866,6 +1866,9 @@ async function stLoad(isBoot){
   ST.setPlainKeys=setHasPlainKeys(setObj);
   ST.setLast=ST.setPlainKeys?null:settingsWireText();
   ST.dirty=false;ST.lastErr='';ST.conflict=null;
+  /* ADR 0004：持久化章交接记忆的 sourceTextHash 守卫式迁移（旧口径→块级换行口径）。
+     只改验证通过的记忆；stBoot 随后的强制写盘会把变化章节落盘。只读档不动。 */
+  if(!roReason()){try{await handoffHashMigrate()}catch(e){try{console.error('[SF] handoff hash migrate',e)}catch(_e){}}}
   if(typeof appearFontScan==='function'){try{await appearFontScan()}catch(e){}}
   return true;
 }
@@ -8412,12 +8415,17 @@ const STYLE_AUX_MAX=3;
 function styleDirOf(nid){return 'style-'+String(nid||'').toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,48)}
 function styleSkillIdOf(nid){return 'user:'+styleDirOf(nid)}
 function styleOfNovel(nid){return (S.data.novels||[]).find(n=>n&&n.id===nid)||null}
-/** 本书 AI 可见正文：按章节聚合；跳过 noAi；scenePlainText 剥 figure / data-ai=off */
+/**
+ * 本书 AI 可见正文：按章节聚合；跳过 noAi；scenePlainText 剥 figure / data-ai=off。
+ * 章头用 nodeTitle(ch)（与树显示完全一致，保留 no/noNum 语义）。
+ * @param {string} nid
+ * @returns {{text:string,chapters:number,scenes:number,chars:number}}
+ */
 function novelProsePlain(nid){
   const chs=chaptersOf(nid);
   const parts=[];let chapHit=0,sceneHit=0;
   for(const ch of chs){
-    const scs=scenesOf(nid,ch.id).filter(s=>s&&!s.noAi);
+    const scs=scenesOf(nid,ch.id).filter(/** @param {any} s @returns {boolean} */ s=>s&&!s.noAi);
     const texts=[];
     for(const s of scs){
       const t=typeof scenePlainText==='function'?scenePlainText(s):String((s&&s.content)||'');
@@ -8427,7 +8435,8 @@ function novelProsePlain(nid){
     }
     if(!texts.length)continue;
     chapHit++;
-    const head=ch.title?('## '+ch.title+'\n\n'):'';
+    const ht=nodeTitle(ch);
+    const head=ht?('## '+ht+'\n\n'):'';
     parts.push(head+texts.join('\n\n'));
   }
   return{text:parts.join('\n\n'),chapters:chapHit,scenes:sceneHit,chars:0};
@@ -8441,24 +8450,49 @@ function styleCorpusStats(text,chapHint){
   else if(chars>=STYLE_YELLOW_CHARS&&chaps>=STYLE_YELLOW_CHAPS)tier='yellow';
   return{text:t,chars,chapters:chaps,tier};
 }
+/**
+ * 文风语料抽稀：按块预算配额采样——块长严重不均时后续块仍按配额入选、末块保留、
+ * 总输出 ≤ cap，不因首块超帽把整份语料截成「首块前 cap 字」。
+ * @param {string} text
+ * @param {number} cap
+ * @returns {{text:string,thinned:boolean,kept:number,orig:number}}
+ */
 function styleCorpusThin(text,cap){
   const t=String(text||'');
-  if(t.length<=cap)return{text:t,thinned:false,kept:t.length,orig:t.length};
+  const limit=Math.max(1,Number(cap)||STYLE_CORPUS_HARD);
+  if(t.length<=limit)return{text:t,thinned:false,kept:t.length,orig:t.length};
   const parts=t.split(/\n(?=## )/);
   if(parts.length<3){
-    const head=Math.floor(cap*0.4),tail=Math.floor(cap*0.4),mid=cap-head-tail-20;
+    const head=Math.floor(limit*0.4),tail=Math.floor(limit*0.4),mid=limit-head-tail-20;
     const midStart=Math.max(0,Math.floor((t.length-mid)/2));
     const out=t.slice(0,head)+'\n\n…\n\n'+t.slice(midStart,midStart+mid)+'\n\n…\n\n'+t.slice(-tail);
-    return{text:out.slice(0,cap),thinned:true,kept:Math.min(out.length,cap),orig:t.length};
+    return{text:out.slice(0,limit),thinned:true,kept:Math.min(out.length,limit),orig:t.length};
   }
-  const keep=Math.max(3,Math.floor(parts.length*cap/t.length));
-  const idx=new Set();
-  idx.add(0);idx.add(parts.length-1);
-  for(let i=0;i<keep;i++)idx.add(Math.floor(i*(parts.length-1)/Math.max(1,keep-1)));
-  const ordered=[...idx].sort((a,b)=>a-b).map(i=>parts[i]);
-  let out=ordered.join('\n\n');
-  if(out.length>cap)out=out.slice(0,cap);
-  return{text:out,thinned:true,kept:out.length,orig:t.length};
+  const n=parts.length,sep=2;
+  let left=Math.max(0,limit-sep*(n-1));
+  const quotas=new Array(n).fill(0);
+  for(let i=0;i<n;i++){
+    const share=Math.floor(left/(n-i));
+    const take=Math.min(parts[i].length,share);
+    quotas[i]=take;left-=take;
+  }
+  /* 短块省下的预算再分给还有内容的块（按序公平）；末块保留 */
+  let guard=0;
+  while(left>0&&guard++<n+8){
+    const open=[];
+    for(let i=0;i<n;i++)if(parts[i].length>quotas[i])open.push(i);
+    if(!open.length)break;
+    const add=Math.max(1,Math.floor(left/open.length));
+    let progressed=false;
+    for(const i of open){
+      if(left<=0)break;
+      const take=Math.min(parts[i].length-quotas[i],add,left);
+      if(take>0){quotas[i]+=take;left-=take;progressed=true}
+    }
+    if(!progressed)break;
+  }
+  const out=parts.map((p,i)=>p.slice(0,quotas[i])).join('\n\n');
+  return{text:out.length<=limit?out:out.slice(0,limit),thinned:true,kept:Math.min(out.length,limit),orig:t.length};
 }
 function styleTierLabel(tier){
   if(tier==='green')return '语料充足';
@@ -8967,10 +9001,11 @@ function outlineText(nid,withSummary=true){
   return lines.join('\n');
 }
 /* 场景对 AI 可见的纯文本（折叠区块若标记 data-ai="off" 则排除） */
-/* ---------- S13：块级纯文本口径（BG-063）：textContent 不带块级边界，<p> 间无字面换行时 ≥2 段场景黏连成一行——
-   S13 差异对比会恒退化为「整删整增」、发给修稿模型的正文无段落边界。htmlToBlocks 给块级元素补换行 + 基础实体解码；
-   htmlBlocksText 先剔「排除AI」折叠块再走纯函数。**只供 S13 链路**（修稿输入/守卫①基线/差异两侧）：
-   scenePlainText/htmlToText 与既有哈希基线（S6/S7/S10）一律不动——改它们会让存量记忆/候选基线集体误判「已过期」。 */
+/* ---------- 块级纯文本口径（BG-063，ADR 0004）：textContent 不带块级边界，<p> 间无字面换行时 ≥2 段场景黏连成一行——
+   htmlToBlocks 给块级元素补换行 + 基础实体解码；htmlBlocksText 先剔「排除AI」折叠块再走纯函数。
+   scenePlainText 自 ADR 0004 起统一走本口径，供全部 AI 上下文（提取/摘要/审稿/交接记忆/文风语料）使用；
+   旧口径保留为 scenePlainTextLegacy，仅供持久化章交接记忆 sourceTextHash 的守卫式迁移重算，不得用于新链路。
+   htmlToText 仍供展示/字数（不参与 AI 上下文与哈希）。 */
 function htmlToBlocks(src){
   let t=String(src==null?'':src);
   t=t.replace(/<br\s*\/?>/gi,'\n');
@@ -8980,6 +9015,32 @@ function htmlToBlocks(src){
   t=t.replace(/<[^>]+>/g,'');   // R3 注：面向编辑器序列化 HTML（恒闭合、属性无裸 >）；外来粘贴怪内容为近似降级（属性含 > 会漏渣），只影响展示/模型输入保真，不影响哈希两端一致
   t=t.replace(/&nbsp;|&#160;/gi,' ').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&#39;/gi,"'").replace(/&amp;/gi,'&');
   return t.replace(/\n{3,}/g,'\n\n').replace(/[ \t]+\n/g,'\n').trim();
+}
+/**
+ * 剔除「排除AI」折叠块：DOM 优先（与 hasOffBlock 同选择器）；无 DOM 的仿真/迁移回退正则近似。
+ * @param {string} html
+ * @returns {string}
+ */
+function stripAiOffBlocks(html){
+  const src=String(html==null?'':html);
+  try{
+    const d=document.createElement('div');
+    d.innerHTML=src;
+    d.querySelectorAll('[data-ai="off"]').forEach(x=>x.remove());
+    return d.innerHTML;
+  }catch(e){
+    return src.replace(/<([a-z][\w-]*)\b[^>]*\bdata-ai\s*=\s*(?:"off"|'off'|off)(?:\s|\/?>)[^>]*>[\s\S]*?<\/\1>/gi,'');
+  }
+}
+/**
+ * 无 DOM 回退：去标签＋基础实体解码（textContent 近似；仅仿真/迁移重算用）。
+ * @param {string} html
+ * @returns {string}
+ */
+function htmlTextFallback(html){
+  return String(html==null?'':html).replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;|&#160;/gi,' ').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>')
+    .replace(/&quot;/gi,'"').replace(/&#39;/gi,"'").replace(/&amp;/gi,'&');
 }
 function htmlBlocksText(html){
   let src=String(html==null?'':html);
@@ -8992,7 +9053,31 @@ function hasOffBlock(html){
   try{const d=document.createElement('div');d.innerHTML=String(html==null?'':html);return !!d.querySelector('[data-ai="off"]')}
   catch(e){return /data-ai\s*=\s*(?:"off"|'off'|off(?:\s|>|\/|$))/i.test(String(html==null?'':html))}
 }
-function scenePlainText(sc){const d=document.createElement('div');d.innerHTML=String(sc.content||'').replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi,'');d.querySelectorAll('[data-ai="off"]').forEach(x=>x.remove());return (d.textContent||'').replace(/\u00a0/g,' ')}
+/**
+ * 场景对 AI 可见的纯文本：块级换行口径（ADR 0004），剔除插图块与「排除AI」块。
+ * @param {any} sc
+ * @returns {string}
+ */
+function scenePlainText(sc){
+  const src=String(sc&&sc.content||'').replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi,'');
+  return htmlToBlocks(stripAiOffBlocks(src)).replace(/\u00a0/g,' ');
+}
+/**
+ * 旧口径（ADR 0004 迁移专用）：textContent 不带块级换行；仅供 sourceTextHash 旧值重算。
+ * @param {any} sc
+ * @returns {string}
+ */
+function scenePlainTextLegacy(sc){
+  const src=String(sc&&sc.content||'').replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi,'');
+  try{
+    const d=document.createElement('div');
+    d.innerHTML=src;
+    d.querySelectorAll('[data-ai="off"]').forEach(x=>x.remove());
+    return (d.textContent||'').replace(/\u00a0/g,' ');
+  }catch(e){
+    return htmlTextFallback(stripAiOffBlocks(src)).replace(/\u00a0/g,' ');
+  }
+}
 /* ---------- E 章节交接记忆（SF chapter-memory 缩微：章→章粗粒度，与 B1 场景→设定集细粒度互补） ---------- */
 /* 章源文本口径：章内全部 AI 可见场景纯文本（sort 序，noAi 排除——与 storySoFar 同口径；noAi 场景内容不得经交接记忆泄漏进 AI 上下文）。
    sourceTextHash 对它取 hashText：正文（AI 可见口径）再编辑后哈希不匹配 → UI 标「已过期」，且不再注入。查找一律 id+novelId 双键（BG-044/050 家族）。 */
@@ -9000,6 +9085,20 @@ function chapterSourceText(nid,chId){
   const c=S.data.chapters.find(x=>x.id===chId&&x.novelId===nid);
   if(!c)return'';
   return scenesOf(nid,chId).filter(s=>!s.noAi).map(s=>scenePlainText(s)).filter(t=>t.trim()).join('\n\n');
+}
+/**
+ * 旧口径章源文本（ADR 0004 迁移专用，等同 hash 基线刚落地时的 chapterSourceText）。
+ * @param {string} nid
+ * @param {string} chId
+ * @returns {string}
+ */
+function chapterSourceTextLegacy(nid,chId){
+  const c=S.data.chapters.find(/** @param {any} x @returns {boolean} */ x=>x.id===chId&&x.novelId===nid);
+  if(!c)return'';
+  return scenesOf(nid,chId)
+    .filter(/** @param {any} s @returns {boolean} */ s=>!s.noAi)
+    .map(/** @param {any} s @returns {string} */ s=>scenePlainTextLegacy(s))
+    .filter(/** @param {string} t @returns {boolean} */ t=>!!t.trim()).join('\n\n');
 }
 /* ---------- S12 F 组：逐项目标审稿的机械层（〔ANW〕chapter-goal-review 同语义缩微移植，不抄其代码） ----------
    freezeGoalsOf：目标清单整章单源冻结（S11 协议 §二，与 data/experiments/goal-review-r1/prep_corpus.mjs 同口径）：
@@ -9491,6 +9590,36 @@ async function hoPrevForAsync(nid,sceneId){
   return null;
 }
 function hoWarmAll(){setTimeout(()=>{hoCheckPrune();for(const c of(S.data.chapters||[])){if(c&&c.handoff)hoStaleOf(c.novelId,c.id)}},0)}   // 挪出首屏关键路径（S10 核验 L4）；预热把首次注入前的未核定窗口压到最小；顺手丢掉已不存在的章的缓存（BG-054 L3）
+/**
+ * 守卫式迁移持久化章交接记忆的 sourceTextHash（ADR 0004）：
+ * 按存档前缀选算法（不走会自动切换的 hashText），用旧口径重算比对；仅当与存档一致且章序/章名仍有效
+ * （seqAt/titleAt 口径）才改写为新口径哈希（沿用存档前缀同算法）。验证不过一律不动——已过期保持过期、
+ * 缺基线仍需重新生成，绝不无条件重算把陈旧记忆复活成新鲜基线。
+ * @returns {Promise<number>} 迁移条数
+ */
+async function handoffHashMigrate(){
+  let changed=0;
+  for(const ch of (S.data&&S.data.chapters)||[]){
+    if(!ch||!ch.handoff)continue;
+    const base=ch.handoff.sourceTextHash;
+    if(typeof base!=='string')continue;
+    const m=/^(sha256|fnv1a64):[0-9a-f]+$/i.exec(base);
+    if(!m)continue;   // 无前缀/前缀不可识别：nobase 语义不变
+    const alg=m[1].toLowerCase(),nid=ch.novelId;
+    if(typeof ch.handoff.seqAt==='number'&&ch.handoff.seqAt!==hoIndex(nid,ch.id))continue;
+    if(typeof ch.handoff.titleAt==='string'&&ch.handoff.titleAt!==(ch.title||''))continue;
+    const oldSrc=chapterSourceTextLegacy(nid,ch.id);
+    const oldHash=await hashTextWithAlg(oldSrc,alg);
+    if(!oldHash||oldHash!==base)continue;   // 旧值不匹配/算法不可用：保持原状，不复活
+    const newSrc=chapterSourceText(nid,ch.id);
+    const newHash=await hashTextWithAlg(newSrc,alg);
+    if(!newHash||newHash===base)continue;
+    ch.handoff.sourceTextHash=newHash;
+    hoCheck.set(hoKey(nid,ch.id),{src:newSrc,stale:false});
+    changed++;
+  }
+  return changed;
+}
 /* 形状校验 + 归一（BG-030①⑤ 口径）：非对象根/非对象 finalScene/数组域非数组拒收、逐字段拷贝不 Object.assign（__proto__ 安全）；
    条目只收字符串并压平换行封顶；缺 summary 或空 summary 拒收（半截产物不落库）。summary 收 300 与注入/展示同口径（S10 核验 L2）。 */
 function hoNormalize(v){
@@ -10371,18 +10500,40 @@ function tailFromBoundary(text,max){
   return m?(tail.slice(m.index+m[0].length).trim()||tail.trim()):tail.trim();
 }
 /* B2 失效检测哈希：crypto.subtle SHA-256 优先（http://127.0.0.1 与 file:// 在 Chrome/Edge 均属安全上下文，可用）；
-   不可用或出错时回退 FNV-1a 64 位（BigInt 实现，按 UTF-16 码元迭代）。仅用于「正文是否变化」的失效检测，不用于安全，弱哈希可接受。 */
-async function hashText(text){
+   不可用或出错时回退 FNV-1a 64 位（BigInt 实现，按 UTF-16 码元迭代）。仅用于「正文是否变化」的失效检测，不用于安全，弱哈希可接受。
+   ADR 0004：迁移必须按存档前缀选算法，不得依赖会自动切换的 hashText——故拆出 hashTextWithAlg。 */
+/**
+ * 按指定算法取哈希（sha256 / fnv1a64）；算法不可用返回 null，绝不自动换算法。
+ * @param {string} text
+ * @param {string} alg
+ * @returns {Promise<string|null>}
+ */
+async function hashTextWithAlg(text,alg){
   const s=String(text??'');
-  try{
-    if(globalThis.crypto&&crypto.subtle){
-      const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
-      return 'sha256:'+[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
-    }
-  }catch(e){}
-  let h=0xcbf29ce484222325n;const P=0x100000001b3n,M=0xffffffffffffffffn;
-  for(let i=0;i<s.length;i++){h^=BigInt(s.charCodeAt(i));h=(h*P)&M}
-  return 'fnv1a64:'+h.toString(16).padStart(16,'0');
+  if(alg==='sha256'){
+    try{
+      if(globalThis.crypto&&crypto.subtle){
+        const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+        return 'sha256:'+[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+      }
+    }catch(e){}
+    return null;
+  }
+  if(alg==='fnv1a64'){
+    let h=0xcbf29ce484222325n;const P=0x100000001b3n,M=0xffffffffffffffffn;
+    for(let i=0;i<s.length;i++){h^=BigInt(s.charCodeAt(i));h=(h*P)&M}
+    return 'fnv1a64:'+h.toString(16).padStart(16,'0');
+  }
+  return null;
+}
+/**
+ * @param {string} text
+ * @returns {Promise<string>}
+ */
+async function hashText(text){
+  const h=(await hashTextWithAlg(text,'sha256'))||(await hashTextWithAlg(text,'fnv1a64'));
+  if(!h)throw new Error('哈希算法不可用');
+  return h;
 }
 /* 光标前纯文本（BG-003 口径）：与 scenePlainText 同口径（剔除 data-ai="off" 折叠块、\u00a0→空格）。光标不在编辑器内返回 null，调用方回退全文。 */
 function caretTextBefore(ed){
@@ -18209,26 +18360,9 @@ function vReview(){
     const items=c.items.map(it=>'<button class="btn sm" data-act="'+it.act+'" data-id="'+it.id+'" style="margin:2px 4px 6px 24px">'+esc(it.t)+'</button>').join('');
     return '<div class="checkitem"><span style="color:'+(c.lvl==='warn'?'var(--warn)':'var(--tx3)')+'">'+(c.lvl==='warn'?'▲':'ℹ')+'</span><span style="flex:1">'+esc(c.txt)+'</span></div>'+items;
   }).join(''):'<div class="checkitem" style="color:var(--ok)">✓ 一切正常，没有发现待处理项</div>';
-  const parts=[];
-  for(const a of actsOf(nid)){
-    parts.push('<h3 style="margin:22px 0 6px;color:var(--tx2)">◆ '+esc(nodeTitle(a))+'</h3>');
-    if(a.summary)parts.push('<div class="hint" style="margin-bottom:6px">'+esc(a.summary)+'</div>');
-    for(const c of chaptersOf(nid,a.id)){
-      parts.push('<h4 style="margin:14px 0 4px;color:var(--tx3)">■ '+esc(nodeTitle(c))+'</h4>');
-      if(c.summary)parts.push('<div class="hint" style="margin-bottom:4px">'+esc(c.summary)+'</div>');
-      const scs=scenesOf(nid,c.id);
-      if(!scs.length){parts.push('<div class="hint">（本章无场景）</div>');continue}
-      for(const s of scs){
-        parts.push('<div class="prose" style="margin-bottom:14px"><h4>'+esc(s.title||unitEmptyTitle())+'</h4>');
-        const txt=(htmlToText(s.content)||'（空场景）').split(/\n+/).filter(Boolean);
-        parts.push(txt.map(t=>'<p>'+esc(t)+'</p>').join(''));
-        parts.push('</div>');
-      }
-    }
-  }
   const progHtml=progress!==null?'<div style="margin-top:12px"><div class="hint">目标进度：'+fmtN(wc)+' / '+fmtN(n.targetWords)+'（'+progress+'%）</div><div style="height:8px;background:var(--bg3);border-radius:99px;margin-top:5px"><div style="height:100%;width:'+progress+'%;background:var(--ac);border-radius:99px"></div></div></div>':'';
   return '<div class="page"><h1 class="pt">审阅 · '+esc(n.title)+'</h1>'
-    +'<p class="pd">项目体检 + 全书连续阅读。</p>'
+    +'<p class="pd">项目体检 + 目标进度 + 伏笔 + 设定出场热力图。</p>'
     +reviewAiNudgeHTML()
     +conflictBannerHTML(nid)
     +'<div class="grid g2" style="margin-bottom:18px">'
@@ -18238,9 +18372,7 @@ function vReview(){
     +'<div class="card"><h3 style="font-size:13px;color:var(--tx2);margin-bottom:6px">'+uiIc('list-todo')+'检查清单</h3>'+checkHtml+conflictSectionHTML(nid)+'</div></div>'
     +goalReviewHTML(nid)
     +fsPanelHTML(nid)
-    +hmHtml
-    +'<h3 style="margin:8px 0 4px;color:var(--tx2)">' + uiIc('book-open') + ' 连续阅读</h3>'
-    +(parts.length?parts.join(''):'<div class="empty">还没有内容</div>')+'</div>';
+    +hmHtml+'</div>';
 }
 
 /* ---------- 视图：设定集 Codex（写作体验票33 起：只管理本书条目，共享库标签/入口退役） ---------- */
@@ -23005,17 +23137,176 @@ async function docxToText(buf){
   return docxXmlToText(new TextDecoder('utf-8').decode(xmlBytes));
 }
 /* 标题行判定：整行匹配 + 两重防误报（总长 ≤40、无句末标点）——不做虚词续接剔除（会误杀
-   「第5章一个约定」类真标题）；偶发误切/漏切由核对弹窗兜底（铁律本义：核对通过才入库） */
+   「第5章一个约定」类真标题）；偶发误切/漏切由核对弹窗兜底（铁律本义：核对通过才入库）。
+   裸中文数字编号（「一豪雨白衣」「二一一命一诺」）只做无状态候选：题名自身可能以数字开头，
+   数字前缀切到哪一位必须交给 splitImportText 的序列上下文校验（票01；禁止最长串贪心）。 */
 const IMP_TAIL_BAD=/[。？！…；;!?]/;
-function impChapterTitle(line){
-  const t=String(line||'').trim().replace(/^#{1,6}[ 　\t]+/,'').trim();   /* 剥 Markdown ATX 标题前缀再判（L5） */
+const IMP_NUM_CHARS='零〇一二两三四五六七八九十百千万亿廿卅';
+/** @type {Record<string, number>} */
+const IMP_DIGIT_VALUE={零:0,〇:0,一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+/**
+ * 中文/阿拉伯数字串转数值（裸编号按逐位读数，标准数词按十百千万亿解析）。
+ * @param {string} s
+ * @returns {number|null}
+ */
+function impNumValue(s){
+  const x=String(s==null?'':s).replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
+  if(!x)return null;
+  if(/^[0-9]+$/.test(x))return Number(x);
+  if([...x].every(ch=>Object.prototype.hasOwnProperty.call(IMP_DIGIT_VALUE,ch))){
+    let v=0;for(const ch of x)v=v*10+IMP_DIGIT_VALUE[ch];return v;
+  }
+  /** @type {Record<string, number>} */
+  const D=Object.assign({},IMP_DIGIT_VALUE,{两:2,十:10,百:100,千:1000,万:10000,亿:100000000,廿:20,卅:30});
+  if(![...x].every(ch=>Object.prototype.hasOwnProperty.call(D,ch)))return null;
+  let total=0,section=0,num=0;
+  for(const ch of x){
+    const v=D[ch];
+    if(ch==='万'||ch==='亿'){section=(section+num)*v;total+=section;section=0;num=0}
+    else if(v>=10){section+=(num||1)*v;num=0}
+    else num=num*10+v;
+  }
+  return total+section+num;
+}
+/**
+ * 标题行无状态判定；bare 候选只报数字串，具体切分由序列校验决定。
+ * @param {string} line
+ * @returns {{title:string,bare:boolean,num?:string}|null}
+ */
+function impChapterTitleInfo(line){
+  const raw=String(line==null?'':line).replace(/^\uFEFF/,'');
+  const noIndent=!/^[ \t\u3000]/.test(raw);   // 裸编号只认顶格行：正文段通常以全角空格缩进（防「一众人等…」误切）
+  const t=raw.trim().replace(/^#{1,6}[ 　\t]+/,'').trim();   /* 剥 Markdown ATX 标题前缀再判（L5） */
   if(!t||t.length>40||IMP_TAIL_BAD.test(t))return null;
-  if(/^第[0-9０-９零〇一二两三四五六七八九十百千万亿廿卅]+[章节回]/.test(t))return t.replace(/[:：]$/,'');
-  if(/^Chapter[ 　]*[0-9０-９]+(?=$|[ 　:：.\-—·])/i.test(t))return t.replace(/[:：]$/,'');
+  if(/^第[0-9０-９零〇一二两三四五六七八九十百千万亿廿卅]+[章节回]/.test(t))return{title:t.replace(/[:：]$/,''),bare:false};
+  if(/^Chapter[ 　]*[0-9０-９]+(?=$|[ 　:：.\-—·])/i.test(t))return{title:t.replace(/[:：]$/,''),bare:false};
   /* 序章类词头须有边界（M2）：「尾声渐近」「后记里…」「前言，…」「尾声bgm…」是常用短语，独占一行也不切；
      边界不含逗号、字母只认大写（附录A）；番外篇须再遇边界（「番外篇他的故事」不切） */
-  if(/^(?:序章|序言|前言|楔子|引子|尾声|终章|后记|附录)(?=$|[ 　:：、.\-—·0-9０-９A-Z])|^番外(?:篇)?(?=$|[ 　:：、.\-—·0-9０-９A-Z])/.test(t))return t.replace(/[:：]$/,'');
+  if(/^(?:序章|序言|前言|楔子|引子|尾声|终章|后记|附录)(?=$|[ 　:：、.\-—·0-9０-９A-Z])|^番外(?:篇)?(?=$|[ 　:：、.\-—·0-9０-９A-Z])/.test(t))return{title:t.replace(/[:：]$/,''),bare:false};
+  if(noIndent){
+    const m=new RegExp('^(['+IMP_NUM_CHARS+']{1,6})(?=[\\u4e00-\\u9fff（])').exec(t);
+    if(m)return{title:t,bare:true,num:m[1]};
+  }
   return null;
+}
+/**
+ * @param {string} line
+ * @returns {string|null}
+ */
+function impChapterTitle(line){const r=impChapterTitleInfo(line);return r?r.title:null}
+/**
+ * 从已识别章题解析章号（第N章/Chapter N）；解析不出返回 null。
+ * @param {string} title
+ * @returns {number|null}
+ */
+function impChapterNumber(title){
+  const t=String(title==null?'':title);
+  const m=/^第\s*([0-9０-９零〇一二两三四五六七八九十百千万亿廿卅]+)\s*[章节回]/.exec(t);
+  if(m)return impNumValue(m[1]);
+  const c=/^Chapter[ 　]*([0-9０-９]+)/i.exec(t);
+  return c?impNumValue(c[1]):null;
+}
+/**
+ * 章题去掉编号前缀后的题名（题名连续性判据）。
+ * @param {string} title
+ * @returns {string}
+ */
+function impChapterTitleRest(title){
+  const t=String(title==null?'':title);
+  const m=/^第\s*[0-9０-９零〇一二两三四五六七八九十百千万亿廿卅]+\s*[章节回]/.exec(t);
+  if(m)return t.slice(m[0].length);
+  const c=/^Chapter[ 　]*[0-9０-９]+/i.exec(t);
+  return c?t.slice(c[0].length):t;
+}
+/**
+ * 裸编号题的全部可行切分（数字前缀长度 1..6）。
+ * @param {string} text
+ * @returns {{no:string,value:number,title:string}[]}
+ */
+function impNumSplits(text){
+  const t=String(text==null?'':text);
+  const m=new RegExp('^(['+IMP_NUM_CHARS+']{1,6})(?=[\\u4e00-\\u9fff（])').exec(t);
+  if(!m)return[];
+  const run=m[1],out=[];
+  for(let k=1;k<=run.length;k++){
+    const v=impNumValue(run.slice(0,k));
+    if(v!=null)out.push({no:run.slice(0,k),value:v,title:t.slice(k)});
+  }
+  return out;
+}
+/**
+ * 相邻章号转移代价：+1 最优；跳号/回退软惩罚（可重同步，不是硬门）；题名同系列加分。
+ * @param {number|null} prev
+ * @param {number|null} cur
+ * @param {string} prevTitle
+ * @param {string} curTitle
+ * @returns {number}
+ */
+function impSeqCost(prev,cur,prevTitle,curTitle){
+  let c=0;
+  if(prev!=null&&cur!=null){
+    const d=cur-prev;
+    if(d===1)c=0;
+    else if(d>1)c=6+Math.min(24,Math.log2(d)*2);
+    else c=10+Math.min(30,Math.log2(1-d)*2.5);
+  }
+  const n=Math.min(8,String(prevTitle||'').length,String(curTitle||'').length);
+  let l=0;while(l<n&&prevTitle[l]===curTitle[l])l++;
+  return c-Math.min(6,l)*0.9;
+}
+/**
+ * 为一个 act 内的章事件选定裸编号切分（DP：全程序列代价最小）。
+ * @param {any[]} seq
+ * @returns {void}
+ */
+function impSeqResolve(seq){
+  if(!seq||!seq.length)return;
+  const layers=seq.map(/** @param {any} ev @returns {any[]} */ ev=>{
+    if(ev.t==='bare'){
+      const sp=impNumSplits(ev.title);
+      return sp.length?sp:[{no:'',value:null,title:ev.title}];
+    }
+    return[{no:'',value:impChapterNumber(ev.title),title:impChapterTitleRest(ev.title)}];
+  });
+  const n=layers.length,dp=[],back=[];
+  for(let i=0;i<n;i++){
+    const opts=layers[i],row=new Array(opts.length).fill(Infinity),bp=new Array(opts.length).fill(-1);
+    if(i===0){for(let j=0;j<opts.length;j++)row[j]=0.01*String(opts[j].no||'').length}
+    else{
+      const po=layers[i-1],pr=dp[i-1];
+      for(let j=0;j<opts.length;j++)for(let q=0;q<po.length;q++){
+        if(!Number.isFinite(pr[q]))continue;
+        const c=pr[q]+impSeqCost(po[q].value,opts[j].value,po[q].title,opts[j].title)+0.01*String(opts[j].no||'').length;
+        if(c<row[j]){row[j]=c;bp[j]=q}
+      }
+    }
+    dp.push(row);back.push(bp);
+  }
+  let j=0;
+  for(let q=1;q<dp[n-1].length;q++)if(dp[n-1][q]<dp[n-1][j])j=q;
+  const pick=new Array(n);
+  for(let i=n-1;i>=0;i--){pick[i]=layers[i][j];j=back[i][j]}
+  for(let i=0;i<n;i++){
+    const ev=seq[i],p=pick[i];
+    ev.num=p.value;ev.rest=p.title;
+    if(ev.t==='bare')ev.no=p.no;
+  }
+}
+/**
+ * 章号序列异常（跳号/回退）清单，用于导入前核对警告。
+ * @param {any[]} seq
+ * @returns {{from:number,to:number,title:string}[]}
+ */
+function impSeqAnomalies(seq){
+  const out=[];
+  /** @type {number|null} */
+  let prev=null;
+  for(const ev of seq||[]){
+    const v=typeof ev.num==='number'?ev.num:null;
+    if(v!=null&&prev!=null&&v!==prev+1)out.push({from:prev,to:v,title:ev.title});
+    if(v!=null)prev=v;
+  }
+  return out;
 }
 function impActTitle(line){
   const t=String(line||'').trim().replace(/^#{1,6}[ 　\t]+/,'').trim();
@@ -23046,6 +23337,11 @@ function importSplitScenes(lines){
   }
   return mapped;
 }
+/**
+ * 导入文本切分（事件化）：标题行识别＋裸编号序列上下文校验。
+ * @param {string} text
+ * @returns {any}
+ */
 function splitImportText(text){
   const raw=String(text||'').replace(/\r\n?/g,'\n');
   const lines=raw.split('\n');
@@ -23054,13 +23350,29 @@ function splitImportText(text){
   if(bad>0)warns.push('检测到 '+bad+' 个替换字符（U+FFFD）：解码可能失败或原文已乱码，请在下方核对文本是否可读');
   /* 事件化：先判行性质，再组装结构（act 行/章行/普通行互斥，act 优先） */
   const evs=lines.map(l=>{const at=impActTitle(l);if(at)return{t:'act',title:at};
-    const ct=impChapterTitle(l);if(ct)return{t:'ch',title:ct};return{t:'line',text:l}});
+    const ci=impChapterTitleInfo(l);if(ci)return ci.bare?{t:'bare',title:ci.title}:{t:'ch',title:ci.title};return{t:'line',text:l}});
+  /* 序列上下文校验（票01）：按 act 分组；裸编号的数字前缀切分在这里定，跳号/错号可重同步并出警告。
+     不能只认「上一章+1」硬门——源书既有 266→237 的错号，也有题名自身以数字开头的 21＋《一命一诺》。 */
+  /** @type {any[]} */
+  const seqs=[];
+  /** @type {any[]|null} */
+  let curSeq=null;
+  for(const ev of evs){
+    if(ev.t==='act'){curSeq=[];seqs.push(curSeq);continue}
+    if(ev.t==='ch'||ev.t==='bare'){if(!curSeq){curSeq=[];seqs.push(curSeq)}curSeq.push(ev)}
+  }
+  const anomalies=[];
+  for(const seq of seqs)if(seq.length){impSeqResolve(seq);anomalies.push(...impSeqAnomalies(seq))}
+  if(anomalies.length){
+    const samples=anomalies.slice(0,8).map(a=>a.from+'→'+a.to).join('、');
+    warns.push('章号序列异常 '+anomalies.length+' 处（'+samples+(anomalies.length>8?'…':'')+'）：已按标题行重同步，请核对切分结果');
+  }
   const root={_pre:[],acts:[]};
   let act=null,ch=null;
   const getAct=()=>{if(!act){act={title:'',_pre:[],chapters:[]};root.acts.push(act)}return act};
   for(const ev of evs){
     if(ev.t==='act'){act={title:ev.title,_pre:[],chapters:[]};root.acts.push(act);ch=null}
-    else if(ev.t==='ch'){ch={title:ev.title,_lines:[]};getAct().chapters.push(ch)}
+    else if(ev.t==='ch'||ev.t==='bare'){ch={title:ev.title,_lines:[]};getAct().chapters.push(ch)}
     else (ch?ch._lines:(act?act._pre:root._pre)).push(ev.text);
   }
   const mkCh=(title,ls)=>({title,scenes:importSplitScenes(ls)});
@@ -23219,8 +23531,8 @@ function charShapeItem(it){
   };
 }
 /* 导入体验票07：五类一次提取。世界设定的分类名是「概念」，显示名是「世界设定」。
-   同名键＝类型 id + charNorm，跨类型同名不并。meta.types 缺省时只强制 characters 为数组（旧仿真）；
-   给出类型时，勾选键缺或非数组整段拒收，未勾选键忽略。 */
+   同名键＝类型 id + charNorm，跨类型同名不并。票05：五域键 characters/locations/items/lore/subplots
+   必须全部存在且为数组（提示词契约）；未勾选类型忽略内容（契约要求空数组），缺键或非数组整段拒收。 */
 const CHAR_EXTRACT_DOMAINS=[
   {id:'character',key:'characters',cn:'角色',cat:'角色',evidence:'quote'},
   {id:'location',key:'locations',cn:'地点',cat:'地点',evidence:'quote'},
@@ -23254,9 +23566,42 @@ function charStampList(entries,types){
   if(!want||!want.size)return list;
   return list.filter(e=>want.has(charEntryType(e)));
 }
-/* 候选构建：形状校验（BG-030①口径：根/域形状不对整段拒收计 badRoot，条目逐字段拷贝）→ 证据硬校验 →
-   跨段同类型同名互补合并（先到先得：描述只补空、别名并集、引文封顶 EXT_QUOTE_CAP）→
-   对既有名册按同类型解析合并目标；fillKeys 只是展示用（作者内容优先在合并端 apply 时对当时快照重算）。 */
+/**
+ * 在所在段内定位逐字引文：普通逐字命中不要求唯一（取首次出现）；仅弯/直引号一对一归一兜底
+ * 必须唯一定位。归一只映射弯/直引号，不扩展到其他标点或空白；歧义返回 null（调用方丢弃）。
+ * @param {string} seg
+ * @param {string} quote
+ * @returns {{start:number,end:number,text:string,mode:string}|null}
+ */
+function evLocateEvidence(seg,quote){
+  const s=String(seg==null?'':seg),q=String(quote==null?'':quote);
+  if(!q.trim())return null;
+  const at=s.indexOf(q);
+  if(at>=0)return{start:at,end:at+q.length,text:s.slice(at,at+q.length),mode:'exact'};
+  const norm=/** @param {string} ch @returns {string} */ ch=>ch==='“'||ch==='”'?'"':(ch==='‘'||ch==='’'?"'":ch);
+  let nq='',ns='';
+  for(const ch of q)nq+=norm(ch);
+  for(const ch of s)ns+=norm(ch);
+  if(nq===q&&ns===s)return null;   // 无引号形态差异：逐字未命中即不命中
+  let first=-1,count=0;
+  for(let i=ns.indexOf(nq);i>=0;i=ns.indexOf(nq,i+1)){
+    if(first<0)first=i;
+    if(++count>1)break;
+  }
+  if(count!==1)return null;   // 0=不命中；>1=歧义，丢弃不任取
+  return{start:first,end:first+nq.length,text:s.slice(first,first+nq.length),mode:'normalized'};
+}
+/**
+ * 候选构建：形状校验（BG-030①口径：根/域形状不对整段拒收计 badRoot，条目逐字段拷贝）→ 证据硬校验 →
+ * 跨段同类型同名互补合并（先到先得：描述只补空、别名并集、引文封顶 EXT_QUOTE_CAP）→
+ * 对既有名册按同类型解析合并目标；fillKeys 只是展示用（作者内容优先在合并端 apply 时对当时快照重算）。
+ * 证据按所在段定位（meta.chunkTexts[i]）；落库一律存原文切片。
+ * @param {any[]} values
+ * @param {string} srcText
+ * @param {any[]} existing
+ * @param {any} meta
+ * @returns {any}
+ */
 function buildCharCandidates(values,srcText,existing,meta){
   meta=meta||{};
   const dropped={badRoot:0,badShape:0,evidence:0,mergedAway:0};
@@ -23312,29 +23657,22 @@ function buildCharCandidates(values,srcText,existing,meta){
     const val=v&&v.value;
     const bad=()=>{dropped.badRoot++;if(v&&v.i!=null)chunkFails.push(v.i)};
     if(!val||typeof val!=='object'||Array.isArray(val)){bad();continue}
+    /* 证据定位范围＝本段（chunkTexts[v.i]）；调用方未传段文本时退回整份材料（旧调用/仿真兼容）。 */
+    const segText=(meta&&Array.isArray(meta.chunkTexts)&&v&&meta.chunkTexts[v.i]!=null)?String(meta.chunkTexts[v.i]):String(srcText);
     const domains=[];
     let rootOk=true;
-    if(wanted){
-      for(const d of CHAR_EXTRACT_DOMAINS){
-        if(!wanted.includes(d.id))continue;
-        if(!Array.isArray(val[d.key])){rootOk=false;break}
-        domains.push(d);
-      }
-    }else if(!Array.isArray(val.characters))rootOk=false;
-    else{
-      domains.push(CHAR_EXTRACT_DOMAINS[0]);
-      for(const d of CHAR_EXTRACT_DOMAINS){
-        if(d.id==='character'||!Object.hasOwn(val,d.key))continue;
-        if(!Array.isArray(val[d.key])){rootOk=false;break}
-        domains.push(d);
-      }
+    for(const d of CHAR_EXTRACT_DOMAINS){
+      if(!Array.isArray(val[d.key])){rootOk=false;break}   // 票05：五键缺一/非数组即整段拒收
+      if(!wanted||wanted.includes(d.id))domains.push(d);
     }
     if(!rootOk){bad();continue}
     for(const d of domains){
       for(const raw of val[d.key]){
         const it=charShapeItem(raw);
         if(!it){dropped.badShape++;continue}
-        if(!it.quote.trim()||!String(srcText).includes(it.quote)){dropped.evidence++;continue}
+        const ev=evLocateEvidence(segText,it.quote);
+        if(!ev){dropped.evidence++;continue}
+        const quote=ev.text;   // 落库/下游一律原文切片（弯/直归一命中也存原文形态）
         const keys=[it.name,...it.aliases].map(nm=>tk(d.id,nm)).filter(k=>!k.endsWith('\0'));
         let hit=null;
         for(const k of keys){
@@ -23347,12 +23685,12 @@ function buildCharCandidates(values,srcText,existing,meta){
           if(it.name!==hit.name&&!hit.aliases.includes(it.name))hit.aliases.push(it.name);
           for(const a of it.aliases)if(a!==hit.name&&!hit.aliases.includes(a))hit.aliases.push(a);
           if(!hit.description)hit.description=it.description;
-          if(hit.quotes.length<EXT_QUOTE_CAP&&!hit.quotes.includes(it.quote))hit.quotes.push(it.quote);
+          if(hit.quotes.length<EXT_QUOTE_CAP&&!hit.quotes.includes(quote))hit.quotes.push(quote);
           bindKeys(hit,keys);
           dropped.mergedAway++;
           continue;
         }
-        const item={name:it.name,aliases:it.aliases.slice(),description:it.description,quotes:[it.quote],op:'create',targetId:null,targetName:'',fillKeys:[],type:d.id,typeCn:d.cn,category:d.cat,evidence:d.evidence};
+        const item={name:it.name,aliases:it.aliases.slice(),description:it.description,quotes:[quote],op:'create',targetId:null,targetName:'',fillKeys:[],type:d.id,typeCn:d.cn,category:d.cat,evidence:d.evidence};
         bindKeys(item,keys);
         items.push(item);
       }
@@ -23852,7 +24190,9 @@ async function aiCharExtractRun(){
       return;
     }
     el.textContent='候选整理中…';
-    const cand=buildCharCandidates(values,src.text,bookEntriesOf(nid),{types:typeIds,sourceLabel:src.label,params:{promptId:p.id,model:p.model||st.aiModel,temp:tempEff,maxTokens:mtEff||null,chunks:plan.chunks.length,doneChunks:doneN,stoppedEarly:!!partial,sampled:plan.sampled}});   // S16：合并目标只认本书名册（共享条目不做合并目标、不被提取改写）
+    const chunkTexts=[];
+    for(const c of plan.chunks)chunkTexts[c.i]=c.text;   // 证据按所在段定位：段外文本不算命中（票04）
+    const cand=buildCharCandidates(values,src.text,bookEntriesOf(nid),{types:typeIds,sourceLabel:src.label,chunkTexts,params:{promptId:p.id,model:p.model||st.aiModel,temp:tempEff,maxTokens:mtEff||null,chunks:plan.chunks.length,doneChunks:doneN,stoppedEarly:!!partial,sampled:plan.sampled}});   // S16：合并目标只认本书名册（共享条目不做合并目标、不被提取改写）
     cand.novelId=nid;
     cand.types=typeIds.slice();
     cand.sourceText=src.text;
