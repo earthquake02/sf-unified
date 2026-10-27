@@ -17396,7 +17396,7 @@ function vGraph(){
   return `<div class="page" style="max-width:none"><div class="graph-head"><h1 class="pt">关系图谱 · ${esc(n.title)}</h1>
   <div class="graph-scene-pick"><select id="graphSceneSel" data-act="graph-scene" aria-label="图谱${unitLabel()}" title="选择${unitLabel()}后可显示该${unitLabel()}的同${unitLabel()}共现">${graphSceneOptionsHTML(nid,gSid||'')}</select>
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
-  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。支持滚轮缩放，拖拽背景，挪动节点；点击节点可编辑条目。</p>
+  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。支持滚轮缩放，左键拖拽背景或右键拖拽任意位置平移画面，左键挪动节点；点击节点可编辑条目。</p>
   ${entries.length?`<div class="graph-shell"><div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
@@ -17502,11 +17502,12 @@ function bindGraph(){
 
   wrap.addEventListener('selectstart',e=>e.preventDefault());
   wrap.addEventListener('pointerdown',e=>{
-    if(e.button!=null&&e.button!==0)return;
+    const button=(/** @type {PointerEvent} */(e)).button;
+    if(button!==0&&button!==2)return;
     if(e.target.closest&&e.target.closest('.graph-tools'))return;
     if(e.cancelable)e.preventDefault();
     try{const sel=window.getSelection();if(sel&&sel.removeAllRanges)sel.removeAllRanges()}catch(_e){}
-    const node=e.target.closest&&e.target.closest('.graph-node');
+    const node=button===2?null:(e.target.closest&&e.target.closest('.graph-node'));
     moved=false;
     if(node){
       mode='node';
