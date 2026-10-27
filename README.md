@@ -27,3 +27,7 @@ node tools/release_rust.mjs
 | `release/` | 构建产物（不入库） |
 
 更多：[AGENTS.md](AGENTS.md)（协作规则）、[CONTEXT.md](CONTEXT.md)（术语表）。
+
+## 许可证
+
+[MIT](LICENSE)

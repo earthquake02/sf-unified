@@ -4,6 +4,7 @@
 !/.gitignore
 !/.gitattributes
 !/*.md
+!/LICENSE
 !/docs/
 !/docs/**
 !/app/
