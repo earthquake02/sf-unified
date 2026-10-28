@@ -114,6 +114,10 @@ body{background:var(--bg); color:var(--tx); font-family:var(--ui-font); font-siz
 .res-cdx-new{flex-shrink:0; margin-left:auto; background:none; border:0; padding:0 4px; color:var(--tx3); font:inherit; font-size:17px; line-height:1.1; cursor:pointer; user-select:none}   /* 体验修补票13：组头新建钮（＋ 靠右与折叠钮分置两端，恒可达；打开与「＋ 新条目」同一完整草稿并预选本组类型，点击不触发折叠） */
 .res-cdx-new:hover{color:var(--ac2)}
 .res-cdx-new:focus-visible{outline:2px solid var(--ac2); outline-offset:-2px}
+.res-cdx-mk{flex:0 0 auto; width:15px; height:15px; margin-right:2px; border:1.5px solid var(--tx3); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; line-height:1; color:transparent; background:var(--bg2); user-select:none}   /* codex-graph-ux票01：批量管理态行首勾选框（仅管理态渲染，默认浏览态零常驻勾选；票02 在其上叠底浮条） */
+.res-cdx-row.checked{background:var(--bg3)}
+.res-cdx-row.checked .res-cdx-mk{background:var(--ac); border-color:var(--ac); color:#fff}
+.res-cdx-row.checked:hover{background:var(--bg3)}
 @media(max-width:760px){#resCol{display:none}}   /* 窄屏不占位；票27 起经写作页单槽临时覆盖查看（规则见「窄屏单槽临时覆盖」段） */
 #main{flex:1; min-height:0; overflow:auto; position:relative}
 .page{padding:22px 28px; max-width:1100px; margin:0 auto}
@@ -11812,6 +11816,33 @@ function ivBindDrag(){
 }
 
 
+/* codex-graph-ux 票01：左栏批量管理态——纯会话瞬态（不入 UI_KEY、零 save、零作品写入）。
+   进场＝行右键「批量管理」→ cdxManage=true 且勾上该行；管理态下每行渲染行首勾选框、点行＝勾/取消
+   （底浮条、完成/取消退出、切走清空归票02）；默认浏览态 cdxManage=false → 无勾选框、点行＝打开编辑（原路径不动）。 */
+/** 管理态是否开启（S.ui.cdxManage 会话瞬态，坏值当关）。
+ * @returns {boolean} */
+function cdxManageOn(){return !!(S&&S.ui&&S.ui.cdxManage)}
+/** 当前已勾选条目 id 列表（非管理态恒空；坏形状回空数组）。
+ * @returns {string[]} */
+function cdxSelList(){
+  if(!cdxManageOn())return [];
+  const v=S.ui.cdxSel;
+  return Array.isArray(v)?v.filter((/** @type {any} */ x)=>typeof x==='string'&&x):[];
+}
+/** 某条目是否已勾选。
+ * @param {string} id @returns {boolean} */
+function cdxSelHas(id){return cdxSelList().indexOf(id)>=0}
+/** 进场：开管理态并勾上该行（右键菜单「批量管理」唯一入口）。
+ * @param {string} id */
+function cdxManageEnter(id){if(!S.ui)S.ui={};S.ui.cdxManage=true;S.ui.cdxSel=id?[String(id)]:[]}
+/** 管理态点行：勾/取消该条（浏览态调用无效）。
+ * @param {string} id */
+function cdxManageToggle(id){
+  if(!cdxManageOn()||!id)return;
+  const cur=cdxSelList(),i=cur.indexOf(String(id));
+  if(i>=0)cur.splice(i,1);else cur.push(String(id));
+  S.ui.cdxSel=cur;
+}
 /** 资源栏设定集：一轮构建关系统计与过滤上下文；未启用 inScene 时不计算场景提及。 */
 function resCodexHTML(n){
   const graph=`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="res-graph" title="在中央宽视图查看本书关系图谱（实线箭头＝归属／下属，虚线＝平级关联）">${uiIc('graph')}关系图谱</button></div>`;
@@ -11854,7 +11885,8 @@ function resCodexHTML(n){
       const tagBits=(Array.isArray(e.tags)?e.tags:[]).map(t=>String(t||'').trim()).filter(Boolean).slice(0,4);
       const tagsHtml=tagBits.map(t=>`<span class="tag">${esc(t)}</span>`).join('');
       const meta=(relTxt||tagsHtml)?`<span class="res-cdx-meta">${relTxt?`<span class="res-cdx-rel">${esc(relTxt)}</span>`:''}${tagsHtml}</span>`:'';
-      return `<div class="res-item res-cdx"${hid?' hidden':''}><button type="button" class="res-cdx-row" data-act="res-cdx-open" data-id="${esc(e.id)}" title="拖出卡片可开访谈／词条对话"><span class="res-cdx-thumb" aria-hidden="true">${entryImageThumbHTML(e)}</span><span class="res-cdx-main"><span class="rt">${esc(e.name||'未命名')}</span>${meta}</span><span class="res-cdx-syms res-cdx-ai" title="${esc(aiTt)}" aria-label="${esc(aiTt)}">${aiMk}</span></button>${mat?`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="char-ext-mat" data-id="${esc(e.id)}" title="用 AI 从本材料全文提取设定（预览确认后才写入设定集）">${uiIc('codex')}提取</button></div>`:''}</div>`;
+      const mg=cdxManageOn(),ck=mg&&cdxSelHas(e.id);   /* 票01：管理态→行首勾选框＋点行＝勾/取消；浏览态→原打开编辑路径不动 */
+      return `<div class="res-item res-cdx"${hid?' hidden':''}><button type="button" class="res-cdx-row${ck?' checked':''}" data-act="${mg?'cdx-mg-toggle':'res-cdx-open'}" data-id="${esc(e.id)}" title="${mg?'勾选／取消本条（批量管理态）':'拖出卡片可开访谈／词条对话；右键：对话／高亮／批量管理／删除'}">${mg?'<span class="res-cdx-mk" aria-hidden="true">✓</span>':''}<span class="res-cdx-thumb" aria-hidden="true">${entryImageThumbHTML(e)}</span><span class="res-cdx-main"><span class="rt">${esc(e.name||'未命名')}</span>${meta}</span><span class="res-cdx-syms res-cdx-ai" title="${esc(aiTt)}" aria-label="${esc(aiTt)}">${aiMk}</span></button>${mat?`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="char-ext-mat" data-id="${esc(e.id)}" title="用 AI 从本材料全文提取设定（预览确认后才写入设定集）">${uiIc('codex')}提取</button></div>`:''}</div>`;
     }).join('')+`</div>`;
   }).join('');
   const hits=q?list.filter(e=>resCdxHit(e,q)):list;
@@ -13767,6 +13799,33 @@ document.addEventListener('click',e=>{   // 点空白收菜单（菜单项与两
   if(!document.getElementById('popMenu'))return;
   if(e.target.closest&&(e.target.closest('#popMenu')||e.target.closest('[data-act="node-menu"],[data-act="hot-menu"]')))return;
   killPopMenu();
+});
+/* codex-graph-ux 票01：左栏设定行右键四键＝对话／高亮／批量管理／删除（popMenu 壳＋事件总线，点击仍由下方大 switch 收口）。
+   对话＝拖卡开聊同路径 ivOpenEntry（角色→访谈、非角色→设定助理，函数内部分流）；高亮＝既有提及页签路由
+   openCodexEditModal(id,{tab:'mentions'})（与 codex-rel-open→relations 同款直达页签，勿新造高亮系统）；
+   批量管理＝进场并勾上该行（底浮条/退出语义归票02）；删除＝与 codex-del／codex-del2 同路径二确。
+   全局右键屏蔽（上方 capture preventDefault）不拦本监听：preventDefault 不阻断传播，事件照常冒泡到 document。 */
+document.addEventListener('contextmenu',e=>{
+  const tR=/** @type {any} */(e.target);
+  const row=tR&&tR.closest&&tR.closest('.res-cdx-row');
+  if(!row)return;
+  e.preventDefault();
+  const id=row.getAttribute('data-id')||'';
+  const n=curNovel();if(!n)return;
+  const ent=(S.data&&S.data.codexEntries||[]).find((/** @type {any} */ x)=>x&&x.id===id&&x.novelId===n.id);
+  if(!ent)return;   // 已删／他书行不出菜单（菜单点击侧再各自复核一次）
+  const pi=(/** @type {string} */ act,/** @type {string} */ ic,/** @type {string} */ lab,/** @type {string} */ tip,/** @type {boolean|string} */ danger='')=>`<div class="pi${danger?' danger':''}" data-act="${act}" data-id="${esc(id)}" title="${esc(tip)}"><span class="ic">${ic}</span><span class="lab">${lab}</span></div>`;
+  openPopMenu(row,[
+    pi('cdx-row-talk','💬','对话',ivIsChar(ent)?'与该角色开访谈（拖卡同路径）':'与这条设定开助理对话（拖卡同路径）'),
+    pi('cdx-row-hl','◆','高亮','查看该条目在正文中的提及（哪里出现、几次，可跳写作页）'),
+    pi('cdx-row-manage','☑','批量管理','进入批量管理态并勾上本条（删除／改色／打标签见底浮条）'),
+    pi('cdx-row-del','✕','删除','二次确认后删除（与设定卡删除同路径）','danger')
+  ]);
+  const m=document.getElementById('popMenu');
+  if(m){   // 锚点定位改为光标处（与行内按钮不同款：右键菜单跟指针走）
+    m.style.left=Math.max(8,Math.min(e.clientX,innerWidth-m.offsetWidth-8))+'px';
+    m.style.top=Math.max(8,Math.min(e.clientY,innerHeight-m.offsetHeight-8))+'px';
+  }
 });
 function orgMenuItems(t,id,applicableOnly=false){   // two-col org menu; applicableOnly hides dead moves
   const pi=(cls,attrs,ic,label,hint)=>{const tip=hint?' title="'+String(hint).replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'"':'';return `<div class="pi${cls?' '+cls:''}"${attrs}${tip}>${ic?`<span class="ic">${ic}</span>`:''}<span class="lab">${label}</span></div>`;};
@@ -22685,6 +22744,18 @@ document.addEventListener('click',async e=>{
   case'codex-show-more':{S.ui.cdxShown=Math.max(CDX_PAGE_ROWS,(S.ui.cdxShown|0)||CDX_PAGE_ROWS)+CDX_PAGE_ROWS;render();break}
   case'codex-edit':openCodexEditModal(id);break;   // 票38：设定集表格/图谱节点/设定面板搜索结果共用同一编辑入口
   case'res-cdx-open':{if(Date.now()-(S.ui._ivJustDrag||0)<500)break;openCodexEditModal(id);break}   // 票38：设定面板搜索结果→打开对应条目（已删/他书/共享目标＝如实提示、零写入）
+  /* codex-graph-ux 票01：左栏行右键四键。对话＝ivOpenEntry 拖卡同路径（mode 由角色/非角色自动分流）；
+     高亮＝既有提及页签路由（纯查看，零写入）；批量管理＝进场勾上该行；删除＝与 codex-del 完全同路径（二确→codex-del2）。 */
+  case'cdx-row-talk':{
+    const entT=(S.data.codexEntries||[]).find((/** @type {any} */ x)=>x&&x.id===id&&x.novelId===nid);
+    if(!entT){toast('设定条目不存在');break}
+    ivOpenEntry(entT,Math.round(window.innerWidth*0.55),Math.round(window.innerHeight*0.2),null);
+    break}
+  case'cdx-row-hl':openCodexEditModal(id,{tab:'mentions'});break
+  case'cdx-row-manage':{if(!id)break;cdxManageEnter(id);renderResPanel();break}
+  case'cdx-mg-toggle':{if(!cdxManageOn()||!id)break;cdxManageToggle(id);renderResPanel();break}
+  case'cdx-row-del':{const xD=S.data.codexEntries.find((/** @type {any} */ y)=>y.id===id&&y.novelId===nid&&!isSharedEntry(y));if(!xD){toast('条目不存在');break}
+    confirmModal('删除条目','删除后不可恢复。','删除','codex-del2',`data-id="${id}"`);break}
   case'res-cdx-fold':cdxFoldToggle(el.dataset.type);break;   // 票10：组头折叠——只切本组条目可见性，零 save、零整页重渲染、不打更新时间
   case'res-snip-fold':snipFoldToggle(el.dataset.layer);break;   // 片段深化01：片段两层组头折叠——同设定组口径（零 save、零整页重渲染）
   case'res-cdx-new':{   // 票13／去分类：组头「＋」——完整草稿，类型预选本组固定 type；不再预填分类
