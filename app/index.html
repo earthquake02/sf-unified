@@ -118,6 +118,8 @@ body{background:var(--bg); color:var(--tx); font-family:var(--ui-font); font-siz
 .res-cdx-row.checked{background:var(--bg3)}
 .res-cdx-row.checked .res-cdx-mk{background:var(--ac); border-color:var(--ac); color:#fff}
 .res-cdx-row.checked:hover{background:var(--bg3)}
+.cdx-mg-bar{position:sticky; bottom:0; z-index:6; display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:10px; padding:8px 10px; background:var(--bg2); border:1px solid var(--line); border-radius:10px; box-shadow:0 -4px 18px rgba(0,0,0,.28)}   /* codex-graph-ux票02：批量管理底浮条——钉在资源栏滚动区底部，勾选≥1 才渲染（票03 在删除/完成之间加改色与标签键） */
+.cdx-mg-n{font-size:12.5px; color:var(--tx2); white-space:nowrap; margin-right:auto}
 @media(max-width:760px){#resCol{display:none}}   /* 窄屏不占位；票27 起经写作页单槽临时覆盖查看（规则见「窄屏单槽临时覆盖」段） */
 #main{flex:1; min-height:0; overflow:auto; position:relative}
 .page{padding:22px 28px; max-width:1100px; margin:0 auto}
@@ -11018,6 +11020,7 @@ function resMaxW(){return Math.max(RES_W_MIN,Math.min(RES_W_MAX,window.innerWidt
 function resW(){const w=Number(S.ui.resW);return Number.isFinite(w)?Math.max(RES_W_MIN,Math.min(resMaxW(),Math.round(w))):RES_W_MIN}
 function resPick(v){
   if(!curNovel()||!resLegal(v))return;
+  if(v!=='codex'&&cdxManageOn())cdxManageExit();   /* codex-graph-ux票02：切走设定栏＝退出管理态并清空勾选（后续 render 自行刷新，不额外重渲染） */
   if(v==='snippets')snipInsFreeze();   // 票24：打开/切到片段面板时冻结正文插入锚点（先于 render 换 DOM；再次点当前项＝就地重选锚点）
   if(isNarrowView()){   // 票27：窄屏覆盖槽内切换资源＝只换本机选项（不改宽屏 resNarrow/宽度记忆，不整页重渲染）
     S.ui.res=v;renderRes(curNovel());   // 当前项重复点也重渲染：面板被 render 清空后仍能就地恢复，不出现「高亮入口是死键」
@@ -11829,9 +11832,21 @@ function cdxSelList(){
   const v=S.ui.cdxSel;
   return Array.isArray(v)?v.filter((/** @type {any} */ x)=>typeof x==='string'&&x):[];
 }
-/** 某条目是否已勾选。
+/** 已勾选中仍存在于本书的 id（读时过滤已删/他书/换书残留——勾选数组不回写，读侧恒一致）。
+ * @returns {string[]} */
+function cdxSelLive(){
+  const ids=cdxSelList();
+  const n=curNovel();
+  if(!n)return ids;
+  const live=new Set(entriesOf(n.id).map((/** @type {any} */ e)=>e&&e.id));
+  return ids.filter(i=>live.has(i));
+}
+/** 某条目是否已勾选（按存活口径）。
  * @param {string} id @returns {boolean} */
-function cdxSelHas(id){return cdxSelList().indexOf(id)>=0}
+function cdxSelHas(id){return cdxSelLive().indexOf(id)>=0}
+/** 退出管理态并清空勾选（不自带重渲染——调用侧按需 renderResPanel／整页 render）。
+ * 票02：完成按钮与切走设定栏共用。 */
+function cdxManageExit(){if(S&&S.ui){S.ui.cdxManage=false;S.ui.cdxSel=[]}}
 /** 进场：开管理态并勾上该行（右键菜单「批量管理」唯一入口）。
  * @param {string} id */
 function cdxManageEnter(id){if(!S.ui)S.ui={};S.ui.cdxManage=true;S.ui.cdxSel=id?[String(id)]:[]}
@@ -11846,6 +11861,7 @@ function cdxManageToggle(id){
 /** 资源栏设定集：一轮构建关系统计与过滤上下文；未启用 inScene 时不计算场景提及。 */
 function resCodexHTML(n){
   const graph=`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="res-graph" title="在中央宽视图查看本书关系图谱（实线箭头＝归属／下属，虚线＝平级关联）">${uiIc('graph')}关系图谱</button></div>`;
+  const selSet=cdxManageOn()?new Set(cdxSelLive()):null;   /* 票02：每轮渲染一次存活勾选集（行勾选与底浮条计数同源；已删/换书残留读时过滤） */
   let list=entriesOf(n.id);
   const relIdx=codexRelStatsOf(list);
   const fctx=cdxFilterContext();
@@ -11885,13 +11901,15 @@ function resCodexHTML(n){
       const tagBits=(Array.isArray(e.tags)?e.tags:[]).map(t=>String(t||'').trim()).filter(Boolean).slice(0,4);
       const tagsHtml=tagBits.map(t=>`<span class="tag">${esc(t)}</span>`).join('');
       const meta=(relTxt||tagsHtml)?`<span class="res-cdx-meta">${relTxt?`<span class="res-cdx-rel">${esc(relTxt)}</span>`:''}${tagsHtml}</span>`:'';
-      const mg=cdxManageOn(),ck=mg&&cdxSelHas(e.id);   /* 票01：管理态→行首勾选框＋点行＝勾/取消；浏览态→原打开编辑路径不动 */
-      return `<div class="res-item res-cdx"${hid?' hidden':''}><button type="button" class="res-cdx-row${ck?' checked':''}" data-act="${mg?'cdx-mg-toggle':'res-cdx-open'}" data-id="${esc(e.id)}" title="${mg?'勾选／取消本条（批量管理态）':'拖出卡片可开访谈／词条对话；右键：对话／高亮／批量管理／删除'}">${mg?'<span class="res-cdx-mk" aria-hidden="true">✓</span>':''}<span class="res-cdx-thumb" aria-hidden="true">${entryImageThumbHTML(e)}</span><span class="res-cdx-main"><span class="rt">${esc(e.name||'未命名')}</span>${meta}</span><span class="res-cdx-syms res-cdx-ai" title="${esc(aiTt)}" aria-label="${esc(aiTt)}">${aiMk}</span></button>${mat?`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="char-ext-mat" data-id="${esc(e.id)}" title="用 AI 从本材料全文提取设定（预览确认后才写入设定集）">${uiIc('codex')}提取</button></div>`:''}</div>`;
+      const ck=!!selSet&&selSet.has(e.id);   /* 票01/02：管理态→行首勾选框＋点行＝勾/取消；浏览态→原打开编辑路径不动 */
+      return `<div class="res-item res-cdx"${hid?' hidden':''}><button type="button" class="res-cdx-row${ck?' checked':''}" data-act="${selSet?'cdx-mg-toggle':'res-cdx-open'}" data-id="${esc(e.id)}" title="${selSet?'勾选／取消本条（批量管理态）':'拖出卡片可开访谈／词条对话；右键：对话／高亮／批量管理／删除'}">${selSet?'<span class="res-cdx-mk" aria-hidden="true">✓</span>':''}<span class="res-cdx-thumb" aria-hidden="true">${entryImageThumbHTML(e)}</span><span class="res-cdx-main"><span class="rt">${esc(e.name||'未命名')}</span>${meta}</span><span class="res-cdx-syms res-cdx-ai" title="${esc(aiTt)}" aria-label="${esc(aiTt)}">${aiMk}</span></button>${mat?`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="char-ext-mat" data-id="${esc(e.id)}" title="用 AI 从本材料全文提取设定（预览确认后才写入设定集）">${uiIc('codex')}提取</button></div>`:''}</div>`;
     }).join('')+`</div>`;
   }).join('');
   const hits=q?list.filter(e=>resCdxHit(e,q)):list;
   const noneShow=(q&&!hits.length)||(!q&&!list.length&&cdxFilterActive());
-  return graph+search+groups+`<div class="res-empty" id="rsnCdxNone"${noneShow?'':' hidden'}>没有匹配的设定条目</div>`;
+  const mgN=selSet?selSet.size:0;   /* 票02：勾选 ≥1 才出底浮条；归零（含读时过滤后归零）即无浮条，勾选数组随退出/清场归零 */
+  const mgBar=mgN?`<div class="cdx-mg-bar" role="toolbar" aria-label="批量管理"><span class="cdx-mg-n">已选 ${mgN} 条</span><button type="button" class="btn sm danger" data-act="cdx-mg-batch-del" title="二次确认（条数＋可展开名单）后删除，与单条删除同落盘路径">删除</button><button type="button" class="btn sm" data-act="cdx-mg-done" title="退出批量管理态并清空勾选">完成</button></div>`:'';
+  return graph+search+groups+mgBar+`<div class="res-empty" id="rsnCdxNone"${noneShow?'':' hidden'}>没有匹配的设定条目</div>`;
 }
 /* 片段面板（票22／决策票#05）：条目＝单行「有标题显标题，否则正文开头」＋次行创建日期（既定 UTC
    截断口径，缺记录「—」）；选中在该条目下方展开预览，提供「复制全文／编辑」——编辑为面板内表单，
@@ -22754,6 +22772,29 @@ document.addEventListener('click',async e=>{
   case'cdx-row-hl':openCodexEditModal(id,{tab:'mentions'});break
   case'cdx-row-manage':{if(!id)break;cdxManageEnter(id);renderResPanel();break}
   case'cdx-mg-toggle':{if(!cdxManageOn()||!id)break;cdxManageToggle(id);renderResPanel();break}
+  /* codex-graph-ux 票02：底浮条三键。批量删二确＝条数＋<details> 可展开名单；执行＝逐条走 codex-del2 同款清理
+     （滤行＋清规划关联＋清指向关系＋去图）后一次 save 落盘——与单卡删除同一持久化路径，不引入设定回收站；完成＝退出管理态清空勾选。 */
+  case'cdx-mg-batch-del':{
+    const idsB=cdxSelLive();
+    if(!idsB.length){toast('请先勾选要删除的条目');break}
+    const delsB=idsB.map(i=>S.data.codexEntries.find((/** @type {any} */ x)=>x&&x.id===i&&x.novelId===nid&&!isSharedEntry(x))).filter(Boolean);
+    if(!delsB.length){toast('所选条目不存在（可能已删除）');break}
+    openModal(`<h2>批量删除设定</h2><p style="color:var(--tx2);line-height:1.7">确定删除所选 <strong>${delsB.length}</strong> 条设定？删除后不可恢复。</p>
+      <details style="margin:6px 0 10px"><summary style="cursor:pointer;color:var(--tx2);font-size:13px">查看名单（${delsB.length} 条）</summary>
+      <div style="max-height:220px;overflow:auto;margin-top:6px;padding:2px 4px">${delsB.map((/** @type {any} */ d)=>`<div style="padding:2px 0;font-size:12.5px">· ${esc(d.name||'未命名')}　<span class="hint">${esc(codexTypeCn(d.type))}</span></div>`).join('')}</div></details>
+      <div class="foot"><button class="btn" onclick="closeModal()">取消</button><button class="btn danger" data-act="cdx-batch-del2">删除</button></div>`);
+    break}
+  case'cdx-batch-del2':{
+    if(roReason()){roToast();break}
+    const idsX=cdxSelLive();
+    const delsX=idsX.map(i=>S.data.codexEntries.find((/** @type {any} */ x)=>x&&x.id===i&&x.novelId===nid&&!isSharedEntry(x))).filter(Boolean);
+    if(!delsX.length){toast('所选条目不存在（可能已删除）');closeModal();break}
+    const idSetX=new Set(delsX.map((/** @type {any} */ d)=>d.id));
+    S.data.codexEntries=S.data.codexEntries.filter(x=>!(idSetX.has(x.id)&&x.novelId===nid&&!isSharedEntry(x)));
+    for(const d of delsX){scenePlanPurgeEntry(nid,d.id);codexRelPurgeId(nid,d.id);if(d.image)entryImageDrop(d.image)}   // 与 codex-del2 逐条同款清理
+    save();closeModal();cdxManageExit();render();toast('已删除 '+delsX.length+' 条设定');
+    break}
+  case'cdx-mg-done':{cdxManageExit();renderResPanel();break}
   case'cdx-row-del':{const xD=S.data.codexEntries.find((/** @type {any} */ y)=>y.id===id&&y.novelId===nid&&!isSharedEntry(y));if(!xD){toast('条目不存在');break}
     confirmModal('删除条目','删除后不可恢复。','删除','codex-del2',`data-id="${id}"`);break}
   case'res-cdx-fold':cdxFoldToggle(el.dataset.type);break;   // 票10：组头折叠——只切本组条目可见性，零 save、零整页重渲染、不打更新时间
