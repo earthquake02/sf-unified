@@ -605,6 +605,13 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-tools{position:absolute; right:12px; top:12px; z-index:3; display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:6px 10px; border-radius:8px; background:color-mix(in srgb,var(--bg2) 92%,transparent); border:1px solid var(--line); font-size:11.5px; color:var(--tx2); backdrop-filter:blur(4px); pointer-events:auto}
 .graph-tools label{display:inline-flex; align-items:center; gap:5px; cursor:pointer; user-select:none}
 .graph-tools input{width:auto; margin:0}
+.graph-search{width:170px; padding:4px 9px; font:inherit; font-size:12px; border:1px solid var(--line); border-radius:6px; background:var(--bg2); color:var(--tx)}   /* codex-graph-ux票04：图谱搜索（名称/别名片段）——命中高亮 .hit、非命中弱化 .dim */
+.graph-search:focus{outline:2px solid var(--ac2); outline-offset:-1px}
+.graph-wrap .graph-node, .graph-edges line{transition:opacity .15s}
+.graph-wrap .graph-node.hit .graph-ring{stroke:var(--ac2); stroke-width:3.2}
+.graph-wrap .graph-node.hit .graph-label{fill:var(--tx); font-weight:600}
+.graph-wrap .graph-node.dim{opacity:.26}
+.graph-edges line.dim{opacity:.12}
 .graph-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px}
 .graph-head .pt{margin:0;flex:0 1 auto}
 .graph-scene-pick{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;max-width:100%}
@@ -17706,7 +17713,7 @@ function vGraph(){
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
   <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。支持滚轮缩放，左键拖拽背景或右键拖拽任意位置平移画面，左键挪动节点；点击节点可编辑条目。</p>
   ${entries.length?`<div class="graph-shell"><div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
-  <div class="graph-tools"><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
+  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名" aria-label="搜索节点（名称／别名）" title="按名称／别名片段搜索：命中节点高亮、其余弱化；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
     <span class="hint"><span style="color:var(--ac)">→</span> 归属／下属 ${hierN} 条</span>
     <span class="hint"><span style="color:var(--ac2)">┆</span> 平级关联 ${linkN} 条</span>
@@ -17725,6 +17732,37 @@ function bindGraph(){
   const BH=Number(wrap.dataset.bh)||560;
   let scale=graphScaleOf(nid);
   const pos=graphLayoutMem(nid);
+  /* codex-graph-ux 票04：搜索高亮——只切 SVG 类名（.hit/.dim），不重算布局/坐标；
+     命中＝名称或别名含查询片段（大小写不敏感）；两端都非命中的连线一并弱化；
+     清空恢复。查询存 S.ui.graphQ（会话瞬态，重渲染后由本函数按输入框值就地恢复）。 */
+  const gSearch=/** @type {HTMLInputElement|null} */(document.getElementById('graphSearch'));
+  if(gSearch){
+    const applyQ=(/** @type {string} */ qs)=>{
+      S.ui.graphQ=qs;
+      const q=qs.trim().toLowerCase();
+      let hitIds=null;
+      if(q){
+        hitIds=new Set();
+        for(const e of entriesOf(nid)){
+          const hay=[e.name].concat(Array.isArray(e.aliases)?e.aliases:[]);
+          if(hay.some(v=>String(v==null?'':v).toLowerCase().includes(q)))hitIds.add(e.id);
+        }
+      }
+      svg.querySelectorAll('.graph-node').forEach(g=>{
+        const gid=g.getAttribute('data-id')||'';
+        g.classList.toggle('hit',!!(hitIds&&hitIds.has(gid)));
+        g.classList.toggle('dim',!!(hitIds&&!hitIds.has(gid)));
+      });
+      svg.querySelectorAll('.graph-edges line[data-a]').forEach(ln=>{
+        const lit=!hitIds||hitIds.has(ln.getAttribute('data-a')||'')||hitIds.has(ln.getAttribute('data-b')||'');
+        ln.classList.toggle('dim',!lit);
+      });
+      const stat=document.getElementById('graphSearchStat');
+      if(stat)stat.textContent=!q?'':(hitIds&&hitIds.size?('命中 '+hitIds.size+' 个节点'):'没有匹配「'+qs.trim()+'」的节点');
+    };
+    gSearch.addEventListener('input',()=>applyQ(gSearch.value));
+    applyQ(gSearch.value);   // 重渲染后按当前查询就地恢复高亮
+  }
   const scaleLbl=()=>{const el=document.querySelector('.graph-tools .hint');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};
   const canvas=wrap.querySelector('.graph-canvas')||svg.parentElement;
   const applyScale=(s,cx,cy)=>{
