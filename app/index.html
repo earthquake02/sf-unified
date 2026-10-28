@@ -13823,6 +13823,7 @@ function openPopMenu(anchor,items){
 }
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
+  if(document.getElementById('slashMenu')){killSlashMenu();return}   // codex-graph-ux 票06：正文右键/斜杠命令菜单 Esc 收（开着时优先收最内层菜单）
   if(document.getElementById('popMenu')){killPopMenu();return}   // 浮层菜单恒先收（含覆盖槽/副驾内弹出的行菜单）
   if($('#modalRoot').classList.contains('show')||$('#askRoot').classList.contains('show'))return;   // 弹窗/问答框自管 Esc，不越权
   /* 票58 U06：副驾／窄覆盖槽／选区浮层按「打开逆序」收最近一层（同槽互斥使副驾与窄槽不同时在场；
@@ -13838,6 +13839,15 @@ document.addEventListener('click',e=>{   // 点空白收菜单（菜单项与两
   if(e.target.closest&&(e.target.closest('#popMenu')||e.target.closest('[data-act="node-menu"],[data-act="hot-menu"]')))return;
   killPopMenu();
 });
+/* codex-graph-ux 票06：正文右键斜杠菜单点外即收——左键点菜单外（含正文别处，菜单已聚焦内容故 blur 不触发）
+   mousedown 于菜单外＝立即关；菜单内 mousedown 被含关系放行（菜单项 click 派发动作不受影响）；
+   右键菜单外＝先收再由 contextmenu 在新位置重开（净效果＝菜单跟手）。capture 先于一切内容侧处理。 */
+document.addEventListener('mousedown',e=>{
+  const m=document.getElementById('slashMenu');
+  if(!m)return;
+  if(e.target&&m.contains(/** @type {Node} */(e.target)))return;
+  killSlashMenu();
+},true);
 /* codex-graph-ux 票01：左栏设定行右键四键＝对话／高亮／批量管理／删除（popMenu 壳＋事件总线，点击仍由下方大 switch 收口）。
    对话＝拖卡开聊同路径 ivOpenEntry（角色→访谈、非角色→设定助理，函数内部分流）；高亮＝既有提及页签路由
    openCodexEditModal(id,{tab:'mentions'})（与 codex-rel-open→relations 同款直达页签，勿新造高亮系统）；
