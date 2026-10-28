@@ -1524,6 +1524,27 @@ function codexRelCount(e,nid){
   if(!e)return 0;
   return codexParentsOf(e).length+codexChildrenOf(nid,e.id).length+codexConnsOf(e).length;
 }
+/**
+ * 列表渲染用关系统计索引：一轮 O(条目＋关系)，避免逐行 codexRelCount/codexChildrenOf 全表扫描。
+ * rel 与 codexRelCount 同口径（归属＋下属＋关联）；children 供「有下属」徽标。
+ * @param {any[]} entries @returns {Map<string,{rel:number,children:number}>}
+ */
+function codexRelStatsOf(entries){
+  const parents=new Map(),conns=new Map(),children=new Map();
+  for(const e of entries){
+    if(!e)continue;
+    const ps=codexParentsOf(e);
+    parents.set(e.id,ps.length);
+    conns.set(e.id,codexConnsOf(e).length);
+    for(const p of ps)if(p!==e.id)children.set(p,(children.get(p)||0)+1);
+  }
+  const out=new Map();
+  for(const e of entries){
+    if(!e)continue;
+    out.set(e.id,{rel:(parents.get(e.id)||0)+(children.get(e.id)||0)+(conns.get(e.id)||0),children:children.get(e.id)||0});
+  }
+  return out;
+}
 function codexRelKindsBetween(a,b){
   if(!a||!b)return[];
   const kinds=[];
@@ -1910,6 +1931,7 @@ function stBeforeUnload(e){
   e.preventDefault();
   e.returnValue='还有文件没写完，现在关闭可能丢掉未写完的部分';
 }
+/** 保存写盘：一次全书投影→打戳原位刷新边车→逐文件 diff/CAS 写入；失败按节律补写。 */
 async function stFlush(force,beacon,onProg){
   if(ST.wiping||typeof S==='undefined'||!S)return;
   if(!ST.ready&&!force)return;
@@ -1925,8 +1947,8 @@ async function stFlush(force,beacon,onProg){
   let pageShown=false;
   try{
     const trace=new Map();                                // 场景 id→（.html/.json）路径；投影同一趟带出，供打戳比对
-    let proj=g3Proj(S.data,ST.paths,trace);               // 内存 → 文件集（一景一文件；全局区＋每书）
-    if(g3StampUpdates(S.data,proj,trace))proj=g3Proj(S.data,ST.paths);   // 步①：场景文件真有变化→刷 updatedAt 后重投影（打戳只此一处）
+    const proj=g3Proj(S.data,ST.paths,trace);             // 内存 → 文件集（一景一文件；全局区＋每书）
+    g3StampUpdates(S.data,proj,trace);                    // 步①：场景文件真有变化→刷 updatedAt 并原位更新边车（打戳只此一处，无需第二次全书投影）
     const plan=[],del=[];
     for(const p of Array.from(proj.keys())){const cur=ST.files.get(p);if(!cur||cur.text!==proj.get(p))plan.push(p)}
     for(const p of Array.from(ST.files.keys())){const cur=ST.files.get(p);if(!proj.has(p)&&!(cur&&cur.keep))del.push(p)}
@@ -6696,13 +6718,15 @@ function g3Proj(d,paths,trace,cx){
    逐场景与文件账本（ST.files）比对：正文逐字比；边车比时**忽略时间戳字段本身**
    （旧档缺字段的契约归一是「补齐」，不是作者改动，不得据此假造「更新时间」；
     反过来只看 updatedAt 变化也不触发重打戳——避免自指循环）。
-   任一份文件真有内容变化（含新增/换路径）才刷 updatedAt；返回是否打过戳（调用方需重投影）。 */
+   任一份文件真有内容变化（含新增/换路径）才刷 updatedAt；打戳只改边车，已在投影内原位更新，调用方无需重投影。 */
+/** @param {any} s @param {Map<string,string>} proj @param {{html:string,side:string}} f @returns {boolean} */
 function g3SceneDirty(s,proj,f){
   const lh=ST.files.get(f.html);
   if(!lh||lh.text!==proj.get(f.html))return true;
   const lj=ST.files.get(f.side);
   if(!lj)return true;
   const j=proj.get(f.side);
+  if(j===undefined)return true;
   if(lj.text===j)return false;
   try{
     const a=JSON.parse(lj.text),b=JSON.parse(j);
@@ -6710,6 +6734,7 @@ function g3SceneDirty(s,proj,f){
     return JSON.stringify(a)!==JSON.stringify(b);
   }catch(e){return true}   // 账本侧坏 JSON：按有变化处理（当轮重写收敛）
 }
+/** @param {any} d @param {Map<string,string>} proj @param {Map<string,{html:string,side:string}>} trace @returns {boolean} */
 function g3StampUpdates(d,proj,trace){
   if(ST.noStamp)return false;   // G2 旧库迁移轮：文件是新建的（无账本），打戳会把「迁移」记成一次作者更新——甚至覆写旧库里原有的 updatedAt（复核中危项）
   const t=now();let hit=false;
@@ -6720,7 +6745,11 @@ function g3StampUpdates(d,proj,trace){
        updatedAt 原样保留、缺字段保持缺；转换整体落盘成功后由 stFlush 清 TAG_CONV40。
        票44：旧盘上 status/trigger 清除同纪律（STATUS_CONV44）。 */
     if(TAG_CONV40.has(String(s.id||''))||STATUS_CONV44.has(String(s.id||'')))continue;
-    if(g3SceneDirty(s,proj,f)){s.updatedAt=t;hit=true}
+    if(g3SceneDirty(s,proj,f)){
+      s.updatedAt=t;hit=true;
+      /* updatedAt 只落边车、不进正文 HTML：投影内原位刷新该景边车即可，避免为时间戳重建全书投影。 */
+      proj.set(f.side,g3J(g3SceneSide(s)));
+    }
   }
   return hit;
 }
@@ -9746,32 +9775,131 @@ function codexText(entries,sceneId){
 }
 
 /* ---------- 提及追踪 ---------- */
-/* 设定集优化跟进：mentionScan 按 ST.gen 缓存——默认「按提及次数」排序时 resCodexHTML 每次重绘不再全量重扫（启动卡顿主因） */
-let _menScanCache=null;   // {nid,gen,map}；save()/load 使 gen 变或显式清空后失效
-function mentionScanInvalidate(){_menScanCache=null;_graphCoCache=null}
-function mentionScan(nid){
-  const gen=(typeof ST!=='undefined'&&ST)?(ST.gen|0):0;
-  if(_menScanCache&&_menScanCache.nid===nid&&_menScanCache.gen===gen)return _menScanCache.map;
-  const res=new Map();
-  const entries=entriesOf(nid).filter(e=>codexAiIncludeOf(e)!=='never');   // P2：never 不追踪；onDetectOff 仍计提及
-  const texts=scenePos(nid).map(p=>({id:p.s.id,title:p.s.title,txt:scenePlainText(p.s)}));   // BG-010：与 AI 可见同口径（剔 data-ai=off／figure）
-  for(const e of entries){
-    const names=[e.name,...(e.trackAlias===false?[]:(e.aliases||[]))].filter(n=>n&&n.length>=2);
-    if(!names.length)continue;
-    const hits=[];
-    for(const t of texts){let c=0;for(const n of names){let i=0;while((i=t.txt.indexOf(n,i))!==-1){c++;i+=n.length}}if(c)hits.push({sceneId:t.id,title:t.title,count:c})}
-    if(hits.length)res.set(e.id,{entry:e,total:hits.reduce((s,h)=>s+h.count,0),hits});
+/** @typedef {{sceneId:string,title:string,count:number}} MentionHit */
+/** @typedef {{entry:any,total:number,hits:MentionHit[]}} MentionResult */
+/** @typedef {{next:Map<number,number>,fail:number,out:number[]}} MentionNode */
+/** @typedef {{length:number,owners:Map<string,number>}} MentionPattern */
+/** @typedef {{nodes:MentionNode[],patterns:MentionPattern[]}} MentionMatcher */
+/** @type {Map<string,{signature:string,matcher:MentionMatcher,scenes:Map<string,{content:string,counts:Map<string,number>}>}>} */
+const _menScanCache=new Map();
+/** 场景提及（htmlToText 口径）缓存：按书、匹配规则签名与场景正文原串失效，与 mentionScan 的 scenePlainText 口径相互独立。
+ * @type {Map<string,{sig:string,scenes:Map<string,{content:string,ids:string[]}>}>} */
+const _sceneMenCache=new Map();
+/** @returns {void} */
+function mentionScanInvalidate(){_menScanCache.clear();_sceneMenCache.clear();_graphCoCache=null}
+/** @param {{id:string,names:string[]}[]} rules @returns {MentionMatcher} */
+function mentionMatcher(rules){
+  /** @type {MentionNode[]} */
+  const nodes=[{next:new Map(),fail:0,out:[]}];
+  /** @type {MentionPattern[]} */
+  const patterns=[];
+  /** @type {Map<string,number>} */
+  const ids=new Map();
+  for(const rule of rules)for(const name of rule.names){
+    let id=ids.get(name);
+    if(id===undefined){
+      id=patterns.length;ids.set(name,id);patterns.push({length:name.length,owners:new Map()});
+      let state=0;
+      for(let i=0;i<name.length;i++){
+        const ch=name.charCodeAt(i);let next=nodes[state].next.get(ch);
+        if(next===undefined){next=nodes.length;nodes[state].next.set(ch,next);nodes.push({next:new Map(),fail:0,out:[]})}
+        state=next;
+      }
+      nodes[state].out.push(id);
+    }
+    const owners=patterns[id].owners;owners.set(rule.id,(owners.get(rule.id)||0)+1);
   }
-  _menScanCache={nid,gen,map:res};
+  const queue=[...nodes[0].next.values()];
+  for(let i=0;i<queue.length;i++){
+    const state=queue[i];
+    for(const [ch,next] of nodes[state].next){
+      let fail=nodes[state].fail;
+      while(fail&&!nodes[fail].next.has(ch))fail=nodes[fail].fail;
+      nodes[next].fail=nodes[fail].next.get(ch)||0;
+      nodes[next].out.push(...nodes[nodes[next].fail].out);queue.push(next);
+    }
+  }
+  return{nodes,patterns};
+}
+/** @param {MentionMatcher} matcher @param {string} text @returns {Map<string,number>} */
+function mentionMatchCounts({nodes,patterns},text){
+  /** @type {Map<string,number>} */
+  const counts=new Map();
+  const ends=new Int32Array(patterns.length);
+  let state=0;
+  for(let i=0;i<text.length;i++){
+    const ch=text.charCodeAt(i);let next=nodes[state].next.get(ch);
+    while(next===undefined&&state){state=nodes[state].fail;next=nodes[state].next.get(ch)}
+    state=next||0;
+    for(const id of nodes[state].out){
+      const pattern=patterns[id];
+      // 同一名称不自重叠；不同名称独立计数，重复别名保留原有权重。
+      if(i+1-pattern.length<ends[id])continue;
+      ends[id]=i+1;
+      for(const [eid,weight] of pattern.owners)counts.set(eid,(counts.get(eid)||0)+weight);
+    }
+  }
+  return counts;
+}
+/** @param {string} nid @returns {Map<string,MentionResult>} */
+function mentionScan(nid){
+  const entries=/** @type {any[]} */(entriesOf(nid)).filter(e=>codexAiIncludeOf(e)!=='never');
+  const rules=entries.map(e=>({id:e.id,names:[e.name,...(e.trackAlias===false?[]:(e.aliases||[]))].filter(n=>n&&n.length>=2).sort()}))
+    .filter(r=>r.names.length).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+  const signature=JSON.stringify(rules);
+  let cache=_menScanCache.get(nid);
+  if(!cache||cache.signature!==signature){
+    cache={signature,matcher:mentionMatcher(rules),scenes:new Map()};_menScanCache.set(nid,cache);
+  }
+  /** @type {Map<string,MentionResult>} */
+  const res=new Map(entries.map(e=>[e.id,{entry:e,total:0,hits:[]}]));
+  /** @type {typeof cache.scenes} */
+  const scenes=new Map();
+  for(const {s} of scenePos(nid)){
+    const content=String(s.content||'');let cached=cache.scenes.get(s.id);
+    if(!cached||cached.content!==content)cached={content,counts:mentionMatchCounts(cache.matcher,scenePlainText(s))};
+    scenes.set(s.id,cached);
+    for(const [eid,count] of cached.counts){
+      const m=/** @type {MentionResult} */(res.get(eid));
+      m.total+=count;m.hits.push({sceneId:s.id,title:s.title,count});
+    }
+  }
+  cache.scenes=scenes;
+  for(const [id,m] of res)if(!m.total)res.delete(id);
   return res;
 }
+/** 影响 sceneMentions 结果的字段签名（id/名称/别名/trackAlias/AI 包含状态；顺序影响输出顺序，一并入签）。
+ * @param {any[]} entries @returns {string} */
+function sceneMenRulesSig(entries){
+  let out='';
+  for(const e of entries){
+    if(!e)continue;
+    const part=String(e.id)+'\u0001'+String(e.name==null?'':e.name)+'\u0001'+(e.trackAlias===false?'0':'1')+'\u0001'+(codexAiIncludeOf(e)==='never'?'0':'1')+'\u0001'
+      +(e.trackAlias===false?'':(Array.isArray(e.aliases)?e.aliases.join('\u0002'):''));
+    out+=part.length+':'+part;   // 长度前缀编码：名称/别名含分隔符也不会撞签
+  }
+  return out;
+}
+/** 当前场景出场设定（htmlToText 口径：保留 data-ai=off 块，与 mentionScan 的 scenePlainText 不同源）。
+ * @param {string} nid @param {string} sceneId @returns {any[]} */
 function sceneMentions(nid,sceneId){
   const sc=S.data.scenes.find(s=>s.id===sceneId);if(!sc)return[];
-  const txt=htmlToText(sc.content);
-  return entriesOf(nid).filter(e=>codexAiIncludeOf(e)!=='never').map(e=>{
-    for(const n of [e.name,...(e.trackAlias===false?[]:(e.aliases||[]))])if(n&&n.length>=2&&txt.includes(n))return e;
-    return null;
-  }).filter(Boolean);
+  const entries=entriesOf(nid);
+  const sig=sceneMenRulesSig(entries);
+  let cache=_sceneMenCache.get(nid);
+  if(!cache||cache.sig!==sig){cache={sig,scenes:new Map()};_sceneMenCache.set(nid,cache)}
+  const content=String(sc.content||'');
+  let hit=cache.scenes.get(sceneId);
+  if(!hit||hit.content!==content){
+    const txt=htmlToText(content),ids=[];
+    for(const e of entries){
+      if(codexAiIncludeOf(e)==='never')continue;
+      for(const n of [e.name,...(e.trackAlias===false?[]:(e.aliases||[]))])if(n&&n.length>=2&&txt.includes(n)){ids.push(e.id);break}
+    }
+    hit={content,ids};cache.scenes.set(sceneId,hit);
+  }
+  const byId=new Map(entries.map(e=>[e.id,e]));
+  return hit.ids.map(id=>byId.get(id)).filter(Boolean);
 }
 
 /* ---------- 模板引擎（兼容 novelcrafter aic2 语法子集） ---------- */
@@ -11085,13 +11213,27 @@ function cdxFilterPred(e,key,sceneMenSet){
     default:return true;
   }
 }
-function cdxFilterMatch(e,sceneMenSet){
+/**
+ * 每轮列表渲染只求一次过滤状态与场景可用性；sceneFilter 仅当 inScene 启用且场景可用，
+ * 调用方据此决定是否计算 sceneMenSet。
+ * @returns {{st:any,active:boolean,sceneOk:boolean,sceneFilter:boolean}}
+ */
+function cdxFilterContext(){
   const st=cdxFilterState();
-  const sceneOk=cdxFilterSceneAvail();
+  const active=CDX_FILTER_KEYS.some(k=>st[k]==='yes'||st[k]==='no');
+  const wantsScene=st.inScene==='yes'||st.inScene==='no';
+  const sceneOk=active&&wantsScene?cdxFilterSceneAvail():false;
+  return {st,active,sceneOk,sceneFilter:sceneOk};
+}
+/** @param {any} e @param {Set<string>|null} sceneMenSet @param {{st:any,active:boolean,sceneOk:boolean}|null} [ctx] @returns {boolean} */
+function cdxFilterMatch(e,sceneMenSet,ctx){
+  const c=ctx||cdxFilterContext();
+  if(!c.active)return true;
+  const st=c.st;
   for(const k of CDX_FILTER_KEYS){
     const want=st[k];
     if(want!=='yes'&&want!=='no')continue;
-    if(k==='inScene'&&!sceneOk)continue;
+    if(k==='inScene'&&!c.sceneOk)continue;
     const hit=cdxFilterPred(e,k,sceneMenSet);
     if(want==='yes'&&!hit)return false;
     if(want==='no'&&hit)return false;
@@ -11599,12 +11741,15 @@ function ivBindDrag(){
 }
 
 
+/** 资源栏设定集：一轮构建关系统计与过滤上下文；未启用 inScene 时不计算场景提及。 */
 function resCodexHTML(n){
   const graph=`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="res-graph" title="在中央宽视图查看本书关系图谱（实线箭头＝归属／下属，虚线＝平级关联）">${uiIc('graph')}关系图谱</button></div>`;
   let list=entriesOf(n.id);
+  const relIdx=codexRelStatsOf(list);
+  const fctx=cdxFilterContext();
   let sceneMenSet=null;
-  if(cdxFilterSceneAvail())sceneMenSet=new Set(sceneMentions(n.id,S.ui.sceneId).map(e=>e.id));
-  list=list.filter(e=>cdxFilterMatch(e,sceneMenSet));
+  if(fctx.sceneFilter)sceneMenSet=new Set(sceneMentions(n.id,S.ui.sceneId).map(e=>e.id));
+  list=list.filter(e=>cdxFilterMatch(e,sceneMenSet,fctx));
   const q=resCdxQuery();
   const sortMode=cdxSortMode();
   const menSort=sortMode==='mentions'?mentionScan(n.id):null;   // 与可见提及同同源；按名称排时不扫
@@ -11633,7 +11778,7 @@ function resCodexHTML(n){
       const hid=folded||!!q&&!resCdxHit(e,q);
       const mat=e.category===REF_CAT&&String(e.notes||'').trim();   // 导入体验票01：仅参考资料且笔记有全文才出材料提取（普通行不放点不开的钮）
       const aiMk=codexAiListMark(e,true),aiTt=codexAiListTitle(e);
-      const relN=codexRelCount(e,n.id);
+      const relN=(relIdx.get(e.id)||{rel:0}).rel;
       const relTxt=relN?(relN+' 关系'):'';
       const tagBits=(Array.isArray(e.tags)?e.tags:[]).map(t=>String(t||'').trim()).filter(Boolean).slice(0,4);
       const tagsHtml=tagBits.map(t=>`<span class="tag">${esc(t)}</span>`).join('');
@@ -14164,11 +14309,13 @@ function mentionSceneMap(nid,onlyIds){
 /* 时间轴「规划/出场」标记（票47／决策票#14 来源区分；时间轴设定去前缀票：卡面只显示条目名）：
    ● 手工布置（planIds，accent 色）与 ◆ 正文提及（mentionScan 名称/别名命中，blue 色、只读）并列显示，
    互不覆盖；可见文案＝「●／◆ ＋条目名」（类型前缀不进卡面，寸土寸金）；类型进 title；无标记不占位。 */
+/** @param {any} sc @param {Map<string,Set<string>>} men @param {Map<string,{entry:any,index:number}>} ents @returns {string} */
 function sceneCastMarksHTML(sc,men,ents){
-  const detected=men.get(sc.id)||new Set(),marks=[];
-  for(const e of ents){
+  const detected=men.get(sc.id)||new Set(),planned=new Set(scenePlanIds(sc)),marks=[];
+  const cast=[...new Set([...planned,...detected])].map(id=>ents.get(id)).filter(e=>e!==undefined).sort((a,b)=>a.index-b.index);
+  for(const {entry:e} of cast){
     const typ=codexTypeCn(e.type),nm=String(e.name==null?'':e.name);
-    if(scenePlanIds(sc).includes(e.id))
+    if(planned.has(e.id))
       marks.push(`<span class="sb-cast planned" title="手工布置 · ${esc(typ)}「${esc(nm)}」（在矩阵对应类型维度增删）">● ${esc(nm)}</span>`);
     if(detected.has(e.id))
       marks.push(`<span class="sb-cast detected" title="正文提及 · ${esc(typ)}「${esc(nm)}」（名称/别名命中，只读；不是手工布置）">◆ ${esc(nm)}</span>`);
@@ -14176,10 +14323,12 @@ function sceneCastMarksHTML(sc,men,ents){
   return marks.length?`<div class="sb-cast-row">${marks.join('')}</div>`:'';
 }
 
+/** @param {string} nid @returns {string} */
 function sbTimelineHTML(nid){
   const cur=S.ui.sceneId;
-  const men=mentionSceneMap(nid),ents=entriesOf(nid);   // 票47：规划/出场标记同一来源区分
-  const more=(t,id)=>`<button class="btn sm" data-act="node-menu" data-t="${t}" data-id="${id}" title="更多操作">⋯</button>`;
+  const men=mentionSceneMap(nid),entries=/** @type {any[]} */(entriesOf(nid));
+  const ents=new Map(entries.map((entry,index)=>[entry.id,{entry,index}]));
+  const more=(/** @type {string} */ t,/** @type {string} */ id)=>`<button class="btn sm" data-act="node-menu" data-t="${t}" data-id="${id}" title="更多操作">⋯</button>`;
   return sbScopeModel(nid).map(({a,chapters})=>`
     <section class="sb-act" data-act-id="${esc(a.id)}">
     <div class="sb-act-head"><h2 data-act="node-ren" data-t="act" data-id="${esc(a.id)}" title="点击重命名">${uiIc('book')}${esc(nodeTitle(a))}</h2><span class="sb-ops"><button class="btn sm" data-act="node-nonum" data-t="act" data-id="${esc(a.id)}" title="禁用/恢复编号" style="${a.noNum?'opacity:.5;text-decoration:line-through':''}">№</button><button class="btn sm" data-act="act-addch" data-id="${esc(a.id)}" title="新建章节">＋章</button>${more('act',a.id)}</span></div>
@@ -18458,19 +18607,24 @@ function vReview(){
 }
 
 /* ---------- 视图：设定集 Codex（写作体验票33 起：只管理本书条目，共享库标签/入口退役） ---------- */
+const CDX_PAGE_ROWS=200;   // 大书主表 DOM 预算：先渲染前 200 行，其余按「显示更多」追加（搜索/排序/筛选仍作用于全量）
+/** 设定集主表：一轮构建关系统计与过滤上下文；全量过滤排序后按 200 行预算渲染。 */
 function vCodex(){
   const n=curNovel();if(!n)return needNovel();
   const nid=n.id;
   let entries=entriesOf(nid);
+  const relIdx=codexRelStatsOf(entries);
   if(S.ui.codexSearch){const q=S.ui.codexSearch.toLowerCase();entries=entries.filter(e=>e.name.toLowerCase().includes(q)||(e.aliases||[]).some(a=>a.toLowerCase().includes(q))||(e.tags||[]).some(t=>t.toLowerCase().includes(q))||codexTypeCn(e.type).toLowerCase().includes(q))}
+  const fctx=cdxFilterContext();
   let sceneMenSet=null;
-  if(cdxFilterSceneAvail()){
-    sceneMenSet=new Set(sceneMentions(nid,S.ui.sceneId).map(e=>e.id));
-  }
-  entries=entries.filter(e=>cdxFilterMatch(e,sceneMenSet));
+  if(fctx.sceneFilter)sceneMenSet=new Set(sceneMentions(nid,S.ui.sceneId).map(e=>e.id));
+  entries=entries.filter(e=>cdxFilterMatch(e,sceneMenSet,fctx));
   const men=mentionScan(nid);
   const sortMode=cdxSortMode();
   entries=cdxSortEntries(entries,sortMode,sortMode==='mentions'?men:null);
+  const shown=Math.min(entries.length,Math.max(CDX_PAGE_ROWS,(S.ui.cdxShown|0)||CDX_PAGE_ROWS));
+  const rows=entries.slice(0,shown);
+  const moreHtml=entries.length>shown?`<div class="row" style="margin-top:10px;gap:8px;align-items:center"><span class="hint">已显示 ${shown} / ${entries.length} 条（搜索、排序与筛选作用于全部条目）</span><button type="button" class="btn sm" data-act="codex-show-more">显示更多（${Math.min(CDX_PAGE_ROWS,entries.length-shown)} 条）</button></div>`:'';
   const funnelOpen=!!S.ui.cdxFunnelOpen;
   /* 导入体验票01：本页「提取角色」与参考资料行「提取」界面不可达、现行入口在书卡/材料行。
      nav('codex') 仍被仿真与旧回归直达，页体与这两钮删不动，故留码。
@@ -18484,13 +18638,14 @@ function vCodex(){
     <button class="btn" data-act="char-ext-novel" title="用 AI 从本书正文中提取角色、地点、物品等设定（预览确认后才写入设定集）">${uiIc('codex')}提取角色</button>
   </div>
   ${entries.length?`<table class="tbl"><tr><th>名称</th><th>别名</th><th>关系／标签</th><th style="width:56px">符号</th><th style="width:120px">提及</th><th style="width:132px">日期</th><th style="width:190px"></th></tr>
-  ${entries.map(e=>{const m=men.get(e.id);const flags=codexAiListMark(e);const inc=codexAiIncludeOf(e);
-    const relN=codexRelCount(e,nid);
+  ${rows.map(e=>{const m=men.get(e.id);const flags=codexAiListMark(e);const inc=codexAiIncludeOf(e);
+    const rs=relIdx.get(e.id)||{rel:0,children:0};
+    const relN=rs.rel;
     const relTxt=relN?(relN+' 关系'):'—';
     const tagsHtml=(Array.isArray(e.tags)?e.tags:[]).map(t=>String(t||'').trim()).filter(Boolean).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
     return `<tr><td style="cursor:pointer;font-weight:600" data-act="codex-edit" data-id="${e.id}"><span class="cdx-name-cell"><span class="res-cdx-thumb" aria-hidden="true">${entryImageThumbHTML(e)}</span><span class="cdx-name-txt">${esc(e.name)}
       <span class="tag" title="固定类型（六型之一）">${esc(codexTypeCn(e.type))}</span>
-      ${codexChildrenOf(nid,e.id).length?`<span class="tag">有下属</span>`:''}</span></span></td>
+      ${rs.children?`<span class="tag">有下属</span>`:''}</span></span></td>
     <td style="color:var(--tx2);font-size:12px">${(e.aliases||[]).join('、')||'—'}</td>
     <td style="font-size:12px"><span class="cdx-list-rel">${esc(relTxt)}</span>${tagsHtml?`<span class="cdx-list-tags">${tagsHtml}</span>`:''}</td>
     <td style="font-size:14px;color:var(--tx3)" title="${inc==='always'?'始终注入（全局）':inc==='never'?'从不包含':inc==='onDetectOff'?'检测到时不包含（仅手动@）':'检测到时包含'}">${flags||''}</td>
@@ -18499,7 +18654,7 @@ function vCodex(){
     <td><button class="btn sm" data-act="codex-edit" data-id="${e.id}">编辑</button>
     <button class="btn sm" data-act="codex-dup" data-id="${e.id}">复制</button>
     ${e.category===REF_CAT&&String(e.notes||'').trim()?`<button class="btn sm" data-act="char-ext-mat" data-id="${e.id}" title="用 AI 从本材料全文提取设定（预览确认后才写入设定集）">${uiIc('codex')}提取</button>`:''}
-    <button class="btn sm danger" data-act="codex-del" data-id="${e.id}">删除</button></td></tr>`}).join('')}</table>`:`<div class="empty">${(S.ui.codexSearch||cdxFilterActive())?'没有匹配的条目':'本书还没有设定条目'}</div>`}
+    <button class="btn sm danger" data-act="codex-del" data-id="${e.id}">删除</button></td></tr>`}).join('')}</table>${moreHtml}`:`<div class="empty">${(S.ui.codexSearch||cdxFilterActive())?'没有匹配的条目':'本书还没有设定条目'}</div>`}
   </div>`;
 }
 /* 票36：条目编辑＝同窗 Header＋五 Tab（详情/笔记/关系/提及/追踪，面板标识 details/research/relations/mentions/tracking 不变）。
@@ -21904,7 +22059,7 @@ document.addEventListener('click',async e=>{
   case'novel-edit':{const n=S.data.novels.find(x=>x.id===id);S.ui._coverStaging=n?.cover||'';openModal(`<h2>编辑小说</h2>${novelForm(n)}<div class="foot"><button class="btn" onclick="modalAskClose()">取消</button><button class="btn pri" data-act="novel-save" data-id="${id}">保存</button></div>`,null,{guard:{title:'放弃编辑？',body:'未保存的修改和封面不保留。'}});break}
   case'novel-save':{const n=S.data.novels.find(x=>x.id===id);Object.assign(n,{title:$('#f-title').value.trim()||n.title,author:$('#f-author').value.trim(),genre:$('#f-genre').value.trim(),language:$('#f-lang').value.trim(),synopsis:$('#f-syn').value.trim(),targetWords:+$('#f-target').value||0});n.cover=coverSanitize(S.ui._coverStaging||'');save();closeModal();render();break}   // S19：封面随保存落库（净化后）
   case'novel-del':confirmModal('删除小说','将删除该书全部卷章场景、设定与对话记录，不可恢复。','删除','novel-del2',`data-id="${id}"`);break;
-  case'novel-del2':{const i=S.data.novels.findIndex(x=>x.id===id);
+  case'novel-del2':{const i=S.data.novels.findIndex(x=>x.id===id);_menScanCache.delete(id);_sceneMenCache.delete(id);
     for(const k of['acts','chapters','scenes','codexCategories','codexEntries','snippets','chats','chatSessions','foreshadows','styleProfiles','tagDefs','recycleBin','assistants','entryImages'])S.data[k]=(S.data[k]||[]).filter(x=>x.novelId!==id);   // ||[] 兜 null（F09）；S21：文风记录随书级联删除；票39：标签定义随书级联删除；票54：会话随书删；助理票01：助理对话随书删；外观票04：条目配图像素随书删
     try{const d=typeof styleDirOf==='function'?styleDirOf(id):('style-'+String(id||'').toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,48));if(d&&typeof SF_TPLS!=='undefined')SF_TPLS.http.del(CP_SKILL_DIR+'/'+d)}catch(e){}
     S.data.novels.splice(i,1);if(S.ui.novelId===id){S.ui.novelId=null;S.ui.chatId=null;S.ui.cpDraft='';S.ui.res=null;S.ui.resNarrow=true;S.ui.snipQ='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui.sbSel=[];S.ui._tagBatch=null;S.ui._tagBatchRetry=[]}S.ui._styCand=null;S.ui._styCal=null;S.ui._styCalDraft=null;if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}S.ui._styCalToken=(S.ui._styCalToken||0)+1;if(typeof hoCheckPrune==='function')hoCheckPrune();save();closeModal();render();break}   // S21 复核 I-01：删书同步弃 S21 瞬态+作废在途校准；票21：删当前书清资源选项；BG-054 L3：删书清时效缓存
@@ -22412,6 +22567,7 @@ document.addEventListener('click',async e=>{
     save();closeModal();render();
     if(act==='codex-save'&&S.ui._asstCxResume)asstCxResumePicker();
     break}
+  case'codex-show-more':{S.ui.cdxShown=Math.max(CDX_PAGE_ROWS,(S.ui.cdxShown|0)||CDX_PAGE_ROWS)+CDX_PAGE_ROWS;render();break}
   case'codex-edit':openCodexEditModal(id);break;   // 票38：设定集表格/图谱节点/设定面板搜索结果共用同一编辑入口
   case'res-cdx-open':{if(Date.now()-(S.ui._ivJustDrag||0)<500)break;openCodexEditModal(id);break}   // 票38：设定面板搜索结果→打开对应条目（已删/他书/共享目标＝如实提示、零写入）
   case'res-cdx-fold':cdxFoldToggle(el.dataset.type);break;   // 票10：组头折叠——只切本组条目可见性，零 save、零整页重渲染、不打更新时间
