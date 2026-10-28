@@ -612,6 +612,8 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap .graph-node.hit .graph-label{fill:var(--tx); font-weight:600}
 .graph-wrap .graph-node.dim{opacity:.26}
 .graph-edges line.dim{opacity:.12}
+.graph-wrap .graph-node.sel .graph-ring{stroke:var(--ok); stroke-width:3.4}   /* codex-graph-ux票05：多选态描边（绿＝选中，区别于票04 搜索高亮的强调色） */
+.graph-marquee{fill:rgba(139,92,246,.10); stroke:var(--ac); stroke-width:1; stroke-dasharray:4 3; pointer-events:none}   /* 票05：框选矩形（SVG 画布坐标，随缩放） */
 .graph-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px}
 .graph-head .pt{margin:0;flex:0 1 auto}
 .graph-scene-pick{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;max-width:100%}
@@ -17711,7 +17713,7 @@ function vGraph(){
   return `<div class="page" style="max-width:none"><div class="graph-head"><h1 class="pt">关系图谱 · ${esc(n.title)}</h1>
   <div class="graph-scene-pick"><select id="graphSceneSel" data-act="graph-scene" aria-label="图谱${unitLabel()}" title="选择${unitLabel()}后可显示该${unitLabel()}的同${unitLabel()}共现">${graphSceneOptionsHTML(nid,gSid||'')}</select>
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
-  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。支持滚轮缩放，左键拖拽背景或右键拖拽任意位置平移画面，左键挪动节点；点击节点可编辑条目。</p>
+  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
   ${entries.length?`<div class="graph-shell"><div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名" aria-label="搜索节点（名称／别名）" title="按名称／别名片段搜索：命中节点高亮、其余弱化；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
@@ -17842,57 +17844,125 @@ function bindGraph(){
     applyScale(next,cx,cy);
   },{passive:false});
 
-  let mode=null; // 'pan' | 'node'
+  /* codex-graph-ux 票05：图谱多选——Shift+点节点＝切换选中；左键拖空白＝框选（拖出阈值成框，Shift＝追加）；
+     点空白（未拖）＝清空选中；拖任一选中节点（选中≥2）＝整组同位移，松手与单拖同走 uiStateSaveSoon 位置持久化；
+     右键拖任意处＝画布平移（原手势不变，点中节点也只平移，不与多选互抢）；无 Shift 单节点拖＝只移该点（原路径不动）。 */
+  let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
   let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
+  /** @type {{id:string,x:number,y:number}[]|null} */ let grpStart=null;
+  /** @type {{x:number,y:number}|null} */ let boxStart=null;
+  /** @type {SVGRectElement|null} */ let boxRect=null;
+  let boxAdd=false;
   const THRESH=4;
+  const gSel=new Set();   // 多选集合：会话瞬态（闭包内，重渲染即清；不写 UI_KEY）
+  const nodeOf=id=>svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
+  const ringCenter=(/** @type {Element|null} */ g)=>{const c=g&&g.querySelector('circle.graph-ring');return c?{x:Number(c.getAttribute('cx'))||0,y:Number(c.getAttribute('cy'))||0}:null};
+  const selSync=()=>{svg.querySelectorAll('.graph-node').forEach(g=>g.classList.toggle('sel',gSel.has(g.getAttribute('data-id')||'')))};
 
   wrap.addEventListener('selectstart',e=>e.preventDefault());
   wrap.addEventListener('pointerdown',e=>{
-    const button=(/** @type {PointerEvent} */(e)).button;
+    const pe=(/** @type {PointerEvent} */(e));
+    const button=pe.button;
     if(button!==0&&button!==2)return;
     if(e.target.closest&&e.target.closest('.graph-tools'))return;
     if(e.cancelable)e.preventDefault();
     try{const sel=window.getSelection();if(sel&&sel.removeAllRanges)sel.removeAllRanges()}catch(_e){}
     const node=button===2?null:(e.target.closest&&e.target.closest('.graph-node'));
-    moved=false;
+    moved=false;grpStart=null;boxStart=null;
+    if(node&&button===0&&pe.shiftKey){
+      const sid=node.getAttribute('data-id')||'';   // Shift+点＝切换选中；不进入拖拽、不打开编辑
+      if(sid){if(gSel.has(sid))gSel.delete(sid);else gSel.add(sid);selSync()}
+      mode=null;nidDrag=null;
+      return;
+    }
     if(node){
-      mode='node';
       nidDrag=node.getAttribute('data-id');
-      const pt=svgPt(e.clientX,e.clientY);
-      const p=pos[nidDrag]||{x:pt.x,y:pt.y};
-      ox=pt.x-p.x;oy=pt.y-p.y;
-      node.classList.add('dragging');
+      if(gSel.size>1&&nidDrag&&gSel.has(nidDrag)){
+        mode='nodes';
+        const pt0=svgPt(pe.clientX,pe.clientY);
+        ox=pt0.x;oy=pt0.y;
+        grpStart=[...gSel].map(i=>{const c=ringCenter(nodeOf(i))||{x:ox,y:oy};return {id:i,x:c.x,y:c.y}});
+        grpStart.forEach(s=>{const g=nodeOf(s.id);if(g)g.classList.add('dragging')});
+      }else{
+        mode='node';
+        const pt=svgPt(pe.clientX,pe.clientY);
+        const p=pos[nidDrag]||{x:pt.x,y:pt.y};
+        ox=pt.x-p.x;oy=pt.y-p.y;
+        node.classList.add('dragging');
+      }
+    }else if(button===0){
+      mode='box';   // 左键空白＝框选起步（拖出阈值成框；未拖＝点空白清空多选）
+      boxStart=svgPt(pe.clientX,pe.clientY);
+      boxAdd=pe.shiftKey;
+      sx=pe.clientX;sy=pe.clientY;
     }else{
       mode='pan';
-      sx=e.clientX;sy=e.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;
+      sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;
     }
-    try{wrap.setPointerCapture(e.pointerId)}catch(_e){}
+    try{wrap.setPointerCapture(pe.pointerId)}catch(_e){}
   });
   wrap.addEventListener('pointermove',e=>{
     if(!mode)return;
+    const pe=(/** @type {PointerEvent} */(e));
     if(mode==='pan'){
-      const dx=e.clientX-sx,dy=e.clientY-sy;
+      const dx=pe.clientX-sx,dy=pe.clientY-sy;
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)moved=true;
       wrap.scrollLeft=sl0-dx;
       wrap.scrollTop=st0-dy;
+    }else if(mode==='box'&&boxStart){
+      if(Math.abs(pe.clientX-sx)>THRESH||Math.abs(pe.clientY-sy)>THRESH)moved=true;
+      if(!moved)return;
+      const pt=svgPt(pe.clientX,pe.clientY);
+      if(!boxRect){boxRect=document.createElementNS('http://www.w3.org/2000/svg','rect');boxRect.setAttribute('class','graph-marquee');svg.appendChild(boxRect)}
+      boxRect.setAttribute('x',String(Math.min(boxStart.x,pt.x)));
+      boxRect.setAttribute('y',String(Math.min(boxStart.y,pt.y)));
+      boxRect.setAttribute('width',String(Math.abs(pt.x-boxStart.x)));
+      boxRect.setAttribute('height',String(Math.abs(pt.y-boxStart.y)));
     }else if(mode==='node'&&nidDrag){
-      const pt=svgPt(e.clientX,e.clientY);
+      const pt=svgPt(pe.clientX,pe.clientY);
       const nx=pt.x-ox,ny=pt.y-oy;
       const p=pos[nidDrag];
       if(p&&(Math.abs(nx-p.x)>0.5||Math.abs(ny-p.y)>0.5))moved=true;
       moveNode(nidDrag,nx,ny);
+    }else if(mode==='nodes'&&grpStart){
+      const pt=svgPt(pe.clientX,pe.clientY);
+      const dx=pt.x-ox,dy=pt.y-oy;
+      if(Math.abs(dx)>0.5||Math.abs(dy)>0.5)moved=true;
+      for(const s of grpStart)moveNode(s.id,s.x+dx,s.y+dy);
     }
   });
   const endPtr=e=>{
     if(!mode)return;
+    const pe=(/** @type {PointerEvent} */(e));
     const was=mode,id=nidDrag,did=moved;
-    const node=id&&svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
+    const node=id&&nodeOf(id);
     if(node)node.classList.remove('dragging');
+    if(was==='nodes')svg.querySelectorAll('.graph-node.dragging').forEach(g=>g.classList.remove('dragging'));
     mode=null;nidDrag=null;moved=false;
-    if(was==='node'&&id&&!did){
-      try{openCodexEditModal(id)}catch(_e){}
+    if(was==='box'){
+      const bx=boxStart;boxStart=null;
+      if(boxRect){try{boxRect.remove()}catch(_e2){}boxRect=null}
+      if(!bx)return;   // 类型收窄：框选必有起点（防御异常时直接收场）
+      if(!did){gSel.clear();selSync();return}   // 点空白（未拖出框）＝清空多选
+      const pt=svgPt(pe.clientX,pe.clientY);
+      const x0=Math.min(bx.x,pt.x),x1=Math.max(bx.x,pt.x),y0=Math.min(bx.y,pt.y),y1=Math.max(bx.y,pt.y);
+      const boxHit=(/** @type {Element} */ g)=>{
+        const c=ringCenter(g);if(!c)return false;
+        return c.x>=x0&&c.x<=x1&&c.y>=y0&&c.y<=y1;
+      };
+      if(!boxAdd)gSel.clear();
+      svg.querySelectorAll('.graph-node').forEach(g=>{if(boxHit(g)){const gid=g.getAttribute('data-id')||'';if(gid)gSel.add(gid)}});
+      selSync();
+      return;
+    }
+    if(was==='nodes'&&did){
+      try{uiStateSaveSoon()}catch(_e2){}   // 整组平移松手＝逐点经 moveNode 写入既有布局存储，与单拖同款持久化
+      return;
+    }
+    if((was==='node'||was==='nodes')&&id&&!did){
+      try{openCodexEditModal(id)}catch(_e2){}   // 点击（含点选中节点）＝编辑，原语义保留
     }else if(was==='node'&&id&&did){
-      try{uiStateSaveSoon()}catch(_e){}
+      try{uiStateSaveSoon()}catch(_e2){}
     }
   };
   wrap.addEventListener('pointerup',endPtr);
