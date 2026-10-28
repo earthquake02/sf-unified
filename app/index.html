@@ -120,6 +120,11 @@ body{background:var(--bg); color:var(--tx); font-family:var(--ui-font); font-siz
 .res-cdx-row.checked:hover{background:var(--bg3)}
 .cdx-mg-bar{position:sticky; bottom:0; z-index:6; display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:10px; padding:8px 10px; background:var(--bg2); border:1px solid var(--line); border-radius:10px; box-shadow:0 -4px 18px rgba(0,0,0,.28)}   /* codex-graph-ux票02：批量管理底浮条——钉在资源栏滚动区底部，勾选≥1 才渲染（票03 在删除/完成之间加改色与标签键） */
 .cdx-mg-n{font-size:12.5px; color:var(--tx2); white-space:nowrap; margin-right:auto}
+.cdx-mg-bar input[type=color]{width:32px; height:28px; padding:1px 2px; border:1px solid var(--line); border-radius:6px; background:var(--bg2); cursor:pointer; flex:0 0 auto}   /* codex-graph-ux票03：整批同色入口（单色，无渐变/逐条异色） */
+.cdx-mg-cl{display:inline-flex; margin:0}
+.cdx-mg-tagin{width:132px; min-width:0; padding:4px 8px; font:inherit; font-size:12.5px; border:1px solid var(--line); border-radius:6px; background:var(--bg3); color:var(--tx)}   /* 票03：批量追加标签（默认追加，另设清空危险项；无「覆盖成仅这些」） */
+.cdx-mg-tagin::placeholder{color:var(--tx3)}
+.cdx-mg-sep{width:1px; align-self:stretch; background:var(--line); margin:0 2px; flex:0 0 auto}
 @media(max-width:760px){#resCol{display:none}}   /* 窄屏不占位；票27 起经写作页单槽临时覆盖查看（规则见「窄屏单槽临时覆盖」段） */
 #main{flex:1; min-height:0; overflow:auto; position:relative}
 .page{padding:22px 28px; max-width:1100px; margin:0 auto}
@@ -11847,6 +11852,12 @@ function cdxSelHas(id){return cdxSelLive().indexOf(id)>=0}
 /** 退出管理态并清空勾选（不自带重渲染——调用侧按需 renderResPanel／整页 render）。
  * 票02：完成按钮与切走设定栏共用。 */
 function cdxManageExit(){if(S&&S.ui){S.ui.cdxManage=false;S.ui.cdxSel=[]}}
+/** 存活的已勾选条目对象（本书、非共享；供批量动作直接遍历）。
+ * @returns {any[]} */
+function cdxSelEntries(){
+  const n=curNovel();if(!n)return [];
+  return cdxSelLive().map(i=>S.data.codexEntries.find((/** @type {any} */ x)=>x&&x.id===i&&x.novelId===n.id&&!isSharedEntry(x))).filter(Boolean);
+}
 /** 进场：开管理态并勾上该行（右键菜单「批量管理」唯一入口）。
  * @param {string} id */
 function cdxManageEnter(id){if(!S.ui)S.ui={};S.ui.cdxManage=true;S.ui.cdxSel=id?[String(id)]:[]}
@@ -11908,7 +11919,7 @@ function resCodexHTML(n){
   const hits=q?list.filter(e=>resCdxHit(e,q)):list;
   const noneShow=(q&&!hits.length)||(!q&&!list.length&&cdxFilterActive());
   const mgN=selSet?selSet.size:0;   /* 票02：勾选 ≥1 才出底浮条；归零（含读时过滤后归零）即无浮条，勾选数组随退出/清场归零 */
-  const mgBar=mgN?`<div class="cdx-mg-bar" role="toolbar" aria-label="批量管理"><span class="cdx-mg-n">已选 ${mgN} 条</span><button type="button" class="btn sm danger" data-act="cdx-mg-batch-del" title="二次确认（条数＋可展开名单）后删除，与单条删除同落盘路径">删除</button><button type="button" class="btn sm" data-act="cdx-mg-done" title="退出批量管理态并清空勾选">完成</button></div>`:'';
+  const mgBar=mgN?`<div class="cdx-mg-bar" role="toolbar" aria-label="批量管理"><span class="cdx-mg-n">已选 ${mgN} 条</span><label class="cdx-mg-cl" title="整批改成同一图标色（左栏/关系图谱/故事板矩阵同步显示；不做渐变与逐条异色）"><input type="color" id="cdxMgColor" value="#8b5cf6" aria-label="批量改色"></label><button type="button" class="btn sm" data-act="cdx-mg-color" title="把所选条目全部改成左侧所选颜色">改色</button><button type="button" class="btn sm" data-act="cdx-mg-color-reset" title="清除所选条目的自选色，恢复为分类默认色">恢复分类色</button><span class="cdx-mg-sep" aria-hidden="true"></span><input type="text" id="cdxMgTags" class="cdx-mg-tagin" placeholder="标签，逗号分隔" aria-label="批量追加标签"><button type="button" class="btn sm" data-act="cdx-mg-tags-add" title="对所选条目追加这些标签（保留各条目原有标签）">加标签</button><button type="button" class="btn sm danger" data-act="cdx-mg-tags-clear" title="危险操作：清空所选条目的全部标签（二次确认）">清空标签</button><span class="cdx-mg-sep" aria-hidden="true"></span><button type="button" class="btn sm danger" data-act="cdx-mg-batch-del" title="二次确认（条数＋可展开名单）后删除，与单条删除同落盘路径">删除</button><button type="button" class="btn sm" data-act="cdx-mg-done" title="退出批量管理态并清空勾选">完成</button></div>`:'';
   return graph+search+groups+mgBar+`<div class="res-empty" id="rsnCdxNone"${noneShow?'':' hidden'}>没有匹配的设定条目</div>`;
 }
 /* 片段面板（票22／决策票#05）：条目＝单行「有标题显标题，否则正文开头」＋次行创建日期（既定 UTC
@@ -22795,6 +22806,41 @@ document.addEventListener('click',async e=>{
     save();closeModal();cdxManageExit();render();toast('已删除 '+delsX.length+' 条设定');
     break}
   case'cdx-mg-done':{cdxManageExit();renderResPanel();break}
+  /* codex-graph-ux 票03：整批改色＝iconColor 字段既有持久化（左栏/关系图谱/故事板矩阵同步显示；单色，恢复分类色＝清自选色回分类色）；
+     批量标签＝默认追加（保留原标签），清空走危险二确；不做「覆盖成仅这些」。写盘同既有条目字段 save() 路径。 */
+  case'cdx-mg-color':{
+    if(roReason()){roToast();break}
+    const selC=cdxSelEntries();if(!selC.length){toast('请先勾选条目');break}
+    const hexC=entryIconColorNorm(($('#cdxMgColor')||{}).value||'');
+    if(!hexC){toast('请先选择有效颜色');break}
+    for(const e of selC){e.iconColor=hexC;e.updatedAt=now()}
+    save();render();toast('已将 '+selC.length+' 条条目改为同色');
+    break}
+  case'cdx-mg-color-reset':{
+    if(roReason()){roToast();break}
+    const selR=cdxSelEntries();if(!selR.length){toast('请先勾选条目');break}
+    for(const e of selR){e.iconColor='';e.updatedAt=now()}
+    save();render();toast('已恢复 '+selR.length+' 条条目为分类色');
+    break}
+  case'cdx-mg-tags-add':{
+    if(roReason()){roToast();break}
+    const selT=cdxSelEntries();if(!selT.length){toast('请先勾选条目');break}
+    const addT=String(($('#cdxMgTags')||{}).value||'').split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+    if(!addT.length){toast('请先填写要追加的标签');break}
+    let nT=0;
+    for(const e of selT){const cur=Array.isArray(e.tags)?e.tags:[];const add=addT.filter(t=>cur.indexOf(t)<0);if(!add.length)continue;e.tags=cur.concat(add);e.updatedAt=now();nT++}
+    if(nT){save();render();toast('已对 '+nT+' 条条目追加标签')}else toast('所选条目已含这些标签');
+    break}
+  case'cdx-mg-tags-clear':{
+    const selL=cdxSelEntries();if(!selL.length){toast('请先勾选条目');break}
+    openModal(`<h2>清空所选标签</h2><p style="color:var(--tx2);line-height:1.7">将清空所选 <strong>${selL.length}</strong> 条条目的<strong>全部标签</strong>（含各条目原有标签），保存后落盘。</p><div class="foot"><button class="btn" onclick="closeModal()">取消</button><button class="btn danger" data-act="cdx-mg-tags-clear2">清空</button></div>`);
+    break}
+  case'cdx-mg-tags-clear2':{
+    if(roReason()){roToast();break}
+    const selZ=cdxSelEntries();if(!selZ.length){closeModal();break}
+    for(const e of selZ){e.tags=[];e.updatedAt=now()}
+    save();closeModal();render();toast('已清空 '+selZ.length+' 条条目的标签');
+    break}
   case'cdx-row-del':{const xD=S.data.codexEntries.find((/** @type {any} */ y)=>y.id===id&&y.novelId===nid&&!isSharedEntry(y));if(!xD){toast('条目不存在');break}
     confirmModal('删除条目','删除后不可恢复。','删除','codex-del2',`data-id="${id}"`);break}
   case'res-cdx-fold':cdxFoldToggle(el.dataset.type);break;   // 票10：组头折叠——只切本组条目可见性，零 save、零整页重渲染、不打更新时间
