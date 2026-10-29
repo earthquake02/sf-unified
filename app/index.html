@@ -25398,6 +25398,111 @@ function splitChapterMarkedBlocks(text){
  * @param {string=} mode
  * @returns {{chunks:Array<{i:number,text:string,packStart?:number,packEnd?:number,kind?:string}>,sampled:boolean,total:number,dropped:number,packMode:boolean}}
  */
+/**
+ * @param {{ord:number,title:string,text:string}} b
+ * @returns {string}
+ */
+function charExtractChapterHeader(b){
+  return '===== \u7b2c'+b.ord+'\u7ae0'+(b.title?(' \u300a'+b.title+'\u300b'):'')+' =====';
+}
+/**
+ * @param {{ord:number,title:string,text:string}} b
+ * @returns {string}
+ */
+function charExtractFormatChapterBlock(b){
+  return charExtractChapterHeader(b)+'\n'+b.text;
+}
+/**
+ * 外层十章包装不下时：按章贪心并入 \u2264EXT_PACK_MAX_CHARS 的子包；单章仍超限才 6k 硬切，且每段补章头。
+ * @param {{ord:number,title:string,text:string}[]} slice
+ * @param {number} layerStart
+ * @param {number} layerEnd
+ * @param {Array<{text:string,packStart:number,packEnd:number,kind:string,layerStart:number,layerEnd:number}>} packs
+ */
+function charExtractPushPackOrSplit(slice,layerStart,layerEnd,packs){
+  const body=slice.map(charExtractFormatChapterBlock).join('\n\n');
+  if(body.length<=EXT_PACK_MAX_CHARS){
+    packs.push({text:body,packStart:slice[0].ord,packEnd:slice[slice.length-1].ord,kind:'pack',layerStart,layerEnd});
+    return;
+  }
+  /** @type {{ord:number,title:string,text:string}[]} */
+  let bucket=[];
+  let bucketLen=0;
+  const flushBucket=()=>{
+    if(!bucket.length)return;
+    const bStart=bucket[0].ord,bEnd=bucket[bucket.length-1].ord;
+    const bBody=bucket.map(charExtractFormatChapterBlock).join('\n\n');
+    packs.push({text:bBody,packStart:bStart,packEnd:bEnd,kind:'pack-split',layerStart,layerEnd});
+    bucket=[];bucketLen=0;
+  };
+  for(const b of slice){
+    const piece=charExtractFormatChapterBlock(b);
+    if(piece.length>EXT_PACK_MAX_CHARS){
+      flushBucket();
+      const hdr=charExtractChapterHeader(b);
+      const sub=splitExtractChunks(b.text,{maxChars:EXT_MAX_CHARS,maxChunks:9999});
+      for(const c of sub.chunks){
+        /* 票03：每个 pack-split 子段开头都带当前章头（续段亦然） */
+        packs.push({text:hdr+'\n'+c.text,packStart:b.ord,packEnd:b.ord,kind:'pack-split',layerStart,layerEnd});
+      }
+      continue;
+    }
+    const add=bucketLen+(bucket.length?2:0)+piece.length;
+    if(bucket.length&&add>EXT_PACK_MAX_CHARS)flushBucket();
+    bucket.push(b);
+    bucketLen+=(bucket.length>1?2:0)+piece.length;
+  }
+  flushBucket();
+}
+/**
+ * 采样：按外层层（layerStart-layerEnd）均匀取代表段，避免头尾切掉整层中段。
+ * @template {{text:string,packStart:number,packEnd:number,kind:string,layerStart:number,layerEnd:number}} T
+ * @param {T[]} packs
+ * @param {number} maxChunks
+ * @returns {T[]}
+ */
+function charExtractSamplePackChunks(packs,maxChunks){
+  if(packs.length<=maxChunks)return packs.slice();
+  /** @type {Map<string,number[]>} */
+  const groups=new Map();
+  packs.forEach((p,idx)=>{
+    const k=String(p.layerStart??p.packStart)+'-'+String(p.layerEnd??p.packEnd);
+    if(!groups.has(k))groups.set(k,[]);
+    /** @type {number[]} */(groups.get(k)).push(idx);
+  });
+  const keys=[...groups.keys()];
+  /** @type {number[]} */
+  const picked=[];
+  const base=Math.floor(maxChunks/keys.length);
+  let rem=maxChunks-base*keys.length;
+  for(const k of keys){
+    const idxs=/** @type {number[]} */(groups.get(k));
+    let take=base+(rem>0?1:0);if(rem>0)rem--;
+    take=Math.min(take,idxs.length);
+    if(take<=0)continue;
+    if(take===1){picked.push(idxs[Math.floor(idxs.length/2)]);continue}
+    for(let t=0;t<take;t++){
+      const pos=Math.round(t*(idxs.length-1)/Math.max(1,take-1));
+      picked.push(idxs[pos]);
+    }
+  }
+  const seen=new Set();
+  /** @type {number[]} */
+  const uniq=[];
+  for(const i of picked.sort((a,b)=>a-b)){if(!seen.has(i)){seen.add(i);uniq.push(i)}}
+  let cursor=0;
+  while(uniq.length<maxChunks&&cursor<packs.length){
+    if(!seen.has(cursor)){seen.add(cursor);uniq.push(cursor)}
+    cursor++;
+  }
+  uniq.sort((a,b)=>a-b);
+  return uniq.slice(0,maxChunks).map(i=>packs[i]);
+}
+/**
+ * @param {string} text
+ * @param {string=} mode
+ * @returns {{chunks:Array<{i:number,text:string,packStart?:number,packEnd?:number,kind?:string,layerStart?:number,layerEnd?:number}>,sampled:boolean,total:number,dropped:number,packMode:boolean,packSplitChunks?:number,skippedChapters?:number[]}}
+ */
 function charExtractPlanPackAware(text,mode){
   const blocks=splitChapterMarkedBlocks(text);
   const multi=blocks.length>=2;
@@ -25409,27 +25514,32 @@ function charExtractPlanPackAware(text,mode){
     }
     return Object.assign(base,{packMode:false});
   }
+  /** @type {Array<{text:string,packStart:number,packEnd:number,kind:string,layerStart:number,layerEnd:number}>} */
   const packs=[];
   for(let i=0;i<blocks.length;i+=EXT_PACK_CHAPTERS){
     const slice=blocks.slice(i,i+EXT_PACK_CHAPTERS);
-    const start=slice[0].ord,end=slice[slice.length-1].ord;
-    const body=slice.map(b=>'===== \u7b2c'+b.ord+'\u7ae0'+(b.title?(' \u300a'+b.title+'\u300b'):'')+' =====\n'+b.text).join('\n\n');
-    if(body.length<=EXT_PACK_MAX_CHARS){
-      packs.push({text:body,packStart:start,packEnd:end,kind:'pack'});
-    }else{
-      const sub=splitExtractChunks(body,{maxChars:EXT_MAX_CHARS,maxChunks:9999});
-      for(const c of sub.chunks){
-        packs.push({text:c.text,packStart:start,packEnd:end,kind:'pack-split'});
-      }
-    }
+    const layerStart=slice[0].ord,layerEnd=slice[slice.length-1].ord;
+    charExtractPushPackOrSplit(slice,layerStart,layerEnd,packs);
   }
   const total=packs.length;
+  /**
+   * @param {typeof packs} keep
+   * @param {boolean} sampled
+   * @param {number} dropped
+   */
+  const finish=(keep,sampled,dropped)=>{
+    /** @type {Set<number>} */
+    const keptOrds=new Set();
+    for(const p of keep){for(let o=p.packStart;o<=p.packEnd;o++)keptOrds.add(o)}
+    const skippedChapters=blocks.map(b=>b.ord).filter(o=>!keptOrds.has(o));
+    const packSplitChunks=keep.filter(p=>p.kind==='pack-split').length;
+    return{chunks:keep.map((p,i)=>Object.assign({i},p)),sampled,total,dropped,packMode:true,packSplitChunks,skippedChapters};
+  };
   if(mode!=='all' && total>EXT_MAX_CHUNKS){
-    const head=Math.ceil(EXT_MAX_CHUNKS/2),tail=EXT_MAX_CHUNKS-head;
-    const keep=packs.slice(0,head).concat(packs.slice(total-tail));
-    return{chunks:keep.map((p,i)=>Object.assign({i},p)),sampled:true,total,dropped:total-keep.length,packMode:true};
+    const keep=charExtractSamplePackChunks(packs,EXT_MAX_CHUNKS);
+    return finish(keep,true,total-keep.length);
   }
-  return{chunks:packs.map((p,i)=>Object.assign({i},p)),sampled:false,total,dropped:0,packMode:true};
+  return finish(packs,false,0);
 }
 function charSourceFromNovel(nid,pick){
   const n=S.data.novels.find(x=>x.id===nid);if(!n)return null;
@@ -25461,7 +25571,7 @@ function charSourceFromNovel(nid,pick){
     :('《'+n.title+'》选中的 '+nSel+' 景（全书 '+m+' 个 AI 可见场景，已排除「排除出AI上下文」场景）');
   return {novelId:nid,kind:'novel',label,text:parts.join('\n\n'),picked:nSel,aiVisible:m,sceneIds:[...chosenIds]};
 }
-/* 票04：采样档＝既有前 5＋后 5；全量档用 maxChunks 覆写成不采样。分段算法本体不改。 */
+/* 票04／vol1-r1 01-03／02：采样档按外层层均匀取代表段；全量档不采样。超限拆包按章贪心并补章头。 */
 function charExtractPlan(text,mode){
   return charExtractPlanPackAware(text,mode);
 }
@@ -25471,7 +25581,16 @@ function charExtractSegText(plan,typeCount){
   let s='共 '+n+' '+unit+'，本次取 '+m+' '+unit;
   if(plan.packMode)s+='（约 '+EXT_PACK_CHAPTERS+' 章/包，整包可见优先）';
   if(typeCount!=null)s+='＝'+m+' 次建卡调用（覆盖勾选的 '+typeCount+' 类）';
-  if(plan.sampled)s+='（超长材料仅采样前后'+unit+'，中间 '+plan.dropped+' '+unit+'不取）';
+  if(plan.packMode&&plan.packSplitChunks)s+='；其中 '+plan.packSplitChunks+' 段为超限拆包（跨章复现判断可能减弱）';
+  if(plan.sampled){
+    s+='（超长材料采样 '+m+'/'+n+' '+unit+'，跳过 '+plan.dropped+' '+unit;
+    if(plan.packMode&&Array.isArray(plan.skippedChapters)&&plan.skippedChapters.length){
+      const chs=plan.skippedChapters;
+      const preview=chs.length<=12?chs.join('、'):(chs.slice(0,8).join('、')+'…共'+chs.length+'章');
+      s+='；跳过章：'+preview;
+    }
+    s+='）';
+  }
   return s;
 }
 function charExtractTypesHTML(){
