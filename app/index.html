@@ -605,13 +605,16 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-tools{position:absolute; right:12px; top:12px; z-index:3; display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:6px 10px; border-radius:8px; background:color-mix(in srgb,var(--bg2) 92%,transparent); border:1px solid var(--line); font-size:11.5px; color:var(--tx2); backdrop-filter:blur(4px); pointer-events:auto}
 .graph-tools label{display:inline-flex; align-items:center; gap:5px; cursor:pointer; user-select:none}
 .graph-tools input{width:auto; margin:0}
-.graph-search{width:170px; padding:4px 9px; font:inherit; font-size:12px; border:1px solid var(--line); border-radius:6px; background:var(--bg2); color:var(--tx)}   /* codex-graph-ux票04：图谱搜索（名称/别名片段）——命中高亮 .hit、非命中弱化 .dim */
+.graph-search{width:170px; padding:4px 9px; font:inherit; font-size:12px; border:1px solid var(--line); border-radius:6px; background:var(--bg2); color:var(--tx)}   /* codex-graph-ux票04/07：图谱搜索（名称/别名/标签）——命中 .hit、焦点 .focus、非命中 .dim */
 .graph-search:focus{outline:2px solid var(--ac2); outline-offset:-1px}
 .graph-wrap .graph-node, .graph-edges line{transition:opacity .15s}
 .graph-wrap .graph-node.hit .graph-ring{stroke:var(--ac2); stroke-width:3.2}
 .graph-wrap .graph-node.hit .graph-label{fill:var(--tx); font-weight:600}
+.graph-wrap .graph-node.hit.focus .graph-ring{stroke:var(--ac); stroke-width:4.2}   /* 票07：Enter 循环当前焦点命中 */
+.graph-wrap .graph-node.hit.focus .graph-label{fill:var(--ac); font-weight:700}
 .graph-wrap .graph-node.dim{opacity:.26}
 .graph-edges line.dim{opacity:.12}
+::highlight(cdx-ed-hl){background-color:color-mix(in srgb,var(--ac2) 45%,transparent); color:inherit}   /* 票07：写作页正文命中（CSS Highlight，不改 DOM） */
 .graph-wrap .graph-node.sel .graph-ring{stroke:var(--ok); stroke-width:3.4}   /* codex-graph-ux票05：多选态描边（绿＝选中，区别于票04 搜索高亮的强调色） */
 .graph-marquee{fill:rgba(139,92,246,.10); stroke:var(--ac); stroke-width:1; stroke-dasharray:4 3; pointer-events:none}   /* 票05：框选矩形（SVG 画布坐标，随缩放） */
 .graph-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px}
@@ -13566,7 +13569,13 @@ function render(){
   // 主区
   const V={novels:vNovels,outline:vOutline,storyboard:vStoryboard,timeline:vTimeline,editor:vEditor,review:vReview,codex:vCodex,graph:vGraph,snippets:vSnippets,prompts:vPrompts,settings:vSettings,style:vStyle};
   $('#main').innerHTML=(V[S.ui.view]||vNovels)();
-  if(S.ui.view==='editor'){bindEditor();applyNarrowUI()}   // 票27：渲染后铺窄屏覆盖槽态（宽屏＝按记忆铺宽屏类名，行为不变）
+  if(S.ui.view==='editor'){bindEditor();applyNarrowUI();   // 票27：渲染后铺窄屏覆盖槽态（宽屏＝按记忆铺宽屏类名，行为不变）
+    if(S.ui._edHlEntryId){   // 票07：跳提及小节后补刷正文高亮（一次性挂起）
+      const eid=String(S.ui._edHlEntryId||'');S.ui._edHlEntryId=null;
+      const ent=(S.data.codexEntries||[]).find((/** @type {any} */ x)=>x&&x.id===eid&&x.novelId===S.ui.novelId);
+      if(ent)setTimeout(()=>{try{edHighlightEntryMentions(ent)}catch(_e){}},0);
+    }
+  }
   if(S.ui.view==='style')bindStyle();   // S21：文风学习页绑定（画像失焦保存/开关/校准计数）
   if(S.ui.view==='settings')bindSettings();
   if(S.ui.view==='prompts')plWire();
@@ -13849,8 +13858,8 @@ document.addEventListener('mousedown',e=>{
   killSlashMenu();
 },true);
 /* codex-graph-ux 票01：左栏设定行右键四键＝对话／高亮／批量管理／删除（popMenu 壳＋事件总线，点击仍由下方大 switch 收口）。
-   对话＝拖卡开聊同路径 ivOpenEntry（角色→访谈、非角色→设定助理，函数内部分流）；高亮＝既有提及页签路由
-   openCodexEditModal(id,{tab:'mentions'})（与 codex-rel-open→relations 同款直达页签，勿新造高亮系统）；
+   对话＝拖卡开聊同路径 ivOpenEntry（角色→访谈、非角色→设定助理，函数内部分流）；高亮＝cdxHighlightEntry 同态
+   （写作页正文命中／图谱节点滚入／其它页先切图谱；票07，不再开提及页签）；
    批量管理＝进场并勾上该行（底浮条/退出语义归票02）；删除＝与 codex-del／codex-del2 同路径二确。
    全局右键屏蔽（上方 capture preventDefault）不拦本监听：preventDefault 不阻断传播，事件照常冒泡到 document。 */
 document.addEventListener('contextmenu',e=>{
@@ -13865,7 +13874,7 @@ document.addEventListener('contextmenu',e=>{
   const pi=(/** @type {string} */ act,/** @type {string} */ ic,/** @type {string} */ lab,/** @type {string} */ tip,/** @type {boolean|string} */ danger='')=>`<div class="pi${danger?' danger':''}" data-act="${act}" data-id="${esc(id)}" title="${esc(tip)}"><span class="ic">${ic}</span><span class="lab">${lab}</span></div>`;
   openPopMenu(row,[
     pi('cdx-row-talk','💬','对话',ivIsChar(ent)?'与该角色开访谈（拖卡同路径）':'与这条设定开助理对话（拖卡同路径）'),
-    pi('cdx-row-hl','◆','高亮','查看该条目在正文中的提及（哪里出现、几次，可跳写作页）'),
+    pi('cdx-row-hl','◆','高亮','按当前页同态高亮：写作页标正文命中；关系图谱高亮节点并滚入；其它页先切图谱再高亮'),
     pi('cdx-row-manage','☑','批量管理','进入批量管理态并勾上本条（删除／改色／打标签见底浮条）'),
     pi('cdx-row-del','✕','删除','二次确认后删除（与设定卡删除同路径）','danger')
   ]);
@@ -17725,13 +17734,101 @@ function vGraph(){
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
   <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
   ${entries.length?`<div class="graph-shell"><div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
-  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名" aria-label="搜索节点（名称／别名）" title="按名称／别名片段搜索：命中节点高亮、其余弱化；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
+  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
     <span class="hint"><span style="color:var(--ac)">→</span> 归属／下属 ${hierN} 条</span>
     <span class="hint"><span style="color:var(--ac2)">┆</span> 平级关联 ${linkN} 条</span>
     ${showCo&&gSid?`<span class="hint"><span style="color:var(--tx3)">┆</span> 同${unitLabel()}共现 ${coN} 条（取前60）</span>`:''}
     <span class="hint">节点 ${entries.length}</span>
   </div>`:`<div class="empty">设定集中还没有条目</div>`}</div>`;
+}
+/** codex-graph-ux 票07：清写作页正文条目高亮（CSS Highlight；不改 contenteditable DOM） */
+function edClearEntryHl(){
+  try{if(typeof CSS!=='undefined'&&CSS.highlights)CSS.highlights.delete('cdx-ed-hl')}catch(_e){}
+}
+/** 收集正文中条目名称／别名的大小写不敏感 Range（零 DOM 改写）。
+ * @param {any} ent @returns {Range[]} */
+function edEntryHlRanges(ent){
+  const names=[ent&&ent.name].concat(Array.isArray(ent&&ent.aliases)?ent.aliases:[]).map(v=>String(v==null?'':v).trim()).filter(Boolean);
+  /** @type {string[]} */ const uniq=[];const seen=new Set();
+  for(const n of names.sort((a,b)=>b.length-a.length)){const k=n.toLowerCase();if(seen.has(k)||k.length<1)continue;seen.add(k);uniq.push(n)}
+  /** @type {Range[]} */ const out=[];
+  if(!uniq.length)return out;
+  const roots=Array.from(document.querySelectorAll('#edArea .inner[contenteditable],#edContent'));
+  /** @type {Element[]} */ const list=[];
+  roots.forEach((/** @type {Element} */ el)=>{if(el&&list.indexOf(el)<0)list.push(el)});
+  for(const root of list){
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);
+    /** @type {Node|null} */ let node;
+    while((node=walker.nextNode())){
+      const text=node.nodeValue||'';if(!text)continue;
+      const lower=text.toLowerCase();
+      for(const name of uniq){
+        const needle=name.toLowerCase();let from=0;
+        while(from<=lower.length-needle.length){
+          const at=lower.indexOf(needle,from);if(at<0)break;
+          const r=document.createRange();r.setStart(node,at);r.setEnd(node,at+needle.length);out.push(r);
+          from=at+Math.max(1,needle.length);
+        }
+      }
+    }
+  }
+  return out;
+}
+/** 写作页高亮正文命中并滚入首处；当前小节无命中则跳首个提及小节再试（挂起 _edHlEntryId）。
+ * @param {any} ent */
+function edHighlightEntryMentions(ent){
+  edClearEntryHl();
+  if(!ent)return;
+  const paint=(/** @type {Range[]} */ ranges)=>{
+    if(!ranges.length)return false;
+    if(typeof Highlight!=='undefined'&&typeof CSS!=='undefined'&&CSS.highlights){
+      try{CSS.highlights.set('cdx-ed-hl',new Highlight(...ranges))}catch(_e){
+        const sel=window.getSelection();if(sel){sel.removeAllRanges();sel.addRange(ranges[0])}
+      }
+    }else{
+      const sel=window.getSelection();if(sel){sel.removeAllRanges();sel.addRange(ranges[0])}
+    }
+    try{
+      const sc=ranges[0].startContainer;
+      const el=sc&&sc.nodeType===1?/** @type {Element} */(sc):(sc&&sc.parentElement);
+      if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest',inline:'nearest'});
+    }catch(_e2){}
+    return true;
+  };
+  const ranges=edEntryHlRanges(ent);
+  if(paint(ranges)){toast('正文命中 '+ranges.length+' 处「'+String(ent.name||'')+'」');return}
+  const nid=S.ui.novelId;
+  const men=typeof mentionScan==='function'?mentionScan(nid).get(ent.id):null;
+  const hit=men&&Array.isArray(men.hits)?men.hits[0]:null;
+  const sid=hit&&hit.sceneId;
+  if(sid&&sid!==S.ui.sceneId){
+    S.ui._edHlEntryId=ent.id;
+    try{setWriteSceneId(sid);if(typeof editorPick==='function')editorPick(sid);else nav('editor')}catch(_e3){try{nav('editor')}catch(_e4){}}
+    return;
+  }
+  toast('正文没有「'+String(ent.name||'')+'」的提及');
+}
+/** 左栏「高亮」同态（票07）：写作页→正文命中；关系图谱→节点高亮滚入；其它页→先切图谱再高亮；不跨页双刷。
+ * @param {string} id */
+function cdxHighlightEntry(id){
+  const nid=S.ui.novelId;
+  const ent=(S.data.codexEntries||[]).find((/** @type {any} */ x)=>x&&x.id===id&&x.novelId===nid);
+  if(!ent){toast('设定条目不存在');return}
+  if(S.ui.view==='editor'){
+    S.ui._graphHlId=null;
+    edHighlightEntryMentions(ent);
+    return;
+  }
+  edClearEntryHl();
+  if(S.ui.view==='graph'){
+    const wrap=document.querySelector('.graph-wrap');
+    if(wrap&&typeof (/** @type {any} */(wrap))._graphFocus==='function')(/** @type {any} */(wrap))._graphFocus(id);
+    else{S.ui._graphHlId=id;render()}
+    return;
+  }
+  S.ui._graphHlId=id;
+  nav('graph');
 }
 function bindGraph(){
   const wrap=document.querySelector('.graph-wrap');
@@ -17744,36 +17841,83 @@ function bindGraph(){
   const BH=Number(wrap.dataset.bh)||560;
   let scale=graphScaleOf(nid);
   const pos=graphLayoutMem(nid);
-  /* codex-graph-ux 票04：搜索高亮——只切 SVG 类名（.hit/.dim），不重算布局/坐标；
-     命中＝名称或别名含查询片段（大小写不敏感）；两端都非命中的连线一并弱化；
-     清空恢复。查询存 S.ui.graphQ（会话瞬态，重渲染后由本函数按输入框值就地恢复）。 */
+  /* codex-graph-ux 票04＋07：搜索高亮——只切 SVG 类名（.hit/.dim/.focus），不重算布局/坐标；
+     命中＝名称／别名／标签含查询片段（大小写不敏感）；两端都非命中的连线一并弱化；
+     有命中时焦点项滚入视野；多命中 Enter 循环；清空恢复。
+     查询存 S.ui.graphQ（会话瞬态）；左栏「高亮」经 wrap._graphFocus 单节点同态（不填搜索框、不跨页双刷）。 */
   const gSearch=/** @type {HTMLInputElement|null} */(document.getElementById('graphSearch'));
-  if(gSearch){
-    const applyQ=(/** @type {string} */ qs)=>{
-      S.ui.graphQ=qs;
-      const q=qs.trim().toLowerCase();
-      let hitIds=null;
-      if(q){
-        hitIds=new Set();
-        for(const e of entriesOf(nid)){
-          const hay=[e.name].concat(Array.isArray(e.aliases)?e.aliases:[]);
-          if(hay.some(v=>String(v==null?'':v).toLowerCase().includes(q)))hitIds.add(e.id);
-        }
+  /** @type {string[]} */ let hitOrder=[];
+  let hitFocus=-1;
+  const hitRingCenter=(/** @type {Element|null} */ g)=>{const c=g&&g.querySelector('circle.graph-ring');return c?{x:Number(c.getAttribute('cx'))||0,y:Number(c.getAttribute('cy'))||0}:null};
+  const scrollNodeIntoView=(/** @type {string} */ id)=>{
+    const g=svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
+    if(!g)return;
+    const c=hitRingCenter(g);if(!c)return;
+    const mx=wrap.clientWidth/2,my=wrap.clientHeight/2;
+    wrap.scrollLeft=Math.max(0,c.x*scale-mx);
+    wrap.scrollTop=Math.max(0,c.y*scale-my);
+  };
+  const paintHits=(/** @type {Set<string>|null} */ hitIds,/** @type {string} */ focusId)=>{
+    svg.querySelectorAll('.graph-node').forEach(g=>{
+      const gid=g.getAttribute('data-id')||'';
+      const on=!!(hitIds&&hitIds.has(gid));
+      g.classList.toggle('hit',on);
+      g.classList.toggle('dim',!!(hitIds&&!hitIds.has(gid)));
+      g.classList.toggle('focus',!!(focusId&&gid===focusId));
+    });
+    svg.querySelectorAll('.graph-edges line[data-a]').forEach(ln=>{
+      const lit=!hitIds||hitIds.has(ln.getAttribute('data-a')||'')||hitIds.has(ln.getAttribute('data-b')||'');
+      ln.classList.toggle('dim',!lit);
+    });
+    if(focusId)scrollNodeIntoView(focusId);
+  };
+  const applyQ=(/** @type {string} */ qs)=>{
+    S.ui.graphQ=qs;
+    S.ui._graphHlId=null;   // 搜索接管：清左栏单点高亮挂起
+    const q=qs.trim().toLowerCase();
+    let hitIds=null;
+    hitOrder=[];hitFocus=-1;
+    if(q){
+      hitIds=new Set();
+      for(const e of entriesOf(nid)){
+        const hay=[e.name].concat(Array.isArray(e.aliases)?e.aliases:[]).concat(Array.isArray(e.tags)?e.tags:[]);
+        if(hay.some(v=>String(v==null?'':v).toLowerCase().includes(q))){hitIds.add(e.id);hitOrder.push(e.id)}
       }
-      svg.querySelectorAll('.graph-node').forEach(g=>{
-        const gid=g.getAttribute('data-id')||'';
-        g.classList.toggle('hit',!!(hitIds&&hitIds.has(gid)));
-        g.classList.toggle('dim',!!(hitIds&&!hitIds.has(gid)));
-      });
-      svg.querySelectorAll('.graph-edges line[data-a]').forEach(ln=>{
-        const lit=!hitIds||hitIds.has(ln.getAttribute('data-a')||'')||hitIds.has(ln.getAttribute('data-b')||'');
-        ln.classList.toggle('dim',!lit);
-      });
-      const stat=document.getElementById('graphSearchStat');
-      if(stat)stat.textContent=!q?'':(hitIds&&hitIds.size?('命中 '+hitIds.size+' 个节点'):'没有匹配「'+qs.trim()+'」的节点');
-    };
+      if(hitOrder.length)hitFocus=0;
+    }
+    paintHits(hitIds,hitFocus>=0?hitOrder[hitFocus]:'');
+    const stat=document.getElementById('graphSearchStat');
+    if(stat){
+      if(!q)stat.textContent='';
+      else if(hitIds&&hitIds.size)stat.textContent='命中 '+hitIds.size+' 个节点'+(hitIds.size>1?'（Enter 循环）':'');
+      else stat.textContent='没有匹配「'+qs.trim()+'」的节点';
+    }
+  };
+  /** @param {string} id 左栏／挂起：单节点高亮并滚入（不改搜索框文案） */
+  (/** @type {any} */(wrap))._graphFocus=(/** @type {string} */ id)=>{
+    if(gSearch){gSearch.value='';S.ui.graphQ=''}
+    hitOrder=id?[id]:[];hitFocus=id?0:-1;
+    paintHits(id?new Set([id]):null,id||'');
+    const stat=document.getElementById('graphSearchStat');
+    if(stat)stat.textContent=id?'高亮 1 个节点':'';
+  };
+  if(gSearch){
     gSearch.addEventListener('input',()=>applyQ(gSearch.value));
-    applyQ(gSearch.value);   // 重渲染后按当前查询就地恢复高亮
+    gSearch.addEventListener('keydown',e=>{
+      if(e.key!=='Enter')return;
+      e.preventDefault();
+      if(hitOrder.length<1)return;   // 无命中：Enter 静默不报错
+      hitFocus=hitOrder.length===1?0:(hitFocus+1)%hitOrder.length;
+      paintHits(new Set(hitOrder),hitOrder[hitFocus]);
+      const stat=document.getElementById('graphSearchStat');
+      if(stat&&hitOrder.length>1)stat.textContent='命中 '+hitOrder.length+' 个节点（'+(hitFocus+1)+'/'+hitOrder.length+'）';
+    });
+    const pendingHl=S.ui._graphHlId?String(S.ui._graphHlId):'';
+    S.ui._graphHlId=null;   // 先取挂起再恢复：避免 applyQ 清空后丢左栏跨页高亮
+    if(pendingHl&&!String(gSearch.value||'').trim())(/** @type {any} */(wrap))._graphFocus(pendingHl);
+    else applyQ(gSearch.value);   // 重渲染后按当前查询就地恢复高亮
+  }else if(S.ui._graphHlId){
+    const hid=String(S.ui._graphHlId||'');S.ui._graphHlId=null;if(hid)(/** @type {any} */(wrap))._graphFocus(hid);
   }
   const scaleLbl=()=>{const el=document.querySelector('.graph-tools .hint');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};
   const canvas=wrap.querySelector('.graph-canvas')||svg.parentElement;
@@ -22898,7 +23042,7 @@ document.addEventListener('click',async e=>{
     if(!entT){toast('设定条目不存在');break}
     ivOpenEntry(entT,Math.round(window.innerWidth*0.55),Math.round(window.innerHeight*0.2),null);
     break}
-  case'cdx-row-hl':openCodexEditModal(id,{tab:'mentions'});break
+  case'cdx-row-hl':cdxHighlightEntry(id);break   // codex-graph-ux 票07：与图谱高亮同态（不再开提及页签）
   case'cdx-row-manage':{if(!id)break;cdxManageEnter(id);renderResPanel();break}
   case'cdx-mg-toggle':{if(!cdxManageOn()||!id)break;cdxManageToggle(id);renderResPanel();break}
   /* codex-graph-ux 票02：底浮条三键。批量删二确＝条数＋<details> 可展开名单；执行＝逐条走 codex-del2 同款清理
