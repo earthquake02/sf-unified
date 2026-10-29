@@ -2444,7 +2444,7 @@ const AI_FACTORY_RETIRE=[
   {base:'http://127.0.0.1:8791/xy/v1/gen',model:'奇想版'},
   {base:'',model:'',name:'自定义(任意 OpenAI 兼容)'},
 ];
-/* ---------- AI 服务列表（设置页）：可增删的命名连接项，每项各自保存 Base/Key/模型 ----------
+/* ---------- AI 服务列表（设置页）：可增删的命名连接项，每项各自保存 Base/Key/模型/思考强度/附加 JSON ----------
    AI_PRESETS 是出厂种子（首次载入只建一条未填写的「OpenAI 兼容」）。列表写进数据夹后归用户管：
    「＋新增」从零再加空行，「✎ 改名」改显示名，「✕ 删除」可移除任何一条（删后不自动回来）。
    升级时 aiSvcRetireFactory 只跑一次：仍是上面历史出厂原样、且 Key 为空的行清掉；填过的留下。
@@ -2468,7 +2468,7 @@ function aiSvcRetireFactory(st){
   const before=st.aiProviders.length;
   const kept=st.aiProviders.filter(p=>!aiSvcIsFactoryRow(p));
   if(!kept.length&&before>0){
-    const p={id:uid(),name:'OpenAI 兼容',base:'',model:'',key:''};
+    const p={id:uid(),name:'OpenAI 兼容',base:'',model:'',key:'',reasoningEffort:'',extraBodyJson:''};
     st.aiProviders=[p];st.aiProviderId=p.id;
   }else{
     st.aiProviders=kept;
@@ -2477,6 +2477,26 @@ function aiSvcRetireFactory(st){
 }
 const AI_SVC_MAX=64;
 function aiSvcList(st){return Array.isArray(st.aiProviders)?st.aiProviders:[]}
+/** 思考强度产品档位：空串＝默认不发；none/low/medium/high＝发往上游（wire 见 aiBodyMergeProviderExtras） */
+const AI_REASONING_EFFORTS=['','none','low','medium','high'];
+/** @param {any} v @returns {''|'none'|'low'|'medium'|'high'} */
+function aiReasoningEffortOf(v){const x=String(v==null?'':v);return AI_REASONING_EFFORTS.includes(x)?/** @type {any} */(x):''}
+/** 附加请求体 JSON 文本帽（字符） */
+const AI_EXTRA_BODY_JSON_MAX=8000;
+/**
+ * 解析设置页「附加请求体 JSON」：须为普通对象（非数组／null）；非法返回 null。
+ * @param {string} raw
+ * @returns {Object|null}
+ */
+function aiExtraBodyObject(raw){
+  const t=String(raw==null?'':raw).trim();
+  if(!t)return {};
+  try{
+    const j=JSON.parse(t);
+    if(!j||typeof j!=='object'||Array.isArray(j))return null;
+    return j;
+  }catch(e){return null}
+}
 function aiSvcActive(st){return aiSvcList(st).find(p=>p&&p.id===st.aiProviderId)||null}
 function aiSvcSyncLive(st){const p=aiSvcActive(st);st.aiBase=p?String(p.base||''):'';st.aiModel=p?String(p.model||''):'';st.aiKey=p?String(p.key||''):''}
 function aiSvcSelect(st,id){const p=aiSvcList(st).find(x=>x&&x.id===id)||null;const next=p?p.id:'';if(String(st.aiProviderId||'')!==String(next))st.aiModelList=[];st.aiProviderId=next;aiSvcSyncLive(st);return p}   // BG-002：换连接清空全局模型候选（最小可用）
@@ -2485,11 +2505,11 @@ function aiSvcNormalize(st){
     /* 首次迁移（含全新安装）：按出厂种子建一条空的「OpenAI 兼容」。
        已有 live Base/模型/Key 且对不上这条空 Base → 另开「自定义(迁移)」持有并选中，不另造厂商行。
        全空＝没配过，就留在这条空连接上。旧 aiPreset 索引只删除、不拿来定位。 */
-    const list=AI_PRESETS.map(p=>({id:uid(),name:String(p.name),base:String(p.base||''),model:String(p.model||''),key:''}));
+    const list=AI_PRESETS.map(p=>({id:uid(),name:String(p.name),base:String(p.base||''),model:String(p.model||''),key:'',reasoningEffort:'',extraBodyJson:''}));
     const base=String(st.aiBase||''),model=String(st.aiModel||''),key=String(st.aiKey||'');
     let p=list.find(x=>x.base===base);
     if(p){p.model=model.slice(0,200);p.key=key.slice(0,2000)}
-    else if(base||model||key){p={id:uid(),name:'自定义(迁移)',base:base.slice(0,2000),model:model.slice(0,200),key:key.slice(0,2000)};list.push(p)}
+    else if(base||model||key){p={id:uid(),name:'自定义(迁移)',base:base.slice(0,2000),model:model.slice(0,200),key:key.slice(0,2000),reasoningEffort:'',extraBodyJson:''};list.push(p)}
     else p=list[0];
     st.aiProviders=list;st.aiProviderId=p.id;
     st.aiDefaultsRetired=true;   // 这条列表由新种子生成，不是待清的历史出厂名单
@@ -2503,7 +2523,9 @@ function aiSvcNormalize(st){
         name:String(x.name==null?'':x.name).trim().slice(0,80)||'未命名服务',
         base:String(x.base==null?'':x.base).slice(0,2000),
         model:String(x.model==null?'':x.model).slice(0,200),
-        key:String(x.key==null?'':x.key).slice(0,2000)};
+        key:String(x.key==null?'':x.key).slice(0,2000),
+        reasoningEffort:aiReasoningEffortOf(x.reasoningEffort),
+        extraBodyJson:String(x.extraBodyJson==null?'':x.extraBodyJson).slice(0,AI_EXTRA_BODY_JSON_MAX)};
       seen.add(p.id);out.push(p);
     }
     st.aiProviders=out;
@@ -2519,7 +2541,7 @@ function aiSvcAdd(st){
   const list=aiSvcList(st);if(list.length>=AI_SVC_MAX)return null;
   const names=new Set(list.map(p=>String(p&&p.name||'')));
   let name='自定义';for(let i=2;names.has(name);i++)name='自定义 '+i;
-  const p={id:uid(),name,base:'',model:'',key:''};
+  const p={id:uid(),name,base:'',model:'',key:'',reasoningEffort:'',extraBodyJson:''};
   list.push(p);st.aiProviders=list;st.aiProviderId=p.id;aiSvcSyncLive(st);
   return p;
 }
@@ -2555,7 +2577,7 @@ function aiSvcImportRecommend(st){
       skipped++;continue;
     }
     if(list.length>=AI_SVC_MAX){skipped++;continue}
-    list.push({id:uid(),name,base,model:'',key:''});
+    list.push({id:uid(),name,base,model:'',key:'',reasoningEffort:'',extraBodyJson:''});
     added++;
   }
   st.aiProviders=list;
@@ -10518,12 +10540,52 @@ async function aiProxyFetch(path,payload,signal,meta){
 }
 /* 代理层错误翻译：ai-upstream/ai-timeout/bad-base 是本地服务自己的错，译成人话；
    其余＝上游透传（状态码是上游的；400/422 重试与「AI请求失败」文案都靠它）。 */
-function aiProxyErr(t,status){
+/**
+ * @param {string} t 响应正文
+ * @param {number} status HTTP 状态
+ * @param {{[k:string]:any}} [body] 可选请求体（含思考强度时 400/422 附提示）
+ * @returns {Error}
+ */
+function aiProxyErr(t,status,body){
   let j=null;try{j=JSON.parse(t)}catch(e){}
   if(j&&j.error==='ai-upstream')return new Error('连不上你的 AI 服务（经本地服务中转）：'+(j.message||'')+'。请核对 Base 地址与该服务已启动');
   if(j&&j.error==='ai-timeout')return new Error('AI 服务响应超时，请检查该服务负载或稍后再试');
   if(j&&j.error==='bad-base')return new Error('AI Base 地址不合法：'+(j.message||''));
-  return new Error(`AI请求失败 ${status}：${String(t).slice(0,300)}`);
+  let msg=`AI请求失败 ${status}：${String(t).slice(0,300)}`;
+  if((status===400||status===422)&&body&&typeof body==='object'&&(body.reasoning_effort!=null||body.reasoning!=null))
+    msg+='。若刚开启思考强度，可先改回「默认不发送」再试';
+  return new Error(msg);
+}
+/**
+ * 将活动 AI 服务的思考强度／附加请求体合并进 chat body（就地修改并返回同一对象）。
+ * effort 空＝不添加 reasoning 相关键；Base 含 openrouter.ai（忽略大小写）→ body.reasoning={effort}；否则 → reasoning_effort。
+ * extraBodyJson 解析为对象后浅合并；messages／model／stream／stream_options 以系统为准不覆盖。
+ * @param {{[k:string]:any}} body 即将发出的 OpenAI 兼容请求体
+ * @param {any} [st] settings（默认读 S.data.settings）
+ * @returns {{[k:string]:any}}
+ */
+function aiBodyMergeProviderExtras(body,st){
+  if(!body||typeof body!=='object')return body;
+  const settings=/** @type {any} */(st||(S&&S.data&&S.data.settings)||{});
+  const p=aiSvcActive(settings);
+  const effort=aiReasoningEffortOf(p&&p.reasoningEffort);
+  if(effort){
+    const base=String((p&&p.base)!=null?p.base:(settings.aiBase||'')).toLowerCase();
+    if(base.includes('openrouter.ai'))body.reasoning={effort:effort};
+    else body.reasoning_effort=effort;
+  }
+  const raw=p?String(p.extraBodyJson||'').trim():'';
+  if(raw){
+    const extra=aiExtraBodyObject(raw);
+    if(extra){
+      const protect=new Set(['messages','model','stream','stream_options']);
+      for(const k of Object.keys(extra)){
+        if(protect.has(k))continue;
+        body[k]=/** @type {any} */(extra)[k];
+      }
+    }
+  }
+  return body;
 }
 /**
  * 流式 AI 调用：返回 {text, finishReason, usage}——finishReason 末 chunk 取值（stop/length/…，端点
@@ -10537,12 +10599,12 @@ function aiProxyErr(t,status){
 async function aiStream(messages,opt={}){
   const{model,temp,maxTokens,onDelta,signal,logKey,devSkip}=opt;
   const st=S.data.settings;
-  const body={model:model||st.aiModel,messages,stream:true,temperature:temp??Number(st.aiTemp),max_tokens:maxTokens||Number(st.aiMaxTokens)||undefined};
+  const body=aiBodyMergeProviderExtras({model:model||st.aiModel,messages,stream:true,temperature:temp??Number(st.aiTemp),max_tokens:maxTokens||Number(st.aiMaxTokens)||undefined},st);
   const meta={logKey:logKey!==undefined?logKey:(++DEV_LOG_SEQ),skip:!!devSkip};   // logKey＝本逻辑调用身份：首发/重发/回退共用，开发者模式不重记
   let res=await aiProxyFetch('/api/ai/chat',Object.assign({stream_options:{include_usage:true}},body),signal,meta);
   if(!res.ok&&(res.status===400||res.status===422))
     res=await aiProxyFetch('/api/ai/chat',body,signal,meta);
-  if(!res.ok){const t=await res.text().catch(()=>'');throw aiProxyErr(t,res.status)}
+  if(!res.ok){const t=await res.text().catch(()=>'');throw aiProxyErr(t,res.status,body)}
   const reader=res.body.getReader(),dec=new TextDecoder();let buf='',full='';
   let finishReason=null,usage=null;
   while(true){
@@ -10571,8 +10633,8 @@ async function aiOnce(messages,opt={}){
   const logKey=++DEV_LOG_SEQ;
   return aiStream(messages,Object.assign({},opt,{logKey})).catch(async e=>{ /* 非流式回退 */
   if(e.name==='AbortError')throw e;
-  const st=S.data.settings;const res=await aiProxyFetch('/api/ai/chat',{model:opt.model||st.aiModel,messages,temperature:opt.temp??Number(st.aiTemp),max_tokens:opt.maxTokens||Number(st.aiMaxTokens)||undefined},opt.signal,{logKey,skip:!!opt.devSkip});
-  if(!res.ok){const t=await res.text().catch(()=>'');throw aiProxyErr(t,res.status)}const j=await res.json();const c=j.choices?.[0];
+  const st=S.data.settings;const body=aiBodyMergeProviderExtras({model:opt.model||st.aiModel,messages,temperature:opt.temp??Number(st.aiTemp),max_tokens:opt.maxTokens||Number(st.aiMaxTokens)||undefined},st);const res=await aiProxyFetch('/api/ai/chat',body,opt.signal,{logKey,skip:!!opt.devSkip});
+  if(!res.ok){const t=await res.text().catch(()=>'');throw aiProxyErr(t,res.status,body)}const j=await res.json();const c=j.choices?.[0];
   return{text:c?.message?.content||'',finishReason:c?.finish_reason??null,usage:j.usage||null}})}
 /* ---------- D6 用量统计（token 记账） ----------
    口径：端点 usage 优先（prompt_tokens/input_tokens/promptTokens 与 completion_tokens/output_tokens/completionTokens 六种字段名都认；
@@ -21544,6 +21606,18 @@ function vSettings(){
     <div><label class="f">温度</label><input type="number" id="s-temp" value="${st.aiTemp}" step="0.1" min="0" max="2" style="width:90px" ${ro?'disabled':''}></div>
     <div><label class="f">最大 tokens</label><input type="number" id="s-max" value="${st.aiMaxTokens}" style="width:110px" ${ro?'disabled':''}></div>
     <div><label class="f">上下文窗口</label><input type="number" id="s-ctxwin" value="${st.ctxWindow||0}" min="0" step="1024" style="width:110px" ${ro?'disabled':''} title="模型上下文窗口（tokens）。0=自动估计，无法识别时按 8K。大窗口模型建议手填实际值。"></div></div>
+    ${(()=>{
+  const ap=aiSvcActive(st);const ef=aiReasoningEffortOf(ap&&ap.reasoningEffort);const xb=ap?String(ap.extraBodyJson||''):'';
+  const opts=[['','默认不发送'],['none','关闭'],['low','低'],['medium','中'],['high','高']];
+  const optHtml=opts.map(function(pair){const v=pair[0],l=pair[1];return '<option value="'+v+'"'+(ef===v?' selected':'')+'>'+l+'</option>'}).join('');
+  return '<div class="row" style="margin-top:10px;align-items:flex-end"><div style="flex:1;min-width:180px"><label class="f" title="按本条 AI 服务配置；默认不向请求体写入 reasoning 相关字段">思考强度</label>'
+    +'<select id="s-reasoning" '+(ro?'disabled':'')+'>'+optHtml+'</select></div></div>'
+    +'<p class="hint" style="margin-top:6px">默认不传。多数 OpenAI 兼容端发 reasoning_effort；OpenRouter（Base 含 openrouter.ai）由请求层改为 reasoning.effort；其它厂商字段请用下方附加 JSON。错字段可能导致 400；推理模型宜加大最大 tokens。</p>'
+    +'<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">附加请求体 JSON（高级）</summary>'
+    +'<textarea id="s-extra-body" rows="4" style="width:100%;margin-top:6px;font-family:ui-monospace,Consolas,monospace;font-size:12px" placeholder="例如 {&quot;top_p&quot;:0.9}" '+(ro?'disabled':'')+'>'+esc(xb)+'</textarea>'
+    +'<p class="hint" style="margin-top:4px">须为 JSON 对象；与系统字段冲突时以 messages／model／stream 为准。非法对象失焦不保存。</p>'
+    +'</details>';
+})()}
     <div class="row" style="margin-top:14px">
       <button class="btn" data-act="ai-test">测试连接</button>
       <button class="btn" data-act="ai-models">拉取模型列表</button>
@@ -24384,6 +24458,12 @@ document.addEventListener('change',async e=>{
     if(!S.data.settings||typeof S.data.settings!=='object')S.data.settings={};
     S.data.settings.showConflictScores=!!e.target.checked;save();conflictApplyScoreClass();if(S.ui.view==='review')render();return}
   if(e.target.id==='s-preset'){aiSvcSelect(S.data.settings,e.target.value);save();render()}   // 切换选中=载入该项 Base/Key/模型（各存各的）
+  {const _re=/** @type {any} */(e.target);if(_re&&_re.id==='s-reasoning'){   // 思考强度写穿当前 AI 服务项（产品档位，非全局）
+    if(roReason()){render();return}
+    const v=aiReasoningEffortOf(_re.value);
+    const p=aiSvcActive(S.data.settings);if(!p)return;
+    if(aiReasoningEffortOf(p.reasoningEffort)===v)return;
+    p.reasoningEffort=v;save();stFlush();return}}
   if(e.target.id==='s-review-svc'){reviewAiSvcSelect(S.data.settings,e.target.value);save();render()}   // 审阅方案切换=载入该项 Base/Key/模型
   if(e.target.id==='aiOp'){syncAiTextOpUi();return}
     if(e.target.id==='graphSceneSel'||(e.target.dataset&&e.target.dataset.act==='graph-scene')){
@@ -24469,6 +24549,17 @@ if(e.target.id==='sbDim'){if(SB_DIMS.some(x=>x.v===e.target.value)){S.ui.sbDim=e
 });
 /* 设置页字段失焦保存 */
 document.addEventListener('blur',e=>{
+  {const _xb=/** @type {any} */(e.target);if(_xb&&_xb.id==='s-extra-body'){   // 附加请求体 JSON：非法对象 toast 不写；合法（含空）写穿当前服务项
+    if(roReason())return;
+    const p=aiSvcActive(S.data.settings);if(!p)return;
+    const raw=String(_xb.value==null?'':_xb.value).slice(0,AI_EXTRA_BODY_JSON_MAX);
+    if(String(p.extraBodyJson||'')===raw)return;
+    if(raw.trim()){
+      const obj=aiExtraBodyObject(raw);
+      if(!obj){toast('附加请求体须为 JSON 对象（不能是数组／非法 JSON）',4200);_xb.value=String(p.extraBodyJson||'');return}
+    }
+    p.extraBodyJson=raw;save();stFlush();return;
+  }}
   const map={'s-base':'aiBase','s-key':'aiKey','s-model':'aiModel','s-temp':'aiTemp','s-max':'aiMaxTokens','s-ctxwin':'ctxWindow','s-scvercap':'sceneVerCap','s-autosave':'autoSaveSec','s-silent-wait':'silentReviewWaitSec','s-cf-thr':'conflictScoreMin','s-review-base':'reviewAiBase','s-review-key':'reviewAiKey','s-review-model':'reviewAiModel','s-review-ws':'reviewAiWorkspace'};
   if(map[e.target.id]){
     if(roReason())return;
@@ -25297,7 +25388,7 @@ function mergeCharsIntoRoster(allEntries,nid,picked,opt){
       const evLab=p.evidence==='passage'?'代表段落':'引文';
       created.push(Object.assign({id:uid(),novelId:nid,name:p.name,type:typeId,category:category,aliases:p.aliases,tags:[],parents:[],parentId:null,
         trackAlias:true,description:p.description,
-        notes:p.quotes.length?('AI 设定提取候选确认写入；'+evLab+'：'+p.quotes[0].slice(0,160)):'',
+        notes:p.quotes.length?((opt.direct?'AI 设定提取直出写入；':'AI 设定提取候选确认写入；')+evLab+'：'+p.quotes[0].slice(0,160)):'',
         connections:[],progressions:[],source:'ai',createdAt:now(),updatedAt:now()},codexAiFlagsFromInclude('onDetect')));
       nCreated++;
     }
@@ -26227,7 +26318,7 @@ async function applyCharCandidates(opt){
     if(typeof it.type!=='string'||!it.type)it.type='character';
     if(typeof it.category!=='string'||!String(it.category).trim())it.category=charBookCat(nid,it.type);
   }
-  const res=mergeCharsIntoRoster(S.data.codexEntries,nid,picked,{});
+  const res=mergeCharsIntoRoster(S.data.codexEntries,nid,picked,{direct:!!opt.direct});
   if(!res.nCreated&&!res.nMerged){
     const why=(res.skipped||[]).slice(0,6).map(x=>x.name+(x.reason?('：'+x.reason):'')).join('；');
     toast('未写入任何内容'+(why?'：'+why:'')+(res.nSkipped>6?'…':''),5000);

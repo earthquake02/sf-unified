@@ -69,6 +69,10 @@ _Avoid_: 引文串（模型原样输出、未回填原文）
 自带密钥直连任意 OpenAI 兼容端点，无平台付费。
 _Avoid_: API 代理（本应用不中转付费）
 
+**思考强度**:
+按 AI 服务条目配置的产品档位（默认不发送／关闭／低／中／高）；默认不发 reasoning 相关字段；OpenRouter Base 启发式走 `reasoning.effort`，其它兼容端走 `reasoning_effort`；冷门字段用附加请求 JSON。
+_Avoid_: 全局唯一下拉假装通用字段、无识别硬塞 Anthropic／Gemini 原生 thinking
+
 **决策通道**:
 BYOK 之外的第二通道形态：以「问题＋判据」求 choice 判定与置信度的判定协议（SystemOne），仅承担设定矛盾审查；生成类任务（写作/审稿/摘要）不走此通道。
 _Avoid_: 决策模型（泛称）、凭据端点（勘误前误判名）
