@@ -18596,13 +18596,12 @@ function vPlotGraph(){
   <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
-  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边；点中边再「删边」。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。MVP 无图谱搜索／多选。</p>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。MVP 无图谱搜索／多选。</p>
   ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
   <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
   <button type="button" class="btn sm" data-act="plot-link-relate" title="进入拉相关边：依次单击两个叶节点">拉相关</button>
-  <button type="button" class="btn sm" data-act="plot-link-cancel" title="取消拉边">取消拉边</button>
-  <button type="button" class="btn sm danger" data-act="plot-edge-del" title="删除当前选中的边">删边</button>
+  <button type="button" class="btn sm danger" data-act="plot-edge-del" title="选中边后可删除" disabled>删边</button>
   <button type="button" class="btn sm" data-act="plot-bring-open" title="从目录／搜索引入非当前卷叶节点">引入叶…</button>
   <button type="button" class="btn sm" data-act="plot-pin-toggle" title="钉住或取消钉住当前聚焦叶（跨卷常驻）">钉住／取消</button>
   <button type="button" class="btn sm" data-act="plot-pull-end" title="把当前选中断边的窗外对端拉入画布">拉入对端</button>
@@ -18679,12 +18678,16 @@ function bindPlotGraph(){
     const el=document.getElementById('plotLinkHint');
     if(!el)return;
     if(linkMode)el.textContent=linkFrom?('已选起点，再点终点（'+(linkMode==='relate'?'相关':'导致')+'）'):('拉'+(linkMode==='relate'?'相关':'导致')+'：先点起点');
-    else if(edgeSel)el.textContent='已选边，可点「删边」';
     else el.textContent='';
     document.querySelectorAll('[data-act="plot-link-cause"],[data-act="plot-link-relate"]').forEach((/** @type {any} */ b)=>{
       const act=b.getAttribute('data-act')||'';
       b.classList.toggle('on',(act==='plot-link-cause'&&linkMode==='cause')||(act==='plot-link-relate'&&linkMode==='relate'));
     });
+    const delBtn=/** @type {HTMLButtonElement|null} */(document.querySelector('[data-act="plot-edge-del"]'));
+    if(delBtn){
+      delBtn.disabled=!edgeSel;
+      delBtn.title=edgeSel?'删除当前选中的边':'选中边后可删除';
+    }
   };
   const clearEdgeSel=()=>{
     edgeSel=null;
@@ -18696,7 +18699,7 @@ function bindPlotGraph(){
     svg.querySelectorAll('.plot-edge-g[data-a="'+CSS.escape(a)+'"][data-b="'+CSS.escape(b)+'"][data-etype="'+CSS.escape(type)+'"] .plot-edge').forEach((/** @type {any} */ ln)=>ln.classList.add('sel'));
     linkHint();
   };
-  (/** @type {any} */(wrap))._plotSetLink=(/** @type {''|'cause'|'relate'} */ m)=>{linkMode=m;linkFrom=null;clearEdgeSel();linkHint();if(m)toast('拉'+(m==='relate'?'相关':'导致')+'：依次单击两个叶节点')};
+  (/** @type {any} */(wrap))._plotSetLink=(/** @type {''|'cause'|'relate'} */ m)=>{if(m&&linkMode===m){m='';}linkMode=m;linkFrom=null;clearEdgeSel();linkHint();if(m)toast('拉'+(m==='relate'?'相关':'导致')+'：依次单击两个叶节点');else if(!m)toast('已退出拉边')};
   (/** @type {any} */(wrap))._plotDelEdge=()=>{
     if(!edgeSel){toast('请先点选一条边');return false}
     const ok=plotEdgeDel(nid,edgeSel.a,edgeSel.b,edgeSel.type);
@@ -18829,6 +18832,7 @@ function bindPlotGraph(){
         return;
       }
       setFocus('');
+      linkMode='';linkFrom=null;
       clearEdgeSel();linkHint();
     }else{
       edgeDown=null;
@@ -23156,10 +23160,6 @@ document.addEventListener('click',async e=>{
     const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
     if(wrap&&typeof (/** @type {any} */(wrap))._plotSetLink==='function')(/** @type {any} */(wrap))._plotSetLink('relate');
     else toast('请先打开剧情图谱');
-    break}
-  case'plot-link-cancel':{
-    const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
-    if(wrap&&typeof (/** @type {any} */(wrap))._plotSetLink==='function')(/** @type {any} */(wrap))._plotSetLink('');
     break}
   case'plot-edge-del':{
     const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
