@@ -25828,14 +25828,19 @@ function evolFirstSeenChapterMap(nid){
  */
 function evolCountMentions(text,keys){
   const t=String(text||'');
+  /* 票10：最长优先 + 区间去重，避免别名是主名子串时同一次提及被计两次 */
+  const sorted=[...new Set((keys||[]).map(k=>String(k||'')).filter(k=>k.length>=2))].sort((a,b)=>b.length-a.length||a.localeCompare(b,'zh'));
+  /** @type {Array<[number,number]>} */
+  const occupied=[];
   let n=0;
-  for(const k of keys){
-    if(!k||k.length<2)continue;
+  for(const k of sorted){
     let from=0;
     while(from<t.length){
       const i=t.indexOf(k,from);
       if(i<0)break;
-      n++;from=i+k.length;
+      const end=i+k.length;
+      if(!occupied.some(([a,b])=>i<b&&end>a)){occupied.push([i,end]);n++}
+      from=i+1;
     }
   }
   return n;
@@ -26042,6 +26047,7 @@ async function aiCharExtractRun(){
 
     let evolItems=[];
     let evolNote='';
+    let evolFailN=0;
     try{
       if(!aborted() && src.kind==='novel' && plan.packMode){
         const ep=S.data.prompts.find(/** @type {(z:any)=>boolean} */(z=>z.id==='bp-evol-diff'));
@@ -26063,14 +26069,15 @@ async function aiCharExtractRun(){
             try{
               const gen2=await aiOnce(msgs2,{model:ep.model||undefined,temp:(ep.temp!==undefined&&ep.temp!==null&&ep.temp!=='')?Number(ep.temp):0.2,maxTokens:Math.min(Math.max(Number(ep.maxTokens)||0,Number(st.aiMaxTokens)||0),16000)||undefined,signal:cxAbort.signal});
               recordUsage('\u6f14\u8fdb\u5dee',gen2,msgs2);
-              if(gen2.finishReason==='length')continue;
+              if(gen2.finishReason==='length'){evolFailN++;continue}
               let value2=null;
-              try{const rs2=await parseJsonWithRepair(gen2.text,{maxTokens:mtEff,signal:cxAbort.signal,model:ep.model||undefined});value2=rs2.value}catch(e2){continue}
+              try{const rs2=await parseJsonWithRepair(gen2.text,{maxTokens:mtEff,signal:cxAbort.signal,model:ep.model||undefined});value2=rs2.value}catch(e2){evolFailN++;continue}
               const parsed=evolParseProgressions(value2,ch.text,clip.clipped);
               for(const it of parsed.items)evolItems.push(it);
             }catch(err2){
               const er2=/** @type {any} */(err2);
               if(er2&&er2.name==='AbortError')break;
+              evolFailN++;   /* 票07：内层失败计入，不再静默 */
             }
           }
           if(evolItems.length){
@@ -26079,8 +26086,11 @@ async function aiCharExtractRun(){
               const k=it.entryId+'|'+it.newValue;
               if(seen.has(k))return false;seen.add(k);return true;
             }));
-            evolNote='\u53e6\uff1a\u8bbe\u5b9a\u6f14\u8fdb\u5dee '+evolItems.length+' \u6761';
           }
+          /* 票07：任一 bp-evol-diff 失败都披露「已隔离」，可附失败段数；成功条数仍提示 */
+          const failNote=evolFailN?('\u8bbe\u5b9a\u6f14\u8fdb\u5dee\u8c03\u7528\u5931\u8d25\uff08\u5df2\u9694\u79bb\uff09'+(evolFailN>1?('：'+evolFailN+' \u6bb5'):'')):'';
+          const okNote=evolItems.length?('\u53e6\uff1a\u8bbe\u5b9a\u6f14\u8fdb\u5dee '+evolItems.length+' \u6761'):'';
+          evolNote=okNote&&failNote?(okNote+'；'+failNote):(okNote||failNote);
         }
       }
     }catch(evolErr){ evolNote='\u8bbe\u5b9a\u6f14\u8fdb\u5dee\u8c03\u7528\u5931\u8d25\uff08\u5df2\u9694\u79bb\uff09'; }
