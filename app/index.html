@@ -14575,7 +14575,7 @@ function sbTimelineHTML(nid){
       return `<div class="tl-ch${scs.length?'':' empty'}" data-chapter-id="${esc(c.id)}">
       <div class="sb-ch-head"><div class="h" data-act="node-ren" data-t="chapter" data-id="${esc(c.id)}" title="${esc(nodeTitle(c))}${c.summary?'：'+esc(c.summary):''}">${uiIc('doc')}${esc(nodeTitle(c))}<small>${scs.length} ${unitLabel()}</small></div><span class="sb-ops"><button class="btn sm" data-act="node-nonum" data-t="chapter" data-id="${esc(c.id)}" title="禁用/恢复编号" style="${c.noNum?'opacity:.5;text-decoration:line-through':''}">№</button><button class="btn sm" data-act="ch-addsc" data-id="${esc(c.id)}" title="新建${unitLabel()}" ${outlineTwo()?'hidden':''}>＋小节</button>${more('chapter',c.id)}</span></div>
       ${scs.length?`<div class="sb-scenes">${scs.map(s=>`
-        <div class="tl-node sb-scene${s.id===cur?' on':''}" draggable="true" data-act="goto-editor" data-id="${esc(s.id)}">
+        <div class="tl-node sb-scene${s.id===cur?' on':''}" draggable="true" data-act="goto-editor" data-id="${esc(s.id)}" data-plot-leaf="${esc(s.id)}">
           <div class="sb-scene-head">
             ${sbPickBoxHTML(s.id)}<small>${fmtN(sceneWc(s))}字</small><button class="btn sm" data-act="node-menu" data-t="scene" data-id="${esc(s.id)}" data-applicable="1" title="场景操作（插入/移动/拆分/历史/复制/删除）" aria-label="${esc(s.title||unitEmptyTitle())}的更多操作">⋯</button>
           </div>
@@ -18381,6 +18381,67 @@ function plotGraphPurgeNodes(nid,ids){
   }
   if(dirty)save();
 }
+/** 全书叶节点（跨卷；规则同 plotLeafNodes）
+ * @param {string} nid @returns {any[]} */
+function plotAllLeaves(nid){
+  /** @type {any[]} */
+  const out=[];
+  for(const a of actsOf(nid)){
+    for(const l of plotLeafNodes(nid,a.id))out.push(Object.assign({},l,{actTitle:nodeTitle(a)}));
+  }
+  return out;
+}
+/** 把叶放入当前画布（会话拖入）；可选钉住
+ * @param {string} nid @param {string} leafId @param {{pin?:boolean,x?:number,y?:number}=} opt */
+function plotBringIn(nid,leafId,opt){
+  const id=String(leafId||'');if(!nid||!id)return false;
+  const st=plotGraphOf(nid);
+  const leaf=plotAllLeaves(nid).find((/** @type {any} */ l)=>l.id===id);
+  if(!leaf){toast('找不到该叶节点');return false}
+  if(!Array.isArray(S.ui._plotDragIns))S.ui._plotDragIns=[];
+  if(!S.ui._plotDragIns.includes(id))S.ui._plotDragIns.push(id);
+  if(opt&&opt.pin){if(!st.pins.includes(id))st.pins.push(id)}
+  if(!(st.positions[id]&&Number.isFinite(st.positions[id].x))){
+    const x=opt&&typeof opt.x==='number'?opt.x:120+Math.random()*80;
+    const y=opt&&typeof opt.y==='number'?opt.y:120+Math.random()*80;
+    st.positions[id]={x,y};
+  }
+  save();
+  return true;
+}
+/** @param {string} nid @param {string} leafId @returns {boolean} 钉住后为 true */
+function plotPinToggle(nid,leafId){
+  const id=String(leafId||'');if(!nid||!id)return false;
+  const st=plotGraphOf(nid);
+  const i=st.pins.indexOf(id);
+  if(i>=0){st.pins.splice(i,1);save();return false}
+  plotBringIn(nid,id,{pin:true});
+  return true;
+}
+/** 引入叶弹窗（目录＋搜索；窗外优先）
+ * @param {string} nid */
+function plotBringModalHTML(nid){
+  const actId=plotCurActId(nid);
+  const cur=new Set(plotLeafNodes(nid,actId).map((/** @type {any} */ l)=>l.id));
+  const all=plotAllLeaves(nid);
+  const q=String(S.ui._plotBringQ||'').trim().toLowerCase();
+  const rows=all.filter((/** @type {any} */ l)=>{
+    if(cur.has(l.id))return false;
+    if(!q)return true;
+    const hay=[l.title,l.actTitle,l.kind].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+  const list=rows.slice(0,200).map((/** @type {any} */ l)=>'<div class="row" style="gap:8px;align-items:center;margin:4px 0">'
+    +'<span style="flex:1;min-width:0">'+esc(l.actTitle||'')+' · '+esc(l.title)+' <span class="hint">('+(l.kind==='chapter'?'章':'小节')+')</span></span>'
+    +'<button type="button" class="btn sm" data-act="plot-bring-in" data-id="'+esc(l.id)+'">放入</button>'
+    +'<button type="button" class="btn sm" data-act="plot-bring-pin" data-id="'+esc(l.id)+'">钉住</button>'
+    +'</div>').join('')||'<div class="empty">没有可引入的窗外叶（或搜索无命中）</div>';
+  return '<h2>引入叶节点</h2>'
+    +'<p class="hint">列出非当前卷的章／小节。放入＝本次画布可见；钉住＝跨卷常驻并落盘。</p>'
+    +'<input type="search" id="plotBringQ" class="graph-search" style="width:100%;max-width:100%;margin:0 0 10px" placeholder="搜索卷名／标题" value="'+esc(S.ui._plotBringQ||'')+'">'
+    +'<div style="max-height:min(420px,55vh);overflow:auto">'+list+'</div>'
+    +'<div class="foot"><button class="btn" onclick="closeModal()">关闭</button></div>';
+}
 /** 在两叶之间建边（导致／相关）；已存在同向同型则不重复
  * @param {string} nid @param {string} a @param {string} b @param {'cause'|'relate'} type */
 function plotEdgeAdd(nid,a,b,type){
@@ -18460,13 +18521,16 @@ function vPlotGraph(){
   <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
-  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边；点中边再「删边」。不按目录自动串链。MVP 无搜索／多选。</p>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边；点中边再「删边」。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。MVP 无图谱搜索／多选。</p>
   ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
   <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
   <button type="button" class="btn sm" data-act="plot-link-relate" title="进入拉相关边：依次单击两个叶节点">拉相关</button>
   <button type="button" class="btn sm" data-act="plot-link-cancel" title="取消拉边">取消拉边</button>
   <button type="button" class="btn sm danger" data-act="plot-edge-del" title="删除当前选中的边">删边</button>
+  <button type="button" class="btn sm" data-act="plot-bring-open" title="从目录／搜索引入非当前卷叶节点">引入叶…</button>
+  <button type="button" class="btn sm" data-act="plot-pin-toggle" title="钉住或取消钉住当前聚焦叶（跨卷常驻）">钉住／取消</button>
+  <button type="button" class="btn sm" data-act="plot-pull-end" title="把当前选中断边的窗外对端拉入画布">拉入对端</button>
   <span id="plotLinkHint" class="hint" style="margin:0" aria-live="polite"></span>
   </div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap"><span class="hint">窗内叶 ${leaves.length}（含钉住／拖入）</span></div>`:`<div class="empty">当前卷还没有可铺的章／${esc(uLab)}</div>`}</div>`;
@@ -18563,6 +18627,23 @@ function bindPlotGraph(){
     if(ok){toast('已删边');render()}else toast('删边失败');
     return ok;
   };
+  (/** @type {any} */(wrap))._plotPullEnd=()=>{
+    if(!edgeSel){toast('请先点选一条边');return false}
+    const vis=new Set(plotVisibleLeaves(nid,plotCurActId(nid)).map((/** @type {any} */ l)=>l.id));
+    const miss=!vis.has(edgeSel.a)?edgeSel.a:!vis.has(edgeSel.b)?edgeSel.b:null;
+    if(!miss){toast('两端都在窗内');return false}
+    if(plotBringIn(nid,miss,{})){toast('已拉入对端');render();return true}
+    return false;
+  };
+  wrap.addEventListener('dragover',(/** @type {DragEvent} */ e)=>{e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='copy'});
+  wrap.addEventListener('drop',(/** @type {DragEvent} */ e)=>{
+    e.preventDefault();
+    const raw=(e.dataTransfer&&(e.dataTransfer.getData('text/plot-leaf')||e.dataTransfer.getData('text/plain')))||'';
+    const id=String(raw||'').trim();
+    if(!id){toast('没有可放入的叶 id');return}
+    const pt=svgPt(e.clientX,e.clientY);
+    if(plotBringIn(nid,id,{x:pt.x,y:pt.y})){toast('已放入画布');render()}
+  });
   wrap.addEventListener('wheel',(/** @type {WheelEvent} */ e)=>{
     e.preventDefault();
     const we=e;
@@ -18650,6 +18731,18 @@ function bindPlotGraph(){
   };
   wrap.addEventListener('pointerup',endPtr);
   wrap.addEventListener('pointercancel',endPtr);
+}
+if(!(/** @type {any} */(window))._plotLeafDragBound){
+  (/** @type {any} */(window))._plotLeafDragBound=true;
+  document.addEventListener('dragstart',(/** @type {DragEvent} */ e)=>{
+    const t=e.target&&/** @type {Element} */(e.target).closest?/** @type {Element} */(e.target).closest('[data-plot-leaf],[data-id].tl-node,[data-id].sb-card'):null;
+    if(!t||!e.dataTransfer)return;
+    const id=t.getAttribute('data-plot-leaf')||t.getAttribute('data-id')||'';
+    if(!id)return;
+    e.dataTransfer.setData('text/plot-leaf',id);
+    e.dataTransfer.setData('text/plain',id);
+    e.dataTransfer.effectAllowed='copy';
+  });
 }
 
 /* ---------- B3 伏笔：面板 / 表单 / 快捷标记 ---------- */
@@ -22938,6 +23031,33 @@ document.addEventListener('click',async e=>{
     const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
     if(wrap&&typeof (/** @type {any} */(wrap))._plotDelEdge==='function')(/** @type {any} */(wrap))._plotDelEdge();
     else toast('请先打开剧情图谱并选中一条边');
+    break}
+  case'plot-bring-open':{
+    const n=curNovel();if(!n){toast('请先打开作品');break}
+    S.ui._plotBringQ=S.ui._plotBringQ||'';
+    openModal(plotBringModalHTML(n.id));
+    const inp=/** @type {HTMLInputElement|null} */(document.getElementById('plotBringQ'));
+    if(inp)inp.addEventListener('input',()=>{S.ui._plotBringQ=inp.value;openModal(plotBringModalHTML(n.id));const again=/** @type {HTMLInputElement|null} */(document.getElementById('plotBringQ'));if(again){again.focus();const len=again.value.length;again.setSelectionRange(len,len)}});
+    break}
+  case'plot-bring-in':{
+    const n=curNovel();if(!n){break}
+    const bid=el.dataset.id;if(plotBringIn(n.id,bid,{})){toast('已放入');closeModal();nav('plot-graph')}
+    break}
+  case'plot-bring-pin':{
+    const n=curNovel();if(!n){break}
+    const bid=el.dataset.id;if(plotBringIn(n.id,bid,{pin:true})){toast('已钉住');closeModal();nav('plot-graph')}
+    break}
+  case'plot-pin-toggle':{
+    const n=curNovel();if(!n){break}
+    const fid=S.ui._plotFocusId;if(!fid){toast('请先单击一个叶节点');break}
+    const on=plotPinToggle(n.id,fid);
+    toast(on?'已钉住':'已取消钉住');
+    render();
+    break}
+  case'plot-pull-end':{
+    const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
+    if(wrap&&typeof (/** @type {any} */(wrap))._plotPullEnd==='function')(/** @type {any} */(wrap))._plotPullEnd();
+    else toast('请先打开剧情图谱并选中断边');
     break}
   case'res-toggle':{   // 票27：窄屏覆盖槽打开时资源栏按钮＝关闭覆盖槽（不碰宽屏收窄/宽度记忆）
     if(npPaneNow()==='res'){narrowPaneSet(null);npFocusOpener('res');break}
