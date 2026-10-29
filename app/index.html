@@ -17844,7 +17844,7 @@ function vGraph(){
   return `<div class="page" style="max-width:none"><div class="graph-head"><h1 class="pt">关系图谱 · ${esc(n.title)}</h1>
   <div class="graph-scene-pick"><select id="graphSceneSel" data-act="graph-scene" aria-label="图谱${unitLabel()}" title="选择${unitLabel()}后可显示该${unitLabel()}的同${unitLabel()}共现">${graphSceneOptionsHTML(nid,gSid||'')}</select>
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
-  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
+  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
   ${entries.length?`<div class="graph-shell"><div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
@@ -18110,15 +18110,17 @@ function bindGraph(){
     applyScale(next,cx,cy);
   },{passive:false});
 
-  /* codex-graph-ux 票05：图谱多选——Shift+点节点＝切换选中；左键拖空白＝框选（拖出阈值成框，Shift＝追加）；
-     点空白（未拖）或 Esc＝清空选中（票08）；拖任一选中节点（选中≥2）＝整组同位移，松手与单拖同走 uiStateSaveSoon 位置持久化；
-     右键拖任意处＝画布平移（原手势不变，点中节点也只平移，不与多选互抢）；无 Shift 单节点拖＝只移该点（原路径不动）。 */
+  /* codex-graph-ux 票05＋手势回改：图谱多选——Shift+点节点＝切换选中；
+     Shift+左键拖空白＝框选（恢复旧习惯；框选替换选中，追加仍用 Shift+点）；
+     左键拖空白＝平移；左键点空白／Esc＝清空（票08）；拖任一选中（≥2）＝整组同位移，松手 uiStateSaveSoon；
+     右键拖任意处＝画布平移（点中节点也只平移）；无 Shift 单节点拖＝只移该点。 */
   let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
   let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
   /** @type {{id:string,x:number,y:number}[]|null} */ let grpStart=null;
   /** @type {{x:number,y:number}|null} */ let boxStart=null;
   /** @type {SVGRectElement|null} */ let boxRect=null;
   let boxAdd=false;
+  let panClear=false;   // 左键空白点击（未拖）才清空多选；右键平移点击不清
   const THRESH=4;
   const gSel=new Set();   // 多选集合：会话瞬态（闭包内，重渲染即清；不写 UI_KEY）
   const nodeOf=id=>svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
@@ -18158,13 +18160,19 @@ function bindGraph(){
         ox=pt.x-p.x;oy=pt.y-p.y;
         node.classList.add('dragging');
       }
-    }else if(button===0){
-      mode='box';   // 左键空白＝框选起步（拖出阈值成框；未拖＝点空白清空多选）
+    }else if(button===0&&pe.shiftKey){
+      mode='box';   // Shift+左键空白＝框选（替换选中；追加用 Shift+点）
       boxStart=svgPt(pe.clientX,pe.clientY);
-      boxAdd=pe.shiftKey;
+      boxAdd=false;
+      panClear=false;
       sx=pe.clientX;sy=pe.clientY;
+    }else if(button===0){
+      mode='pan';   // 左键空白＝平移；未拖＝点空白清空
+      panClear=true;
+      sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;
     }else{
       mode='pan';
+      panClear=false;
       sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;
     }
     try{wrap.setPointerCapture(pe.pointerId)}catch(_e){}
@@ -18208,10 +18216,10 @@ function bindGraph(){
     if(was==='nodes')svg.querySelectorAll('.graph-node.dragging').forEach(g=>g.classList.remove('dragging'));
     mode=null;nidDrag=null;moved=false;
     if(was==='box'){
-      const bx=boxStart;boxStart=null;
+      const bx=boxStart;boxStart=null;panClear=false;
       if(boxRect){try{boxRect.remove()}catch(_e2){}boxRect=null}
       if(!bx)return;   // 类型收窄：框选必有起点（防御异常时直接收场）
-      if(!did){gSel.clear();selSync();return}   // 点空白（未拖出框）＝清空多选
+      if(!did){gSel.clear();selSync();return}   // Shift+点空白（未拖出框）＝清空多选
       const pt=svgPt(pe.clientX,pe.clientY);
       const x0=Math.min(bx.x,pt.x),x1=Math.max(bx.x,pt.x),y0=Math.min(bx.y,pt.y),y1=Math.max(bx.y,pt.y);
       const boxHit=(/** @type {Element} */ g)=>{
@@ -18223,6 +18231,12 @@ function bindGraph(){
       selSync();
       return;
     }
+    if(was==='pan'&&!did&&panClear){
+      panClear=false;
+      gSel.clear();selSync();
+      return;
+    }
+    panClear=false;
     if(was==='nodes'&&did){
       try{uiStateSaveSoon()}catch(_e2){}   // 整组平移松手＝逐点经 moveNode 写入既有布局存储，与单拖同款持久化
       return;
@@ -18554,8 +18568,8 @@ function vPlotGraph(){
     const cls=ed.type==='relate'?'plot-edge plot-edge-relate':'plot-edge plot-edge-cause';
     const dim=both?'':' dim';
     return `<g class="plot-edge-g" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}">
-      <line class="plot-edge-hit" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="12" fill="none"/>
       <line class="${cls}${dim}" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>
+      <line class="plot-edge-hit" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="16" fill="none"/>
     </g>`;
   }).join('');
   /* 票03 角标；01 先按窗内目录序算好，画布上可先不显数字到 03——为减跳变，01 即画角标 */
@@ -18660,6 +18674,7 @@ function bindPlotGraph(){
   let linkMode=/** @type {''|'cause'|'relate'} */('');
   let linkFrom=/** @type {string|null} */(null);
   let edgeSel=/** @type {{a:string,b:string,type:string}|null} */(null);
+  let edgeDown=/** @type {{a:string,b:string,type:string}|null} */(null);
   const linkHint=()=>{
     const el=document.getElementById('plotLinkHint');
     if(!el)return;
@@ -18744,13 +18759,28 @@ function bindPlotGraph(){
       try{wrap.setPointerCapture(pe.pointerId)}catch(_e2){}
       return;
     }
+    const edgeEl=t&&t.closest?t.closest('.plot-edge-g'):null;
+    if(edgeEl){
+      mode='edgesel';
+      edgeDown={a:edgeEl.getAttribute('data-a')||'',b:edgeEl.getAttribute('data-b')||'',type:edgeEl.getAttribute('data-etype')||'cause'};
+      moved=false;sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;
+      try{wrap.setPointerCapture(pe.pointerId)}catch(_e3){}
+      return;
+    }
     mode='pan';sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;moved=false;
     try{wrap.setPointerCapture(pe.pointerId)}catch(_e3){}
   });
   wrap.addEventListener('pointermove',(/** @type {PointerEvent} */ e)=>{
     if(!mode)return;
     const pe=e;
-    if(mode==='pan'){
+    if(mode==='edgesel'){
+      const dx=pe.clientX-sx,dy=pe.clientY-sy;
+      if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH){
+        /* 在边上按下后拖移＝改成平移，避免误选 */
+        mode='pan';edgeDown=null;moved=true;
+        wrap.scrollLeft=sl0-dx;wrap.scrollTop=st0-dy;
+      }
+    }else if(mode==='pan'){
       const dx=pe.clientX-sx,dy=pe.clientY-sy;
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)moved=true;
       wrap.scrollLeft=sl0-dx;wrap.scrollTop=st0-dy;
@@ -18784,16 +18814,24 @@ function bindPlotGraph(){
       }
     }else if(was==='node'&&id&&did){
       save();   // 拖点落工程态
+    }else if(was==='edgesel'&&!did&&edgeDown){
+      selectEdge(edgeDown.a,edgeDown.b,edgeDown.type);
+      edgeDown=null;
+      return;
     }else if(was==='pan'&&!did){
-      /* 点空白或点边：若点中边则选边 */
+      /* pointercapture 后 pe.target 常是 wrap，改用落点命中 */
       const pe=e;
-      const t=pe&&pe.target&&/** @type {Element} */(pe.target).closest?/** @type {Element} */(pe.target).closest('.plot-edge-g'):null;
+      edgeDown=null;
+      const el=(typeof document.elementFromPoint==='function')?document.elementFromPoint(pe.clientX,pe.clientY):null;
+      const t=el&&/** @type {Element} */(el).closest?/** @type {Element} */(el).closest('.plot-edge-g'):null;
       if(t){
         selectEdge(t.getAttribute('data-a')||'',t.getAttribute('data-b')||'',t.getAttribute('data-etype')||'cause');
         return;
       }
       setFocus('');
       clearEdgeSel();linkHint();
+    }else{
+      edgeDown=null;
     }
   };
   wrap.addEventListener('pointerup',endPtr);
