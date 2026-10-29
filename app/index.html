@@ -13841,6 +13841,11 @@ document.addEventListener('keydown',e=>{
   if(top==='copilot'){if(S.ui.copilotOpen)cpSetOpen(false);return}
   if(top==='narrow'){const p=S.ui.narrowPane;if(p){narrowPaneSet(null);npFocusOpener(p)}return}
   if(top==='selbar'){if(selBarShown())selBarHide();return}
+  /* codex-graph-ux 票08：关系图谱多选 Esc 清空——菜单／弹层／副驾层已优先处理；无上层时清 gSel（点空白清空仍保留） */
+  if(S.ui.view==='graph'){
+    const gw=document.querySelector('.graph-wrap');
+    if(gw&&typeof (/** @type {any} */(gw))._gSelClear==='function'&&(/** @type {any} */(gw))._gSelClear()){e.preventDefault();return}
+  }
   killPopMenu();
 });
 document.addEventListener('click',e=>{   // 点空白收菜单（菜单项与两个开菜单按钮除外）
@@ -17732,7 +17737,7 @@ function vGraph(){
   return `<div class="page" style="max-width:none"><div class="graph-head"><h1 class="pt">关系图谱 · ${esc(n.title)}</h1>
   <div class="graph-scene-pick"><select id="graphSceneSel" data-act="graph-scene" aria-label="图谱${unitLabel()}" title="选择${unitLabel()}后可显示该${unitLabel()}的同${unitLabel()}共现">${graphSceneOptionsHTML(nid,gSid||'')}</select>
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
-  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
+  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
   ${entries.length?`<div class="graph-shell"><div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
@@ -17999,7 +18004,7 @@ function bindGraph(){
   },{passive:false});
 
   /* codex-graph-ux 票05：图谱多选——Shift+点节点＝切换选中；左键拖空白＝框选（拖出阈值成框，Shift＝追加）；
-     点空白（未拖）＝清空选中；拖任一选中节点（选中≥2）＝整组同位移，松手与单拖同走 uiStateSaveSoon 位置持久化；
+     点空白（未拖）或 Esc＝清空选中（票08）；拖任一选中节点（选中≥2）＝整组同位移，松手与单拖同走 uiStateSaveSoon 位置持久化；
      右键拖任意处＝画布平移（原手势不变，点中节点也只平移，不与多选互抢）；无 Shift 单节点拖＝只移该点（原路径不动）。 */
   let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
   let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
@@ -18012,6 +18017,8 @@ function bindGraph(){
   const nodeOf=id=>svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
   const ringCenter=(/** @type {Element|null} */ g)=>{const c=g&&g.querySelector('circle.graph-ring');return c?{x:Number(c.getAttribute('cx'))||0,y:Number(c.getAttribute('cy'))||0}:null};
   const selSync=()=>{svg.querySelectorAll('.graph-node').forEach(g=>g.classList.toggle('sel',gSel.has(g.getAttribute('data-id')||'')))};
+  /** @returns {boolean} 票08：供全局 Esc 清空多选；有选中则清并返回 true */
+  (/** @type {any} */(wrap))._gSelClear=()=>{if(!gSel.size)return false;gSel.clear();selSync();return true};
 
   wrap.addEventListener('selectstart',e=>e.preventDefault());
   wrap.addEventListener('pointerdown',e=>{
