@@ -632,7 +632,10 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap .plot-edge-cause{stroke:var(--ac); stroke-width:2; fill:none; opacity:.9; marker-end:url(#sfPlotCauseArrow)}
 .graph-wrap .plot-edge-relate{stroke:var(--ac2); stroke-width:1.7; fill:none; opacity:.8; stroke-dasharray:6 4}
 .graph-wrap .plot-edge.dim{opacity:.18}
-.graph-wrap .plot-edge.sel{stroke-width:3.2}
+.graph-wrap .plot-edge.sel{stroke-width:3.2; opacity:1}
+.graph-wrap .plot-edge-g{cursor:pointer}
+.graph-wrap .plot-edge-hit{pointer-events:stroke}
+.graph-tools .btn.on{outline:2px solid var(--ac); outline-offset:1px}
 .res-cdx-actions{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
 .c-rel-top{display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:12px}
 .c-rel-intro{flex:1; min-width:180px; font-size:12.5px; color:var(--tx2); line-height:1.55; margin:0}
@@ -18378,6 +18381,31 @@ function plotGraphPurgeNodes(nid,ids){
   }
   if(dirty)save();
 }
+/** 在两叶之间建边（导致／相关）；已存在同向同型则不重复
+ * @param {string} nid @param {string} a @param {string} b @param {'cause'|'relate'} type */
+function plotEdgeAdd(nid,a,b,type){
+  a=String(a||'');b=String(b||'');
+  if(!nid||!a||!b||a===b)return false;
+  const t=type==='relate'?'relate':'cause';
+  const st=plotGraphOf(nid);
+  if(st.edges.some((/** @type {any} */ e)=>e&&e.a===a&&e.b===b&&e.type===t))return false;
+  st.edges.push({a,b,type:t});
+  save();
+  return true;
+}
+/** @param {string} nid @param {string} a @param {string} b @param {string=} type */
+function plotEdgeDel(nid,a,b,type){
+  const st=plotGraphOf(nid);
+  const before=st.edges.length;
+  st.edges=st.edges.filter((/** @type {any} */ e)=>{
+    if(!e)return false;
+    if(String(e.a)!==String(a)||String(e.b)!==String(b))return true;
+    if(type&&e.type!==type)return true;
+    return false;
+  });
+  if(st.edges.length!==before){save();return true}
+  return false;
+}
 function vPlotGraph(){
   const n=curNovel();if(!n)return needNovel();
   const nid=n.id;
@@ -18403,7 +18431,10 @@ function vPlotGraph(){
     const both=vis.has(ed.a)&&vis.has(ed.b);
     const cls=ed.type==='relate'?'plot-edge plot-edge-relate':'plot-edge plot-edge-cause';
     const dim=both?'':' dim';
-    return `<line class="${cls}${dim}" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+    return `<g class="plot-edge-g" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}">
+      <line class="plot-edge-hit" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="12" fill="none"/>
+      <line class="${cls}${dim}" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>
+    </g>`;
   }).join('');
   /* 票03 角标；01 先按窗内目录序算好，画布上可先不显数字到 03——为减跳变，01 即画角标 */
   const orderIds=leaves.filter(l=>!l.external).map(l=>l.id);
@@ -18429,9 +18460,15 @@ function vPlotGraph(){
   <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
-  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。边与窗外能力见后续。MVP 无搜索／多选。</p>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边；点中边再「删边」。不按目录自动串链。MVP 无搜索／多选。</p>
   ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
-  <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span></div></div>
+  <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
+  <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
+  <button type="button" class="btn sm" data-act="plot-link-relate" title="进入拉相关边：依次单击两个叶节点">拉相关</button>
+  <button type="button" class="btn sm" data-act="plot-link-cancel" title="取消拉边">取消拉边</button>
+  <button type="button" class="btn sm danger" data-act="plot-edge-del" title="删除当前选中的边">删边</button>
+  <span id="plotLinkHint" class="hint" style="margin:0" aria-live="polite"></span>
+  </div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap"><span class="hint">窗内叶 ${leaves.length}（含钉住／拖入）</span></div>`:`<div class="empty">当前卷还没有可铺的章／${esc(uLab)}</div>`}</div>`;
 }
 function bindPlotGraph(){
@@ -18485,8 +18522,8 @@ function bindPlotGraph(){
     if(badgeBg){badgeBg.setAttribute('cx',String(bx));badgeBg.setAttribute('cy',String(by))}
     if(badgeTx){badgeTx.setAttribute('x',String(bx));badgeTx.setAttribute('y',String(by+3.5))}
     /* 同步相连边端点（票02） */
-    svg.querySelectorAll('.graph-edges line[data-a="'+CSS.escape(id)+'"]').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x1',String(p.x));ln.setAttribute('y1',String(p.y))});
-    svg.querySelectorAll('.graph-edges line[data-b="'+CSS.escape(id)+'"]').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x2',String(p.x));ln.setAttribute('y2',String(p.y))});
+    svg.querySelectorAll('.graph-edges .plot-edge-g[data-a="'+CSS.escape(id)+'"] line').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x1',String(p.x));ln.setAttribute('y1',String(p.y))});
+    svg.querySelectorAll('.graph-edges .plot-edge-g[data-b="'+CSS.escape(id)+'"] line').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x2',String(p.x));ln.setAttribute('y2',String(p.y))});
   };
   const setFocus=(/** @type {string} */ id)=>{
     S.ui._plotFocusId=id||null;
@@ -18495,6 +18532,37 @@ function bindPlotGraph(){
     if(btn){if(id)btn.removeAttribute('disabled');else btn.setAttribute('disabled','')}
   };
   (/** @type {any} */(wrap))._plotFocus=setFocus;
+  let linkMode=/** @type {''|'cause'|'relate'} */('');
+  let linkFrom=/** @type {string|null} */(null);
+  let edgeSel=/** @type {{a:string,b:string,type:string}|null} */(null);
+  const linkHint=()=>{
+    const el=document.getElementById('plotLinkHint');
+    if(!el)return;
+    if(linkMode)el.textContent=linkFrom?('已选起点，再点终点（'+(linkMode==='relate'?'相关':'导致')+'）'):('拉'+(linkMode==='relate'?'相关':'导致')+'：先点起点');
+    else if(edgeSel)el.textContent='已选边，可点「删边」';
+    else el.textContent='';
+    document.querySelectorAll('[data-act="plot-link-cause"],[data-act="plot-link-relate"]').forEach((/** @type {any} */ b)=>{
+      const act=b.getAttribute('data-act')||'';
+      b.classList.toggle('on',(act==='plot-link-cause'&&linkMode==='cause')||(act==='plot-link-relate'&&linkMode==='relate'));
+    });
+  };
+  const clearEdgeSel=()=>{
+    edgeSel=null;
+    svg.querySelectorAll('.plot-edge.sel').forEach((/** @type {any} */ ln)=>ln.classList.remove('sel'));
+  };
+  const selectEdge=(/** @type {string} */ a,/** @type {string} */ b,/** @type {string} */ type)=>{
+    clearEdgeSel();
+    edgeSel={a,b,type};
+    svg.querySelectorAll('.plot-edge-g[data-a="'+CSS.escape(a)+'"][data-b="'+CSS.escape(b)+'"][data-etype="'+CSS.escape(type)+'"] .plot-edge').forEach((/** @type {any} */ ln)=>ln.classList.add('sel'));
+    linkHint();
+  };
+  (/** @type {any} */(wrap))._plotSetLink=(/** @type {''|'cause'|'relate'} */ m)=>{linkMode=m;linkFrom=null;clearEdgeSel();linkHint()};
+  (/** @type {any} */(wrap))._plotDelEdge=()=>{
+    if(!edgeSel){toast('请先点选一条边');return false}
+    const ok=plotEdgeDel(nid,edgeSel.a,edgeSel.b,edgeSel.type);
+    if(ok){toast('已删边');render()}else toast('删边失败');
+    return ok;
+  };
   wrap.addEventListener('wheel',(/** @type {WheelEvent} */ e)=>{
     e.preventDefault();
     const we=e;
@@ -18552,6 +18620,14 @@ function bindPlotGraph(){
     if(id){const g=nodeOf(id);if(g)g.classList.remove('dragging')}
     mode=null;nidDrag=null;moved=false;
     if(was==='node'&&id&&!did){
+      if(linkMode){
+        if(!linkFrom){linkFrom=id;setFocus(id);linkHint();return}
+        if(linkFrom===id){toast('请点另一个节点作终点');return}
+        const ok=plotEdgeAdd(nid,linkFrom,id,linkMode);
+        linkFrom=null;linkMode='';linkHint();
+        if(ok){toast('已建边');render()}else toast('边已存在或无效');
+        return;
+      }
       setFocus(id);
       const pe=e;
       if(pe&&pe.detail>=2){
@@ -18561,7 +18637,15 @@ function bindPlotGraph(){
     }else if(was==='node'&&id&&did){
       save();   // 拖点落工程态
     }else if(was==='pan'&&!did){
+      /* 点空白或点边：若点中边则选边 */
+      const pe=e;
+      const t=pe&&pe.target&&/** @type {Element} */(pe.target).closest?/** @type {Element} */(pe.target).closest('.plot-edge-g'):null;
+      if(t){
+        selectEdge(t.getAttribute('data-a')||'',t.getAttribute('data-b')||'',t.getAttribute('data-etype')||'cause');
+        return;
+      }
       setFocus('');
+      clearEdgeSel();linkHint();
     }
   };
   wrap.addEventListener('pointerup',endPtr);
@@ -22835,6 +22919,25 @@ document.addEventListener('click',async e=>{
     const n=curNovel();if(!n){toast('请先打开作品');break}
     const leaf=plotVisibleLeaves(n.id,plotCurActId(n.id)).find(l=>l.id===fid);
     plotOpenWriting(leaf||{id:fid,kind:'scene',novelId:n.id});
+    break}
+  case'plot-link-cause':{
+    const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
+    if(wrap&&typeof (/** @type {any} */(wrap))._plotSetLink==='function')(/** @type {any} */(wrap))._plotSetLink('cause');
+    else toast('请先打开剧情图谱');
+    break}
+  case'plot-link-relate':{
+    const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
+    if(wrap&&typeof (/** @type {any} */(wrap))._plotSetLink==='function')(/** @type {any} */(wrap))._plotSetLink('relate');
+    else toast('请先打开剧情图谱');
+    break}
+  case'plot-link-cancel':{
+    const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
+    if(wrap&&typeof (/** @type {any} */(wrap))._plotSetLink==='function')(/** @type {any} */(wrap))._plotSetLink('');
+    break}
+  case'plot-edge-del':{
+    const wrap=document.querySelector('.graph-wrap[data-plot="1"]');
+    if(wrap&&typeof (/** @type {any} */(wrap))._plotDelEdge==='function')(/** @type {any} */(wrap))._plotDelEdge();
+    else toast('请先打开剧情图谱并选中一条边');
     break}
   case'res-toggle':{   // 票27：窄屏覆盖槽打开时资源栏按钮＝关闭覆盖槽（不碰宽屏收窄/宽度记忆）
     if(npPaneNow()==='res'){narrowPaneSet(null);npFocusOpener('res');break}
