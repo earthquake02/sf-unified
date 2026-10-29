@@ -23377,7 +23377,7 @@ document.addEventListener('click',async e=>{
     const n3=curNovel();const sid=firstSceneOf(n3?scenePos(n3.id):[],'chapter',id);
     if(!sid){toast('本章还没有场景（去「故事板」或「大纲结构」点「＋场」添加）');break}
     editorPick(sid);break}
-  case'beat-add':{const sc=curScene();const v=await uiPrompt('节拍内容：');if(v!==null&&(v=v.trim())){sc.beats=sc.beats||[];sc.beats.push({text:v,done:false});save();render()}break}
+  case'beat-add':{const sc=curScene();const v=await uiPrompt('节拍内容：');if(v&&v.trim()){sc.beats=sc.beats||[];sc.beats.push({text:v.trim(),done:false});save();render()}break}
   case'beat-toggle':{const sc=curScene();sc.beats[+el.dataset.i].done=el.checked;save();render();break}
   case'beat-del':{const sc=curScene();sc.beats.splice(+el.dataset.i,1);save();render();break}
   case'beat-edit':{const sc=curScene();const b=sc.beats[+el.dataset.i];const v=await uiPrompt('编辑节拍：',b.text);if(v!==null){b.text=v.trim();save();render()}break}
