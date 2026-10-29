@@ -98,8 +98,8 @@ body{background:var(--bg); color:var(--tx); font-family:var(--ui-font); font-siz
 .res-cdx .rt{display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .res-cdx-ai{flex-shrink:0; font-size:14px; line-height:1; min-width:1.25em; text-align:center; color:var(--tx3)}
 .res-cdx[hidden]{display:none}
-.res-cdx-actions{padding:0 4px 10px}
-.res-cdx-actions .btn{width:100%}
+.res-cdx-actions{display:flex;flex-wrap:nowrap;gap:6px;align-items:center;padding:0 4px 10px}
+.res-cdx-actions .btn{flex:1 1 0;min-width:0;width:auto}
 /* 体验修补票09：设定六固定类型分组容器与组头（组头＝中文组名＋本书本类型计数；
    组容器/组头为后续票（折叠10/记忆11/搜索12/组头新建13/窄屏15）的稳定钩子） */
 .res-cdx-group{margin:0 0 8px}
@@ -636,7 +636,6 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap .plot-edge-g{cursor:pointer}
 .graph-wrap .plot-edge-hit{pointer-events:stroke}
 .graph-tools .btn.on{outline:2px solid var(--ac); outline-offset:1px}
-.res-cdx-actions{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
 .c-rel-top{display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:12px}
 .c-rel-intro{flex:1; min-width:180px; font-size:12.5px; color:var(--tx2); line-height:1.55; margin:0}
 .c-rel-actions{display:flex; align-items:center; gap:8px; margin-left:auto; position:relative}
@@ -10022,7 +10021,7 @@ function mentionScan(nid){
     scenes.set(s.id,cached);
     for(const [eid,count] of cached.counts){
       const m=/** @type {MentionResult} */(res.get(eid));
-      m.total+=count;m.hits.push({sceneId:s.id,title:s.title,count});
+      m.total+=count;m.hits.push({sceneId:s.id,title:(typeof unitListTitle==='function'?unitListTitle(s):s.title)||s.title,count});
     }
   }
   cache.scenes=scenes;
@@ -11112,7 +11111,7 @@ async function aiModels(){
 const NAV=[
   {grp:'作品'},
   {v:'novels',ic:'novels',t:'我的小说'},{v:'outline',ic:'storyboard',t:'大纲结构'},{v:'storyboard',ic:'storyboard',t:'故事板'},{v:'timeline',ic:'timeline',t:'时间轴'},
-  {v:'editor',ic:'editor',t:'写作'},{v:'review',ic:'review',t:'审阅'},{v:'codex',ic:'codex',t:'设定集'},{v:'graph',ic:'graph',t:'关系图谱'},{v:'plot-graph',ic:'git-compare',t:'剧情图谱'},{v:'snippets',ic:'snippets',t:'片段库'},
+  {v:'editor',ic:'editor',t:'写作'},{v:'review',ic:'review',t:'审阅'},{v:'codex',ic:'codex',t:'设定集'},{v:'graph',ic:'graph',t:'关系'},{v:'plot-graph',ic:'git-compare',t:'剧情'},{v:'snippets',ic:'snippets',t:'片段库'},
   {grp:'AI'},
   {v:'prompts',ic:'prompts',t:'提示词库'},{v:'style',ic:'style',t:'文风蒸馏'},
   {grp:'系统'},
@@ -11990,7 +11989,7 @@ function cdxManageToggle(id){
 }
 /** 资源栏设定集：一轮构建关系统计与过滤上下文；未启用 inScene 时不计算场景提及。 */
 function resCodexHTML(n){
-  const graph=`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="res-graph" title="在中央宽视图查看本书关系图谱（实线箭头＝归属／下属，虚线＝平级关联）">${uiIc('graph')}关系图谱</button><button type="button" class="btn sm" data-act="res-plot-graph" title="在中央宽视图查看本书剧情图谱（章／小节叶节点与因果边）">${uiIc('git-compare')}剧情图谱</button></div>`;
+  const graph=`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="res-graph" title="在中央宽视图查看本书关系图谱（实线箭头＝归属／下属，虚线＝平级关联）">${uiIc('graph')}关系</button><button type="button" class="btn sm" data-act="res-plot-graph" title="在中央宽视图查看本书剧情图谱（章／小节叶节点与因果边）">${uiIc('git-compare')}剧情</button></div>`;
   const selSet=cdxManageOn()?new Set(cdxSelLive()):null;   /* 票02：每轮渲染一次存活勾选集（行勾选与底浮条计数同源；已删/换书残留读时过滤） */
   let list=entriesOf(n.id);
   const relIdx=codexRelStatsOf(list);
@@ -21320,6 +21319,19 @@ function outlineUnitTitle(sc){
   const ch=(S.data.chapters||[]).find(c=>c&&c.id===sc.chapterId);
   return ch?nodeTitle(ch):(sc.title||'');
 }
+/** 列表用单元标题（提及／同类只读列表）：二级跟章题；空或占位「正文」「正文N」回落到章题（与 asstCtDisplayTitles 同口径）；真有小节题则用小节题。
+ * @param {any} sc
+ * @returns {string} */
+function unitListTitle(sc){
+  if(!sc)return '';
+  if(typeof outlineTwo==='function'&&outlineTwo())return outlineUnitTitle(sc)||'';
+  const st=String(sc.title||'').trim();
+  const ch=(S.data.chapters||[]).find(/** @type {(c:any)=>boolean} */(c)=>c&&c.id===sc.chapterId);
+  const chTitle=ch?String(nodeTitle(ch)||'').trim():'';
+  if(!st||st==='正文')return chTitle||st;
+  if(/^正文\d+$/.test(st))return chTitle?(chTitle+' · '+st):st;
+  return st;
+}
 function outlineWriteUnitTitle(sc, raw){
   if(!sc)return;
   const v=raw==null?'':String(raw);
@@ -22717,7 +22729,7 @@ async function aiChapterMemory(nid,chId){
     <p class="hint">一次调用产出本章梗概 + 章末交接。<b>期间正文有改动则不保存。生成完成前关闭＝放弃本次结果，请求即刻中止；中断的调用本地不记账，已完成调用的用量保留，服务商端可能照计。</b></p>
     <div id="ho-out" style="max-height:52vh;overflow:auto;margin-top:6px">生成中…</div>
     <div class="hint" id="ho-snap" style="margin-top:6px"></div>
-    <div class="foot"><button class="btn" onclick="modalAskClose()">关闭</button></div>`,null,{guard:{title:'放弃本次生成？',body:'关闭窗口将停止生成，未完成的内容不会保存。'}});
+    <div class="foot"><button class="btn" onclick="modalAskClose()">关闭</button></div>`,null,{guard:()=>S.ui._hoBusy?{title:'放弃本次生成？',body:'关闭窗口将停止生成，未完成的内容不会保存。'}:null});
   $('#ho-snap').textContent='本次调用：'+p.name+'（'+p.id+'） · '+(p.model||st.aiModel)+' · t='+tempEff+' · max_tokens='+(mtEff||'端点默认');
   const out=$('#ho-out');
   const hoToken=(S.ui._hoToken=(S.ui._hoToken||0)+1);
