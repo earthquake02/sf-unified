@@ -624,6 +624,16 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-scene-pick .btn:disabled{opacity:.45;cursor:not-allowed}
 .graph-tools .co-hint{font-size:10.5px;color:var(--tx3);margin-left:2px}
 .graph-note{font-size:9px; fill:var(--tx3); pointer-events:none}
+/* plot-graph-mvp：剧情图谱（复用 .graph-shell／.graph-wrap 壳；独立数据与入口） */
+.graph-wrap .graph-node.plot-focus .graph-ring{stroke:var(--ac); stroke-width:3.6}
+.graph-wrap .graph-node.plot-focus .graph-label{fill:var(--ac); font-weight:700}
+.graph-wrap .plot-badge{font-size:10px; font-weight:700; fill:var(--bg); stroke:none; pointer-events:none}
+.graph-wrap .plot-badge-bg{fill:var(--ac2); opacity:.92; pointer-events:none}
+.graph-wrap .plot-edge-cause{stroke:var(--ac); stroke-width:2; fill:none; opacity:.9; marker-end:url(#sfPlotCauseArrow)}
+.graph-wrap .plot-edge-relate{stroke:var(--ac2); stroke-width:1.7; fill:none; opacity:.8; stroke-dasharray:6 4}
+.graph-wrap .plot-edge.dim{opacity:.18}
+.graph-wrap .plot-edge.sel{stroke-width:3.2}
+.res-cdx-actions{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
 .c-rel-top{display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:12px}
 .c-rel-intro{flex:1; min-width:180px; font-size:12.5px; color:var(--tx2); line-height:1.55; margin:0}
 .c-rel-actions{display:flex; align-items:center; gap:8px; margin-left:auto; position:relative}
@@ -2579,12 +2589,13 @@ const G3_FORMAT='novel-studio-files-v1';
 const G3_LIB=DF_WS+'/书库.json';                    // 旧库文件（G2 形态）：G3 起退役
 const G3_F={prompts:DF_WS+'/提示词.json',style:DF_WS+'/文风.json',usage:DF_WS+'/用量.json',presets:DF_WS+'/大纲预设.json',shared:DF_WS+'/共享设定'};   // shared＝S16 旧共享设定目录（票34 起只认领回收＋清空数据，不投影）
 const G3_DIR={text:'正文',codex:'设定',fs:'伏笔',snip:'片段',chat:'会话',talk:'对话',image:'图'};
-const G3_FN={proj:'项目.json',tags:'标签.json',recycle:'回收站.json',act:'卷.json',chap:'章.json',cat:'_分类.json'};
+const G3_FN={proj:'项目.json',tags:'标签.json',recycle:'回收站.json',plotGraph:'剧情图谱.json',act:'卷.json',chap:'章.json',cat:'_分类.json'};
 const G3_SEG_MAX=40;                                // 单个路径段长度帽（服务端解析后绝对路径 255 上限的余量）
 const G3_SIDE_FORMAT='novel-studio-scene-sidecar-v1';
 const G3_MD_FORMAT='novel-studio-entry-v1';
 const G3_TAGS_FORMAT='novel-studio-tags-v1';
 const G3_RECYCLE_FORMAT='novel-studio-recycle-v1';
+const G3_PLOT_FORMAT='novel-studio-plot-graph-v1';   // plot-graph-mvp：书根剧情图谱工程态（坐标／边／钉住）
 const G3_CHAT_FORMAT='novel-studio-chat-v1';
 
 /* ---------- 固定功能会话模型（写作体验票54／#06；spec §11） ----------
@@ -6635,6 +6646,11 @@ function g3ProjBook(d,n,out,used,paths,trace,cx){
   /* 回收站：作品级软删卷/章/场景快照（书根 `回收站.json`；空则不落文件） */
   const rbin=recycleBinOf0(d,n.id);
   if(rbin.length)out.set(P+G3_FN.recycle,g3J({_format:G3_RECYCLE_FORMAT,items:rbin.map(recycleBinSerialize)}));
+  /* plot-graph-mvp：书根 剧情图谱.json（有坐标／边／钉住才落文件；空则不写，删空后随删除腿回收） */
+  {
+    const pg=plotGraphSerializeOf0(d,n.id);
+    if(pg)out.set(P+G3_FN.plotGraph,g3J(pg));
+  }
 
   /* 正文：卷 → 章 → 场景（一景一文件＋边车） */
   const usedAct=new Set();
@@ -6968,6 +6984,7 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
   const out={novel:n,schemaVersion:Number(proj.schemaVersion)||0,acts:[],chapters:[],scenes:[],codexCategories:[],codexEntries:[],foreshadows:[],snippets:/** @type {any[]} */([]),chats:[],chatSessions:[],tagDefs:[],recycleBin:[]};   // 片段深化01：snippets 显式 any[]（新增 status 字段后免 never[] 推断报错）
   out.assistants=[];   // 助理票01：与固定功能会话分列；旧程序见不认识的 _format 会撤回认领，不删文件
   out.entryImages=[];   // 外观票04：像素与条目分列；身份在条目 image
+  (/** @type {any} */(out)).plotGraphs=[];   // plot-graph-mvp：书级剧情图谱工程态
   const verCap=opts&&opts.verCap;
   if(paths)paths.set(n.id,dir);   // 路径名稳定：读到的名字即认领名
   /* 票39：作品级标签定义（书根 `标签.json`，权威位置）——有效契约对象才认领；坏档只告警不认领（不静默改写/删除）。
@@ -6993,6 +7010,18 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
       }else{
         const re=files.get(dir+'/'+G3_FN.recycle);if(re)re.keep=true;
         warns.push('「'+dir+'/'+G3_FN.recycle+'」不是本契约的回收站文件（_format 不符），已跳过');
+      }
+    }
+  }
+  /* plot-graph-mvp：书根 剧情图谱.json */
+  {
+    const pj=await g3ReadJson(dir+'/'+G3_FN.plotGraph,files,warns,null);
+    if(pj){
+      if(pj._format===G3_PLOT_FORMAT){
+        (/** @type {any} */(out)).plotGraphs=[plotGraphNormalizeOne(pj,n.id)];
+      }else{
+        const pe=files.get(dir+'/'+G3_FN.plotGraph);if(pe)pe.keep=true;
+        warns.push('「'+dir+'/'+G3_FN.plotGraph+'」不是本契约的剧情图谱文件（_format 不符），已跳过');
       }
     }
   }
@@ -7112,6 +7141,7 @@ async function g3Scan(opts){
   const doc={schemaVersion:0,novels:[],acts:[],chapters:[],scenes:[],codexCategories:[],codexEntries:[],snippets:[],foreshadows:[],chats:[],chatSessions:[],tagDefs:[],recycleBin:[]};
   doc.assistants=[];
   doc.entryImages=[];
+  (/** @type {any} */(doc)).plotGraphs=[];   // plot-graph-mvp
   const pf=await g3ReadJson(G3_F.prompts,files,warns,'提示词文件 ');
   if(pf&&Array.isArray(pf.prompts))doc.prompts=g3PromptsRead(pf.prompts);   // 文件不在=不设键：交给 load() 的补齐逻辑用出厂值（内置提示词/默认大纲预设/空用量）
   const sf=await g3ReadJson(G3_F.style,files,warns,'文风文件 ');
@@ -7132,7 +7162,7 @@ async function g3Scan(opts){
     if(!p)continue;
     doc.novels.push(p.novel);
     doc.schemaVersion=Math.max(doc.schemaVersion,p.schemaVersion);
-    for(const k of['acts','chapters','scenes','codexCategories','codexEntries','foreshadows','snippets','chats','chatSessions','tagDefs','recycleBin','assistants','entryImages'])for(const x of p[k])doc[k].push(x);
+    for(const k of['acts','chapters','scenes','codexCategories','codexEntries','foreshadows','snippets','chats','chatSessions','tagDefs','recycleBin','assistants','entryImages','plotGraphs'])for(const x of (p[k]||[]))doc[k].push(x);
   }
   if(onRead)delete files.sfOnRead;   // 票06：回调只活在这一次扫描，不跟着文件表进 ST.files
   return{doc,files,warns,paths,books:parts.filter(Boolean).length,sharedRetired};
@@ -7931,6 +7961,7 @@ function freshData(){return {
   novels:[],acts:[],chapters:[],scenes:[],
   codexCategories:[],codexEntries:[],snippets:[],foreshadows:[],styleProfiles:[],
   tagDefs:[],recycleBin:[],   // 票39标签；回收站＝软删卷/章/场景快照（书根 回收站.json）
+  plotGraphs:/** @type {any[]} */([]),   // plot-graph-mvp：每书一份 {novelId,positions,edges,pins}；文件真源＝书根 剧情图谱.json
   prompts:builtinPrompts(),chats:[],chatSessions:[],   // 票54：chatSessions＝固定功能会话（文件真源＝对话/）；chats＝旧多消息会话（只读保留）
   assistants:[],   // 助理票01：多轮对话（文件真源同为 对话/，_format=novel-studio-assistant-v1；不进固定功能会话）
   entryImages:[],   // 外观票04：条目配图像素（身份在条目 image；文件真源＝图/<身份>.png.txt）
@@ -8707,7 +8738,7 @@ function load(libText,setText){
     schemaGate(S.data);   // F0 版本闸门：v0 旧档走迁移链（F0 空链）+打戳；ahead 已在上方分流（不打戳不降级）
     S.ui.schemaAhead=false;   // 回验②：ok 档清脏标记（防手工 ui 残留 schemaAhead 误锁整场会话）
     // 补齐新版本可能缺失的字段
-    const f=freshData();for(const k of Object.keys(f))if(S.data[k]===undefined)S.data[k]=f[k];
+    const f=freshData();for(const k of Object.keys(f))if((/** @type {any} */(S.data))[k]===undefined)(/** @type {any} */(S.data))[k]=/** @type {any} */(f)[k];
     if(!S.data.settings||typeof S.data.settings!=='object')S.data.settings={};   // G2：设置文件缺失/坏档 → 空对象走补齐（不再整库兜底成出厂档）
     const s1=/** @type {any} */ (S.data.settings);
     for(const [k,v] of Object.entries(f.settings))if(s1[k]===undefined)s1[k]=v;
@@ -8719,6 +8750,7 @@ function load(libText,setText){
     codexRelationsNormalizeAll(S.data.codexEntries);   // 关系四层：parentId→parents；connections 升对象
     if(typeof entryImagesNormalize==='function')entryImagesNormalize(S.data);   // 外观票04：像素与身份归一（ahead 档在上方已返回，不改写）
     S.data.tagDefs=tagDefsNormalize(S.data.tagDefs);   // 票39：标签定义归一（坏形状/空名整条丢、同书同 id 去重；旧档无字段＝空数组）
+    if(!Array.isArray(S.data.plotGraphs))S.data.plotGraphs=[];   // plot-graph-mvp：缺字段＝空
     for(const s39 of(S.data.scenes||[])){   // 票39：场景分配归一（缺字段＝未分配；空结果不落键——与边车「空省略」同口径，保写盘定点）
       if(!s39)continue;
       const tids39=sceneTagIdsNormalize(s39.tagIds);
@@ -8915,6 +8947,16 @@ function recycleSoftDelete(t,id){
   d.recycleBin.unshift(entry);
   if(!nodeDelete(d,t,id)){d.recycleBin=d.recycleBin.filter(x=>x&&x.id!==entry.id);return null}
   sceneFigSweep(nid);
+  /* plot-graph-mvp：删叶清剧情图谱节点／边／钉住 */
+  try{
+    /** @type {string[]} */
+    const ids=[];
+    for(const c of/** @type {any[]} */((entry.snapshot&&entry.snapshot.chapters)||[]))if(c&&c.id)ids.push(String(c.id));
+    for(const sc of/** @type {any[]} */((entry.snapshot&&entry.snapshot.scenes)||[]))if(sc&&sc.id)ids.push(String(sc.id));
+    if(t==='chapter'||t==='act')ids.push(String(id));
+    else if(t==='scene')ids.push(String(id));
+    if(ids.length&&typeof plotGraphPurgeNodes==='function')plotGraphPurgeNodes(nid,ids);
+  }catch(_e){}
   return entry;
 }
 function recycleRestore(entryId){
@@ -11005,7 +11047,7 @@ async function aiModels(){
 const NAV=[
   {grp:'作品'},
   {v:'novels',ic:'novels',t:'我的小说'},{v:'outline',ic:'storyboard',t:'大纲结构'},{v:'storyboard',ic:'storyboard',t:'故事板'},{v:'timeline',ic:'timeline',t:'时间轴'},
-  {v:'editor',ic:'editor',t:'写作'},{v:'review',ic:'review',t:'审阅'},{v:'codex',ic:'codex',t:'设定集'},{v:'graph',ic:'graph',t:'关系图谱'},{v:'snippets',ic:'snippets',t:'片段库'},
+  {v:'editor',ic:'editor',t:'写作'},{v:'review',ic:'review',t:'审阅'},{v:'codex',ic:'codex',t:'设定集'},{v:'graph',ic:'graph',t:'关系图谱'},{v:'plot-graph',ic:'git-compare',t:'剧情图谱'},{v:'snippets',ic:'snippets',t:'片段库'},
   {grp:'AI'},
   {v:'prompts',ic:'prompts',t:'提示词库'},{v:'style',ic:'style',t:'文风蒸馏'},
   {grp:'系统'},
@@ -11883,7 +11925,7 @@ function cdxManageToggle(id){
 }
 /** 资源栏设定集：一轮构建关系统计与过滤上下文；未启用 inScene 时不计算场景提及。 */
 function resCodexHTML(n){
-  const graph=`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="res-graph" title="在中央宽视图查看本书关系图谱（实线箭头＝归属／下属，虚线＝平级关联）">${uiIc('graph')}关系图谱</button></div>`;
+  const graph=`<div class="res-cdx-actions"><button type="button" class="btn sm" data-act="res-graph" title="在中央宽视图查看本书关系图谱（实线箭头＝归属／下属，虚线＝平级关联）">${uiIc('graph')}关系图谱</button><button type="button" class="btn sm" data-act="res-plot-graph" title="在中央宽视图查看本书剧情图谱（章／小节叶节点与因果边）">${uiIc('git-compare')}剧情图谱</button></div>`;
   const selSet=cdxManageOn()?new Set(cdxSelLive()):null;   /* 票02：每轮渲染一次存活勾选集（行勾选与底浮条计数同源；已删/换书残留读时过滤） */
   let list=entriesOf(n.id);
   const relIdx=codexRelStatsOf(list);
@@ -13567,8 +13609,8 @@ function render(){
   // 资源栏（票21）：三入口互斥与续位；无当前书强制窄栏＋入口/开合禁用
   renderRes(n);
   // 主区
-  const V={novels:vNovels,outline:vOutline,storyboard:vStoryboard,timeline:vTimeline,editor:vEditor,review:vReview,codex:vCodex,graph:vGraph,snippets:vSnippets,prompts:vPrompts,settings:vSettings,style:vStyle};
-  $('#main').innerHTML=(V[S.ui.view]||vNovels)();
+  const V={novels:vNovels,outline:vOutline,storyboard:vStoryboard,timeline:vTimeline,editor:vEditor,review:vReview,codex:vCodex,graph:vGraph,'plot-graph':vPlotGraph,snippets:vSnippets,prompts:vPrompts,settings:vSettings,style:vStyle};
+  $('#main').innerHTML=((/** @type {any} */(V))[S.ui.view]||vNovels)();
   if(S.ui.view==='editor'){bindEditor();applyNarrowUI();   // 票27：渲染后铺窄屏覆盖槽态（宽屏＝按记忆铺宽屏类名，行为不变）
     if(S.ui._edHlEntryId){   // 票07：跳提及小节后补刷正文高亮（一次性挂起）
       const eid=String(S.ui._edHlEntryId||'');S.ui._edHlEntryId=null;
@@ -13585,7 +13627,8 @@ ivBindDrag();
   if(S.ui.view==='timeline')bindTimeline();
   if(S.ui.view==='storyboard')bindTimeline('#storyboard');
   if(S.ui.view==='graph')bindGraph();
-  try{const _m=$('#main');if(_m)_m.classList.toggle('view-graph',S.ui.view==='graph')}catch(_e){}
+  if(S.ui.view==='plot-graph')bindPlotGraph();
+  try{const _m=$('#main');if(_m){_m.classList.toggle('view-graph',S.ui.view==='graph'||S.ui.view==='plot-graph');_m.classList.toggle('view-plot-graph',S.ui.view==='plot-graph')}}catch(_e){}
   if(S.ui&&S.ui.cdxFunnelOpen){try{cdxFunnelPlace()}catch(_e){}}
   const fb=$('#fldBanner');if(fb){fb.innerHTML=stBannerHTML();fb.classList.toggle('on',!!fb.innerHTML);document.body.classList.toggle('fld-ro',!!fb.innerHTML)}   // G2：只读（版本闸/冲突）与写入失败常驻横幅
   scrollRestore(_ss);
@@ -18130,6 +18173,401 @@ function bindGraph(){
   wrap.addEventListener('pointercancel',endPtr);
 }
 
+
+/* ---------- 剧情图谱（plot-graph-mvp）----------
+   工程态：S.data.plotGraphs[] → 书根 剧情图谱.json（_format=novel-studio-plot-graph-v1）。
+   坐标／边／钉住同文件；不进设定集、不写 UI_KEY／graphLayout。
+   票01＝壳＋当前卷叶铺点＋单击／双击；票02＝边；票03＝窗外／角标。MVP 无搜索／多选。 */
+/** @param {any} d @param {string} nid */
+function plotGraphOf0(d,nid){
+  if(!d)return null;
+  if(!Array.isArray(d.plotGraphs))d.plotGraphs=[];
+  let st=d.plotGraphs.find((/** @type {any} */ x)=>x&&x.novelId===nid);
+  if(!st){
+    st={novelId:nid,positions:/** @type {Record<string,{x:number,y:number}>} */({}),edges:/** @type {any[]} */([]),pins:/** @type {string[]} */([])};
+    d.plotGraphs.push(st);
+  }
+  if(!st.positions||typeof st.positions!=='object')st.positions={};
+  if(!Array.isArray(st.edges))st.edges=[];
+  if(!Array.isArray(st.pins))st.pins=[];
+  return st;
+}
+/** @param {string} nid */
+function plotGraphOf(nid){return plotGraphOf0(S.data,nid)}
+/** 序列化本书剧情图谱；无有效数据返回 null（不落空文件）
+ * @param {any} d @param {string} nid */
+function plotGraphSerializeOf0(d,nid){
+  if(!d||!Array.isArray(d.plotGraphs))return null;
+  const st=d.plotGraphs.find((/** @type {any} */ x)=>x&&x.novelId===nid);
+  if(!st)return null;
+  const positions=/** @type {Record<string,{x:number,y:number}>} */({});
+  const src=st.positions&&typeof st.positions==='object'?st.positions:{};
+  for(const k of Object.keys(src)){
+    const p=src[k];
+    if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
+      positions[k]={x:p.x,y:p.y};
+  }
+  /** @type {any[]} */
+  const edges=[];
+  for(const e of(Array.isArray(st.edges)?st.edges:[])){
+    if(!e)continue;
+    const a=String(e.a||''),b=String(e.b||'');
+    const type=e.type==='relate'?'relate':'cause';
+    if(!a||!b||a===b)continue;
+    edges.push({a,b,type});
+  }
+  /** @type {string[]} */
+  const pins=[];
+  const seen=new Set();
+  for(const id of(Array.isArray(st.pins)?st.pins:[])){
+    const s0=String(id||'');if(!s0||seen.has(s0))continue;seen.add(s0);pins.push(s0);
+  }
+  if(!Object.keys(positions).length&&!edges.length&&!pins.length)return null;
+  return{_format:G3_PLOT_FORMAT,positions,edges,pins};
+}
+/** @param {any} raw @param {string} nid */
+function plotGraphNormalizeOne(raw,nid){
+  const positions=/** @type {Record<string,{x:number,y:number}>} */({});
+  const src=raw&&raw.positions&&typeof raw.positions==='object'?raw.positions:{};
+  for(const k of Object.keys(src)){
+    const p=src[k];
+    if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
+      positions[k]={x:p.x,y:p.y};
+  }
+  /** @type {any[]} */
+  const edges=[];
+  for(const e of(Array.isArray(raw&&raw.edges)?raw.edges:[])){
+    if(!e)continue;
+    const a=String(e.a||''),b=String(e.b||'');
+    const type=e.type==='relate'?'relate':'cause';
+    if(!a||!b||a===b)continue;
+    edges.push({a,b,type});
+  }
+  /** @type {string[]} */
+  const pins=[];
+  const seen=new Set();
+  for(const id of(Array.isArray(raw&&raw.pins)?raw.pins:[])){
+    const s0=String(id||'');if(!s0||seen.has(s0))continue;seen.add(s0);pins.push(s0);
+  }
+  return{novelId:nid,positions,edges,pins};
+}
+/** 当前卷（跟随写作区当前小节所属卷；无则首卷）
+ * @param {string} nid @returns {string|null} */
+function plotCurActId(nid){
+  const sid=S.ui.sceneId;
+  if(sid){
+    const sc=(S.data.scenes||[]).find((/** @type {any} */ x)=>x&&x.id===sid&&x.novelId===nid);
+    if(sc){
+      const ch=(S.data.chapters||[]).find((/** @type {any} */ x)=>x&&x.id===sc.chapterId);
+      if(ch&&ch.actId)return String(ch.actId);
+    }
+  }
+  const acts=actsOf(nid);
+  return acts.length?String(acts[0].id):null;
+}
+/**
+ * 当前卷叶节点：二级＝章；三级＝有小节只铺小节、无小节铺章。
+ * @param {string} nid @param {string|null} actId
+ * @returns {any[]} */
+function plotLeafNodes(nid,actId){
+  /** @type {any[]} */
+  const out=[];
+  if(!nid||!actId)return out;
+  const two=typeof outlineTwo==='function'&&outlineTwo();
+  for(const c of chaptersOf(nid,actId)){
+    if(two){
+      out.push({id:c.id,kind:'chapter',title:nodeTitle(c)||'未命名章',actId,chapterId:c.id,novelId:nid});
+      continue;
+    }
+    const scs=scenesOf(nid,c.id);
+    if(!scs.length){
+      out.push({id:c.id,kind:'chapter',title:nodeTitle(c)||'未命名章',actId,chapterId:c.id,novelId:nid});
+    }else{
+      for(const sc of scs){
+        out.push({id:sc.id,kind:'scene',title:sc.title||unitEmptyTitle(),actId,chapterId:c.id,sceneId:sc.id,novelId:nid});
+      }
+    }
+  }
+  return out;
+}
+/** 窗内可见叶：当前卷叶 ＋ 钉住（票03）＋ 临时拖入（会话）
+ * @param {string} nid @param {string|null} actId @returns {any[]} */
+function plotVisibleLeaves(nid,actId){
+  const base=plotLeafNodes(nid,actId);
+  const byId=new Map(base.map(l=>[l.id,l]));
+  const st=plotGraphOf(nid);
+  const resolve=(/** @type {string} */ id)=>{
+    if(byId.has(id))return byId.get(id);
+    const sc=(S.data.scenes||[]).find((/** @type {any} */ x)=>x&&x.id===id&&x.novelId===nid);
+    if(sc){
+      const ch=(S.data.chapters||[]).find((/** @type {any} */ x)=>x&&x.id===sc.chapterId);
+      const leaf={id:sc.id,kind:'scene',title:sc.title||unitEmptyTitle(),actId:ch?ch.actId:null,chapterId:sc.chapterId,sceneId:sc.id,novelId:nid,external:true};
+      byId.set(id,leaf);return leaf;
+    }
+    const ch=(S.data.chapters||[]).find((/** @type {any} */ x)=>x&&x.id===id&&x.novelId===nid);
+    if(ch){
+      const leaf={id:ch.id,kind:'chapter',title:nodeTitle(ch)||'未命名章',actId:ch.actId,chapterId:ch.id,novelId:nid,external:true};
+      byId.set(id,leaf);return leaf;
+    }
+    return null;
+  };
+  for(const pid of(st.pins||[])){const L=resolve(String(pid));if(L){L.pinned=true;byId.set(L.id,L)}}
+  const dragIns=Array.isArray(S.ui._plotDragIns)?S.ui._plotDragIns:[];
+  for(const id of dragIns){const L=resolve(String(id));if(L){L.dragged=true;byId.set(L.id,L)}}
+  return [...byId.values()];
+}
+/** 首次／换卷：只给尚无坐标的叶铺网格（已有坐标不重排）
+ * @param {string} nid @param {any[]} leaves @returns {Record<string,{x:number,y:number}>} */
+function plotEnsurePositions(nid,leaves){
+  const st=plotGraphOf(nid);
+  const n0=Math.max(1,leaves.length);
+  const cols=Math.max(4,Math.ceil(Math.sqrt(n0*1.4)));
+  let added=false;
+  leaves.forEach((/** @type {any} */ leaf,/** @type {number} */ i)=>{
+    const p=st.positions[leaf.id];
+    if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))return;
+    st.positions[leaf.id]={x:90+(i%cols)*170,y:90+Math.floor(i/cols)*110};
+    added=true;
+  });
+  if(added)save();
+  return st.positions;
+}
+/** @param {string} nid */
+function plotScaleOf(nid){
+  if(!S.ui.plotGraphScale||typeof S.ui.plotGraphScale!=='object')S.ui.plotGraphScale={};
+  let sc=Number(S.ui.plotGraphScale[nid]);
+  if(!Number.isFinite(sc)||sc<=0)sc=1;
+  return Math.min(3,Math.max(0.25,sc));
+}
+/** @param {string} nid @param {number} sc */
+function plotScaleSet(nid,sc){
+  if(!S.ui.plotGraphScale||typeof S.ui.plotGraphScale!=='object')S.ui.plotGraphScale={};
+  S.ui.plotGraphScale[nid]=Math.min(3,Math.max(0.25,sc));
+}
+/** 打开叶对应写作正文（图谱内不改正文）
+ * @param {any} leaf */
+function plotOpenWriting(leaf){
+  if(!leaf)return;
+  if(leaf.kind==='scene'){
+    try{setWriteSceneId(leaf.id);nav('editor');if(typeof editorPick==='function')editorPick(leaf.id)}catch(_e){try{nav('editor')}catch(_e2){}}
+    return;
+  }
+  const scs=scenesOf(leaf.novelId||S.ui.novelId,leaf.id);
+  if(scs[0]){
+    try{setWriteSceneId(scs[0].id);nav('editor');if(typeof editorPick==='function')editorPick(scs[0].id)}catch(_e3){try{nav('editor')}catch(_e4){}}
+  }else toast('该章还没有正文'+(typeof unitLabel==='function'?unitLabel():'小节'));
+}
+/** 删叶后清节点坐标／边／钉住（票02 生命周期；01 先挂好）
+ * @param {string} nid @param {string[]} ids */
+function plotGraphPurgeNodes(nid,ids){
+  if(!nid||!ids||!ids.length)return;
+  const set=new Set(ids.map(String));
+  const st=plotGraphOf(nid);
+  let dirty=false;
+  for(const id of set){if(st.positions[id]){delete st.positions[id];dirty=true}}
+  const before=st.edges.length;
+  st.edges=st.edges.filter((/** @type {any} */ e)=>e&&!set.has(String(e.a))&&!set.has(String(e.b)));
+  if(st.edges.length!==before)dirty=true;
+  const pb=st.pins.length;
+  st.pins=st.pins.filter((/** @type {string} */ id)=>!set.has(String(id)));
+  if(st.pins.length!==pb)dirty=true;
+  if(Array.isArray(S.ui._plotDragIns)){
+    const d0=S.ui._plotDragIns.length;
+    S.ui._plotDragIns=S.ui._plotDragIns.filter((/** @type {string} */ id)=>!set.has(String(id)));
+    if(S.ui._plotDragIns.length!==d0)dirty=true;
+  }
+  if(dirty)save();
+}
+function vPlotGraph(){
+  const n=curNovel();if(!n)return needNovel();
+  const nid=n.id;
+  const actId=plotCurActId(nid);
+  const act=actId?(S.data.acts||[]).find((/** @type {any} */ a)=>a&&a.id===actId):null;
+  const leaves=plotVisibleLeaves(nid,actId);
+  const pos=plotEnsurePositions(nid,leaves);
+  const scale=plotScaleOf(nid);
+  const n0=Math.max(1,leaves.length);
+  const cols=Math.max(4,Math.ceil(Math.sqrt(n0*1.4)));
+  const W=Math.max(900,cols*180+80),H=Math.max(520,Math.ceil(n0/cols)*120+140);
+  const dW=Math.round(W*scale),dH=Math.round(H*scale);
+  const focusId=S.ui._plotFocusId?String(S.ui._plotFocusId):'';
+  const uLab=typeof unitLabel==='function'?unitLabel():'小节';
+  const actLab=act?nodeTitle(act):'（无卷）';
+  const marker=`<defs><marker id="sfPlotCauseArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ac)" opacity=".9"/></marker></defs>`;
+  /* 票02 起画边；01 预留 edges 组 */
+  const st=plotGraphOf(nid);
+  const vis=new Set(leaves.map(l=>l.id));
+  const svgEdges=(st.edges||[]).map((/** @type {any} */ ed)=>{
+    const a=pos[ed.a],b=pos[ed.b];
+    if(!a||!b)return '';
+    const both=vis.has(ed.a)&&vis.has(ed.b);
+    const cls=ed.type==='relate'?'plot-edge plot-edge-relate':'plot-edge plot-edge-cause';
+    const dim=both?'':' dim';
+    return `<line class="${cls}${dim}" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
+  }).join('');
+  /* 票03 角标；01 先按窗内目录序算好，画布上可先不显数字到 03——为减跳变，01 即画角标 */
+  const orderIds=leaves.filter(l=>!l.external).map(l=>l.id);
+  const ordMap=new Map(orderIds.map((/** @type {string} */ id,/** @type {number} */ i)=>[id,i+1]));
+  let extOrd=orderIds.length;
+  leaves.filter(l=>l.external).forEach(l=>{if(!ordMap.has(l.id))ordMap.set(l.id,++extOrd)});
+  const svgNodes=leaves.map(leaf=>{
+    const p=pos[leaf.id]||{x:80,y:80};
+    const r=leaf.kind==='chapter'?18:15;
+    const col=leaf.external?'var(--ac2)':'var(--ac)';
+    const focused=focusId&&focusId===leaf.id;
+    const badgeN=ordMap.get(leaf.id)||0;
+    const bx=p.x+r-2,by=p.y-r+2;
+    const badge=badgeN?`<circle class="plot-badge-bg" cx="${bx}" cy="${by}" r="9"/><text class="plot-badge" x="${bx}" y="${by+3.5}" text-anchor="middle">${badgeN}</text>`:'';
+    const pinMark=leaf.pinned?`<text x="${p.x-r-2}" y="${p.y-r+4}" font-size="11" fill="var(--warn)" pointer-events="none">📌</text>`:'';
+    return `<g class="graph-node${focused?' plot-focus':''}" data-id="${esc(leaf.id)}" data-kind="${leaf.kind}" data-r="${r}">
+      <circle class="graph-ring" cx="${p.x}" cy="${p.y}" r="${r}" fill="${col}22" stroke="${col}" stroke-width="2"/>
+      <text class="graph-label" x="${p.x}" y="${p.y+r+14}" text-anchor="middle" font-size="11" fill="var(--tx2)" pointer-events="none">${esc(leaf.title)}</text>
+      ${badge}${pinMark}
+    </g>`;
+  }).join('');
+  return `<div class="page" style="max-width:none" data-plot="1"><div class="graph-head"><h1 class="pt">剧情图谱 · ${esc(n.title)}</h1>
+  <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
+  <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
+  </div>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。边与窗外能力见后续。MVP 无搜索／多选。</p>
+  ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
+  <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span></div></div>
+  <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap"><span class="hint">窗内叶 ${leaves.length}（含钉住／拖入）</span></div>`:`<div class="empty">当前卷还没有可铺的章／${esc(uLab)}</div>`}</div>`;
+}
+function bindPlotGraph(){
+  const wrap=/** @type {any} */(document.querySelector('.graph-wrap[data-plot="1"]'));
+  if(!wrap||wrap._plotBound)return;
+  wrap._plotBound=true;
+  const svg=wrap.querySelector('svg');
+  if(!svg)return;
+  const nid=wrap.dataset.nid||'';
+  const BW=Number(wrap.dataset.bw)||900;
+  const BH=Number(wrap.dataset.bh)||520;
+  let scale=plotScaleOf(nid);
+  const st=plotGraphOf(nid);
+  const pos=st.positions;
+  const canvas=/** @type {any} */(wrap.querySelector('.graph-canvas')||svg.parentElement);
+  const scaleLbl=()=>{const el=document.querySelector('.graph-tools .hint');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};
+  const applyScale=(/** @type {number} */ sc,/** @type {number=} */ cx,/** @type {number=} */ cy)=>{
+    const old=scale;
+    scale=Math.min(3,Math.max(0.25,sc));
+    plotScaleSet(nid,scale);
+    const dW=Math.round(BW*scale),dH=Math.round(BH*scale);
+    if(canvas&&canvas!==svg){
+      canvas.style.width=dW+'px';canvas.style.height=dH+'px';
+      canvas.style.minWidth=dW+'px';canvas.style.minHeight=dH+'px';
+    }
+    wrap.dataset.scale=String(scale);
+    if(cx!=null&&cy!=null){
+      wrap.scrollLeft=cx*scale-(cx*old-wrap.scrollLeft);
+      wrap.scrollTop=cy*scale-(cy*old-wrap.scrollTop);
+    }
+    scaleLbl();
+  };
+  const svgPt=(/** @type {number} */ clientX,/** @type {number} */ clientY)=>{
+    const rect=wrap.getBoundingClientRect();
+    return{x:(clientX-rect.left+wrap.scrollLeft)/scale,y:(clientY-rect.top+wrap.scrollTop)/scale};
+  };
+  const nodeOf=(/** @type {string} */ id)=>svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
+  const moveNode=(/** @type {string} */ id,/** @type {number} */ x,/** @type {number} */ y)=>{
+    const p=pos[id]||(pos[id]={x,y});
+    p.x=Math.max(30,Math.min(BW-30,x));
+    p.y=Math.max(30,Math.min(BH-30,y));
+    const g=nodeOf(id);if(!g)return;
+    const r=Number(g.getAttribute('data-r'))||15;
+    const c=g.querySelector('circle.graph-ring');
+    if(c){c.setAttribute('cx',String(p.x));c.setAttribute('cy',String(p.y))}
+    const lab=g.querySelector('text.graph-label');
+    if(lab){lab.setAttribute('x',String(p.x));lab.setAttribute('y',String(p.y+r+14))}
+    const badgeBg=g.querySelector('circle.plot-badge-bg');
+    const badgeTx=g.querySelector('text.plot-badge');
+    const bx=p.x+r-2,by=p.y-r+2;
+    if(badgeBg){badgeBg.setAttribute('cx',String(bx));badgeBg.setAttribute('cy',String(by))}
+    if(badgeTx){badgeTx.setAttribute('x',String(bx));badgeTx.setAttribute('y',String(by+3.5))}
+    /* 同步相连边端点（票02） */
+    svg.querySelectorAll('.graph-edges line[data-a="'+CSS.escape(id)+'"]').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x1',String(p.x));ln.setAttribute('y1',String(p.y))});
+    svg.querySelectorAll('.graph-edges line[data-b="'+CSS.escape(id)+'"]').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x2',String(p.x));ln.setAttribute('y2',String(p.y))});
+  };
+  const setFocus=(/** @type {string} */ id)=>{
+    S.ui._plotFocusId=id||null;
+    svg.querySelectorAll('.graph-node').forEach((/** @type {any} */ g)=>g.classList.toggle('plot-focus',(g.getAttribute('data-id')||'')===id));
+    const btn=document.querySelector('[data-act="plot-open-write"]');
+    if(btn){if(id)btn.removeAttribute('disabled');else btn.setAttribute('disabled','')}
+  };
+  (/** @type {any} */(wrap))._plotFocus=setFocus;
+  wrap.addEventListener('wheel',(/** @type {WheelEvent} */ e)=>{
+    e.preventDefault();
+    const we=e;
+    const rect=wrap.getBoundingClientRect();
+    const cx=(we.clientX-rect.left+wrap.scrollLeft)/scale;
+    const cy=(we.clientY-rect.top+wrap.scrollTop)/scale;
+    const factor=we.deltaY<0?1.1:1/1.1;
+    applyScale(scale*factor,cx,cy);
+  },{passive:false});
+  wrap.addEventListener('contextmenu',(/** @type {Event} */ e)=>e.preventDefault());
+  let mode=/** @type {string|null} */(null),nidDrag=/** @type {string|null} */(null),moved=false;
+  let sx=0,sy=0,sl0=0,st0=0,ox=0,oy=0;
+  const THRESH=4;
+  wrap.addEventListener('pointerdown',(/** @type {PointerEvent} */ e)=>{
+    const pe=e;
+    if(pe.button===2||pe.button===1){
+      mode='pan';sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;moved=false;
+      try{wrap.setPointerCapture(pe.pointerId)}catch(_e){}
+      return;
+    }
+    if(pe.button!==0)return;
+    const t=/** @type {Element} */(pe.target);
+    const node=t&&t.closest?t.closest('.graph-node'):null;
+    if(node){
+      mode='node';
+      nidDrag=node.getAttribute('data-id')||'';
+      const pt=svgPt(pe.clientX,pe.clientY);
+      const p=pos[nidDrag]||{x:pt.x,y:pt.y};
+      ox=pt.x-p.x;oy=pt.y-p.y;moved=false;
+      node.classList.add('dragging');
+      try{wrap.setPointerCapture(pe.pointerId)}catch(_e2){}
+      return;
+    }
+    mode='pan';sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;moved=false;
+    try{wrap.setPointerCapture(pe.pointerId)}catch(_e3){}
+  });
+  wrap.addEventListener('pointermove',(/** @type {PointerEvent} */ e)=>{
+    if(!mode)return;
+    const pe=e;
+    if(mode==='pan'){
+      const dx=pe.clientX-sx,dy=pe.clientY-sy;
+      if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)moved=true;
+      wrap.scrollLeft=sl0-dx;wrap.scrollTop=st0-dy;
+    }else if(mode==='node'&&nidDrag){
+      const pt=svgPt(pe.clientX,pe.clientY);
+      const nx=pt.x-ox,ny=pt.y-oy;
+      const p=pos[nidDrag];
+      if(p&&(Math.abs(nx-p.x)>0.5||Math.abs(ny-p.y)>0.5))moved=true;
+      moveNode(nidDrag,nx,ny);
+    }
+  });
+  const endPtr=(/** @type {PointerEvent} */ e)=>{
+    if(!mode)return;
+    const was=mode,id=nidDrag,did=moved;
+    if(id){const g=nodeOf(id);if(g)g.classList.remove('dragging')}
+    mode=null;nidDrag=null;moved=false;
+    if(was==='node'&&id&&!did){
+      setFocus(id);
+      const pe=e;
+      if(pe&&pe.detail>=2){
+        const leaf=plotVisibleLeaves(nid,plotCurActId(nid)).find(l=>l.id===id);
+        plotOpenWriting(leaf||{id,kind:'scene',novelId:nid});
+      }
+    }else if(was==='node'&&id&&did){
+      save();   // 拖点落工程态
+    }else if(was==='pan'&&!did){
+      setFocus('');
+    }
+  };
+  wrap.addEventListener('pointerup',endPtr);
+  wrap.addEventListener('pointercancel',endPtr);
+}
+
 /* ---------- B3 伏笔：面板 / 表单 / 快捷标记 ---------- */
 /** @param {any} pos 场景定位 @param {any} id 场景 id */
 function fsSceneLbl(pos,id){if(id==null)return'—';const p=pos.find((/** @type {any} */ x)=>x.s.id===id);return p?esc(nodeTitle(p.c)+' / '+(p.s.title||unitEmptyTitle())):'（'+unitLabel()+'已删除）'}
@@ -22391,6 +22829,13 @@ document.addEventListener('click',async e=>{
   case'nav':nav(el.dataset.v);break;
   case'res-sel':resPick(el.dataset.v);break;
   case'res-graph':nav('graph');break;   // 票38：设定面板图谱入口＝中央宽视图（保留当前作品/场景与资源栏状态；浏览零写入）
+  case'res-plot-graph':nav('plot-graph');break;   // plot-graph-mvp：设定栏关系图谱右侧＝剧情图谱独立主视图
+  case'plot-open-write':{
+    const fid=S.ui._plotFocusId;if(!fid){toast('请先单击一个叶节点');break}
+    const n=curNovel();if(!n){toast('请先打开作品');break}
+    const leaf=plotVisibleLeaves(n.id,plotCurActId(n.id)).find(l=>l.id===fid);
+    plotOpenWriting(leaf||{id:fid,kind:'scene',novelId:n.id});
+    break}
   case'res-toggle':{   // 票27：窄屏覆盖槽打开时资源栏按钮＝关闭覆盖槽（不碰宽屏收窄/宽度记忆）
     if(npPaneNow()==='res'){narrowPaneSet(null);npFocusOpener('res');break}
     resToggle();break}
@@ -22532,7 +22977,7 @@ document.addEventListener('click',async e=>{
   case'novel-save':{const n=S.data.novels.find(x=>x.id===id);Object.assign(n,{title:$('#f-title').value.trim()||n.title,author:$('#f-author').value.trim(),genre:$('#f-genre').value.trim(),language:$('#f-lang').value.trim(),synopsis:$('#f-syn').value.trim(),targetWords:+$('#f-target').value||0});n.cover=coverSanitize(S.ui._coverStaging||'');save();closeModal();render();break}   // S19：封面随保存落库（净化后）
   case'novel-del':confirmModal('删除小说','将删除该书全部卷章场景、设定与对话记录，不可恢复。','删除','novel-del2',`data-id="${id}"`);break;
   case'novel-del2':{const i=S.data.novels.findIndex(x=>x.id===id);_menScanCache.delete(id);_sceneMenCache.delete(id);
-    for(const k of['acts','chapters','scenes','codexCategories','codexEntries','snippets','chats','chatSessions','foreshadows','styleProfiles','tagDefs','recycleBin','assistants','entryImages'])S.data[k]=(S.data[k]||[]).filter(x=>x.novelId!==id);   // ||[] 兜 null（F09）；S21：文风记录随书级联删除；票39：标签定义随书级联删除；票54：会话随书删；助理票01：助理对话随书删；外观票04：条目配图像素随书删
+    for(const k of['acts','chapters','scenes','codexCategories','codexEntries','snippets','chats','chatSessions','foreshadows','styleProfiles','tagDefs','recycleBin','assistants','entryImages','plotGraphs'])S.data[k]=(S.data[k]||[]).filter(x=>x.novelId!==id);   // ||[] 兜 null（F09）；S21：文风记录随书级联删除；票39：标签定义随书级联删除；票54：会话随书删；助理票01：助理对话随书删；外观票04：条目配图像素随书删
     try{const d=typeof styleDirOf==='function'?styleDirOf(id):('style-'+String(id||'').toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,48));if(d&&typeof SF_TPLS!=='undefined')SF_TPLS.http.del(CP_SKILL_DIR+'/'+d)}catch(e){}
     S.data.novels.splice(i,1);if(S.ui.novelId===id){S.ui.novelId=null;S.ui.chatId=null;S.ui.cpDraft='';S.ui.res=null;S.ui.resNarrow=true;S.ui.snipQ='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui.sbSel=[];S.ui._tagBatch=null;S.ui._tagBatchRetry=[]}S.ui._styCand=null;S.ui._styCal=null;S.ui._styCalDraft=null;if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}S.ui._styCalToken=(S.ui._styCalToken||0)+1;if(typeof hoCheckPrune==='function')hoCheckPrune();save();closeModal();render();break}   // S21 复核 I-01：删书同步弃 S21 瞬态+作废在途校准；票21：删当前书清资源选项；BG-054 L3：删书清时效缓存
   /* 结构 */
