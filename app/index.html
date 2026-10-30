@@ -13296,29 +13296,46 @@ const GUIDE_GROUPS = [
         id: "ai-service",
         title: "接上 AI",
         brief: "先连上模型，后面写大纲、推演、补设定才用得上助手。",
-        fig: "设置 → AI：服务商、模型与接口密钥",
+        fig: "设置 → AI 服务：服务商、模型与接口密钥",
         img: "guide-ai-service.webp",
         from: "04 · 提示词与 AI 服务",
         steps: [
-          "打开「设置 → AI」。",
-          "选服务商与模型，填入接口密钥（本地存本机，不上传商店）。",
+          "打开「设置 → AI 服务」。",
+          "选服务商与模型，填入接口密钥（密钥只存本机，只发给你配置的服务商）。",
           "点「测试连接」；通了再回写作页试一次助手。",
-          "若暂时不连网，仍可改结构与设定，只是 AI 相关按钮会不可用。",
+          "若暂时不连网，仍可改目录与设定，只是 AI 相关按钮会不可用。",
         ],
-        tip: "密钥只存在本机数据夹。换电脑请自行备份「数据」页导出，或复制配置。",
-        related: ["prompts", "ai-panel", "data-mgmt"]
+        tip: "密钥只存在本机数据夹。需要外接本机文件夹给助手时，见「本机 MCP」。换电脑导入数据后需重填密钥（导出包不含密钥）。",
+        related: ["mcp", "prompts", "ai-panel", "data-mgmt"]
+      },
+      {
+        id: "mcp",
+        title: "本机 MCP",
+        brief: "让助手调用本机工具。新手优先「接文件系统」选一个目录，不必手改命令参数。",
+        fig: "设置 → AI 服务 → MCP：接文件系统",
+        img: "",
+        from: "设置 · AI 服务 · MCP",
+        steps: [
+          "先完成「接上 AI」；MCP 本身需安装 Node.js（终端能运行 npx）。",
+          "打开「设置 → AI 服务 → MCP」。",
+          "在「接文件系统」里选文件夹或粘贴绝对路径，点「接文件系统并连接」；程序会自动写入 npx 命令、启用并连接。",
+          "连接成功后下方会出现工具列表；显示名／命令／参数仍可在高级区手改。",
+          "不用时断开或取消「启用 MCP」，助手回合就不带外部工具。",
+        ],
+        tip: "若连接失败或超时，提示里可能会带上 Server 的 stderr 尾——先看目录是否存在、Node／npx 是否可用，再重试。改书稿与设定仍走助理提案卡，不会因为 MCP 而直接落盘。",
+        related: ["ai-service", "ai-panel", "data-mgmt"]
       },
       {
         id: "my-novels",
         title: "我的小说",
-        brief: "顶栏书名旁展开作品列表：新建、切换、打开目录。写之前先选对当前书。",
-        fig: "顶栏 · 我的小说：作品列表与当前书",
+        brief: "顶栏「我的小说」管理作品：新建、进入、编辑、导出；写之前先选对当前书。",
+        fig: "顶栏 · 我的小说：作品卡片列表",
         img: "guide-my-novels.webp",
         from: "01 · 作品与结构",
         steps: [
-          "点顶栏书名旁的「我的小说」。",
-          "新建一本，或点已有作品切过去（当前书名会跟着变）。",
-          "需要时「打开目录」看本机文件夹；导出/备份仍走「设置 → 数据」。",
+          "点顶栏「我的小说」。",
+          "新建一本，或点作品卡「进入」切过去（当前书名会跟着变）。",
+          "需要时「编辑」改书名／封面／目标字数；导出成稿走卡片「导出成稿」，备份走「设置 → 数据管理」。",
         ],
         tip: "每本书的设定、章节、技能与文风蒸馏结果都挂在当前作品下，切书等于换一整套上下文。",
         related: ["structure", "data-mgmt", "storyboard"]
@@ -13332,44 +13349,46 @@ const GUIDE_GROUPS = [
       {
         id: "storyboard",
         title: "故事板",
-        brief: "按卷 / 章看节拍与进度；点进某一章再去写作页落字。",
-        fig: "故事板：卷章卡片与进度",
+        brief: "按卷／章看小节卡、节拍完成数与字数；点小节卡去写作页落字。建卷建章也在这里。",
+        fig: "故事板：卷 / 章 / 小节卡片与进度",
         img: "guide-storyboard.webp",
         from: "02 · 写作与故事板",
         steps: [
           "顶栏进「故事板」。",
-          "展开卷，点某一章进入写作（或从故事板直接开写）。",
-          "对照节拍与字数，判断这一章写到哪了。",
+          "展开卷，点某个小节卡进入写作（点卷名／章名是重命名）。",
+          "卡面看字数、节拍完成数与摘要，判断这一章写到哪了。",
+          "新建结构：顶部「＋ 新卷」、卷行「＋章」、章行「＋小节」；调顺序／拆分用行内「⋯」（见「卷 · 章 · 小节」）。",
         ],
-        tip: "故事板管「这一章讲什么」；真正打字在「写作」。卷 / 章怎么建见「作品结构」。",
+        tip: "故事板管「这一章讲什么」；真正打字在「写作」。没有单独的「作品结构」顶栏；目录操作就在故事板与写作左栏。",
         related: ["writing", "beats", "structure"]
       },
       {
         id: "writing",
         title: "写作",
-        brief: "正文编辑器：左栏大纲与素材，右侧 AI 助手；可 @ 引用设定、节拍与技能。",
-        fig: "写作页：编辑器 + 左栏 + AI",
+        brief: "正文编辑器：左栏卷 / 章结构树，右侧信息栏与 AI；可 @ 引用设定、目录等。",
+        fig: "写作页：编辑器 + 左栏结构树 + 右侧信息栏 / AI",
         img: "guide-writing.webp",
         from: "02 · 写作与故事板",
         steps: [
-          "顶栏进「写作」，确认左栏是当前章。",
-          "在正文区打字；需要时从左栏拖或点插入节拍、设定摘要。",
-          "打开右侧 AI：选功能（续写、润色、推演等），需要时 @ 设定 / 技能 / 场景。",
+          "顶栏进「写作」，左栏高亮的就是当前章。",
+          "在正文区打字；三级目录下本章的多个小节会按顺序连续展示。",
+          "右侧信息栏看视角、标签、摘要、节拍与出场设定；资源栏取设定、片段与对话。",
           "保存后回故事板看进度。",
         ],
-        tip: "助手吃的是你勾选的上下文。技能与文风蒸馏出的 Skill 会出现在可引用列表里（见「技能」「文风蒸馏」）。",
-        related: ["left-sidebar", "ai-panel", "at-refs", "skills", "style-learn"]
+        tip: "助手吃的是你勾选的上下文。技能与文风蒸馏出的 Skill 在发送前的确认态勾选。左栏只列卷 / 章，资源栏是主区左侧常驻的设定集／片段库／对话。",
+        related: ["left-sidebar", "resource-rail", "ai-panel", "at-refs", "skills", "style-learn"]
       },
       {
         id: "review",
         title: "审阅",
-        brief: "通读、找伏笔与一致性问题；和写作页分开，避免边写边改乱。",
-        fig: "审阅页：通读与问题列表",
+        brief: "项目体检、AI 审稿与修稿；把问题记回写作页或伏笔库，避免边写边改乱。",
+        fig: "审阅页：项目体检、AI 审稿与热力图",
         img: "guide-review.webp",
         from: "08 · 审阅与伏笔",
         steps: [
           "顶栏进「审阅」。",
-          "选范围（全书 / 某卷 / 某章）跑检查或人工通读。",
+          "项目体检、统计、伏笔与设定出场热力图自动列出；点问题条目可跳到对应小节或设定。",
+          "要 AI 审稿时，在「AI 审稿」里选一章跑逐项目标核对；确认后才生成修订候选，采纳才写入。",
           "把要改的点记回写作页或伏笔库。",
         ],
         tip: "审阅不替代写作；大改仍回写作页。伏笔条目见「伏笔」。",
@@ -13378,17 +13397,17 @@ const GUIDE_GROUPS = [
       {
         id: "settings-page",
         title: "设置",
-        brief: "入门、系统、AI、外观、提示词、技能、文风蒸馏、数据、更新都在这里。",
-        fig: "设置：左侧分组（含技能、文风蒸馏、更新）",
+        brief: "入门、系统、AI 服务、外观、提示词、技能、文风蒸馏、数据管理、更新都在这里。",
+        fig: "设置：左侧分组",
         img: "guide-settings-page.webp",
         from: "06 · 外观与设置",
         steps: [
           "顶栏进「设置」。",
-          "左侧切换：入门 / 系统 / AI / 外观 / 提示词 / 技能 / 文风蒸馏 / 数据 / 更新。",
+          "左侧切换：入门／系统／AI 服务／外观／提示词／技能／文风蒸馏／数据管理／更新。",
           "改完一般立即生效；AI 密钥改完建议再测一次连接。",
         ],
-        tip: "「入门」就是功能卡导览；「更新」看版本说明。技能与文风蒸馏是本阶段新增重点页。",
-        related: ["onboarding-thin", "appearance", "prompts", "skills", "style-learn", "data-mgmt"]
+        tip: "「入门」就是功能卡导览；「更新」看版本说明。AI 服务页也包含本机 MCP。",
+        related: ["onboarding-thin", "ai-service", "mcp", "appearance", "prompts", "skills", "style-learn", "data-mgmt"]
       },
     ],
   },
@@ -13399,64 +13418,67 @@ const GUIDE_GROUPS = [
       {
         id: "left-sidebar",
         title: "写作页左栏",
-        brief: "大纲、节拍、设定入口与素材；给当前章垫上下文，少切页。",
-        fig: "写作页左侧栏",
+        brief: "写作页左栏：卷 / 章结构树；点章进入本章正文，行内「⋯」做插入、移动、拆分。",
+        fig: "写作页左栏：卷 / 章结构树与 ⋯ 菜单",
         img: "guide-left-sidebar.webp",
-        from: "02 · 写作与故事板、01 · 作品与结构、03 · 设定",
+        from: "02 · 写作与故事板",
         steps: [
-          "在写作页看左栏：卷章树、节拍、相关设定。",
-          "点节拍可跳转或插入提示；设定可预览后 @ 进助手。",
-          "需要大改结构时，再去「作品结构」或故事板。",
+          "在写作页看左栏：只列卷与章，不列小节行。",
+          "点章名进入本章连续正文；当前章会高亮。",
+          "卷 / 章行「⋯」可插入、移动、拆分、复制、删除；新建卷 / 章 / 小节回故事板更直接（见「卷 · 章 · 小节」）。",
+          "左栏可收起／展开；窄屏用覆盖槽临时打开。",
         ],
-        tip: "左栏是「当前章工作台」；全书卷章树仍以作品结构为准。",
-        related: ["writing", "beats", "settings-set", "structure"]
+        tip: "左栏是结构导航，不是正文工作台；视角、摘要、节拍与出场设定在右侧信息栏。",
+        related: ["writing", "structure", "storyboard", "resource-rail"]
       },
       {
         id: "structure",
-        title: "作品结构",
-        brief: "卷 · 章节 · 目录深度：建卷建章、调顺序与层级；故事板和写作页都认这棵树。",
-        fig: "作品结构：卷 / 章树与排序",
-        img: "guide-structure.webp",
+        title: "卷 · 章 · 小节",
+        brief: "卷含章、章含小节（三级时）。新建与调整主要在故事板：顶部「＋ 新卷」、卷行「＋章」、章行「＋小节」，「⋯」调顺序／拆分。",
+        fig: "故事板 · 卷 / 章 / 小节行与 ＋ / ⋯",
+        img: "",
         from: "01 · 作品与结构",
         steps: [
-          "从「我的小说」或相关入口打开作品结构。",
-          "新建卷、在卷下建章；拖拽调整顺序。",
-          "确认目录深度（卷 / 章）与你在故事板看到的一致。",
-          "回到故事板或写作页，确认当前章已挂在正确节点。",
+          "打开「故事板」。",
+          "顶部「＋ 新卷」建卷；卷行「＋章」建章；三级目录下章行「＋小节」建小节。",
+          "行「⋯」菜单：重命名、插入前／后、上移／下移、移到首末、拆分、复制、删除。",
+          "在「设置 → 系统」查看目录深度（二级／三级）；改为二级会合并同章小节且不可逆，先备份再改。",
+          "写作页左栏的卷 / 章「⋯」也能插入或调序；回到故事板或写作页，确认当前章／小节挂在正确节点。",
         ],
-        tip: "章节口径以本树为准：改名、合并、拆章都在这里做，避免只在写作页改标题导致对不齐。",
-        related: ["my-novels", "storyboard", "writing"]
+        tip: "不要找「作品结构」顶栏——现行顶栏只有我的小说／故事板／写作／审阅／设置。目录怎么建，就在故事板与写作左栏。",
+        related: ["my-novels", "storyboard", "writing", "left-sidebar"]
       },
       {
         id: "beats",
         title: "节拍",
-        brief: "一章里要发生的节拍点；可在故事板总览，也可在写作页左栏对照着写。",
-        fig: "节拍列表与写作对照",
+        brief: "小节（或章）里要发生的剧情点；故事板卡面看完成数，写作页右侧信息栏逐条改。",
+        fig: "写作页右侧：小节节拍列表",
         img: "guide-beats.webp",
         from: "02 · 写作与故事板",
         steps: [
-          "在故事板或写作左栏打开当前章节拍。",
-          "按情节补全/改写各节拍一句到一小段。",
-          "写作时对照节拍推进；写完可勾进度。",
+          "打开写作页，在右侧信息栏找到「小节节拍」。",
+          "按情节添加／改写各节拍，一句到一小段。",
+          "写作时对照节拍推进；写完可勾完成。",
+          "点「生成」用 AI 出节拍候选，采用才写入；「成文」按节拍生成正文。",
         ],
         tip: "节拍是提纲不是正文。大改情节先改节拍再改字，比直接在正文里挖补省事。",
-        related: ["storyboard", "writing", "left-sidebar"]
+        related: ["storyboard", "writing", "ai-panel"]
       },
       {
         id: "ai-panel",
         title: "AI 助手",
-        brief: "写作页右侧：选功能、勾选技能与推演强度、关联场景，再生成。",
-        fig: "AI 面板：功能、技能、推演强度、确认",
+        brief: "写作页右侧：选模式与功能、勾选技能与推演强度、关联小节，再生成。",
+        fig: "写作页右侧：AI 面板（指令 / 对话）",
         img: "guide-ai-panel.webp",
         from: "05 · 助理与 @引用",
         steps: [
           "写作页打开右侧 AI。",
-          "选功能（续写、润色、访谈/推演等）。",
-          "需要时勾选技能、调推演强度、关联场景；确认后再生成。",
-          "结果不满意可改上下文或换功能再跑。",
+          "选模式（指令＝单次请求；对话＝多轮）与功能（续写、润色、访谈／推演等）。",
+          "需要时勾选技能、调推演强度、关联小节、选上下文；确认后再生成。",
+          "发送先建会话，结果经「采用」才写入作品；不满意可改上下文或换功能再跑。",
         ],
-        tip: "重新打开面板会回到确认态，避免误触直接生成。技能来自「设置 → 技能」与文风蒸馏产物。",
-        related: ["writing", "at-refs", "skills", "style-learn", "prompts"]
+        tip: "重新打开面板会回到确认态，避免误触直接生成。若已接本机 MCP，对话模式的助手回合里才可能出现外部工具（见「本机 MCP」）。",
+        related: ["writing", "at-refs", "skills", "style-learn", "prompts", "mcp"]
       },
       {
         id: "skills",
@@ -13466,8 +13488,8 @@ const GUIDE_GROUPS = [
         from: "技能 · 设置",
         steps: [
           "打开「设置 → 技能」，查看当前作品下已有技能。",
-          "启用/停用；需要时打开 Skill 文稿查看说明与适用场景。",
-          "回写作页打开 AI，在技能区勾选本次要用的项。",
+          "启用/停用；需要时打开 Skill 文稿查看说明。",
+          "回写作页打开 AI，在发送前的确认态勾选本次要用的项。",
           "文风蒸馏完成后，新 Skill 会出现在同一列表（见「文风蒸馏」）。",
         ],
         tip: "技能按作品隔离。没用的先停用，减少助手上下文噪音。",
@@ -13476,79 +13498,130 @@ const GUIDE_GROUPS = [
       {
         id: "at-refs",
         title: "@ 引用",
-        brief: "在助手输入里 @ 设定、人物、节拍等，把精确上下文塞进这一次生成。",
+        brief: "在助手输入里 @ 内容、片段、提示词、设定或目录，把精确上下文塞进这一次生成。",
         fig: "输入 @ 后的引用列表",
         img: "guide-at-refs.webp",
         from: "05 · 助理与 @引用",
         steps: [
-          "在 AI 输入框键入 @。",
-          "从列表选设定卡、人物、地点或其它条目。",
-          "可多选；生成时它们会进入上下文。",
+          "在 AI 输入框键入 @（或点「@ 引用」）。",
+          "从列表选内容（正文／摘要／片段）、片段、提示词、设定或目录；目录可细到小节标题。",
+          "可多选；生成前看一眼上下文摘要。",
         ],
-        tip: "@ 比整段粘贴更稳。设定要先在「设定」里建好，列表里才找得到。",
-        related: ["ai-panel", "settings-set", "writing"]
+        tip: "@ 比整段粘贴更稳。设定要先在设定集里建好；被「从不包含」的设定不会出现在列表。技能不占 @ 列表，走确认态的「技能」勾选。",
+        related: ["ai-panel", "settings-set", "writing", "skills"]
       },
       {
         id: "settings-set",
         title: "设定",
-        brief: "人物、地点、势力等设定卡；可改头像色，写作与助手都能引用。",
-        fig: "设定库：卡片列表；头像下可调图标色",
+        brief: "人物、地点、势力等设定卡；可改图标色，写作与助手都能引用。",
+        fig: "资源栏 · 设定集／设定编辑",
         img: "guide-settings-set.webp",
         from: "03 · 设定",
         steps: [
-          "打开设定库（写作左栏或设定入口）。",
+          "打开资源栏「设定集」（有当前书时主区左侧）。",
           "新建或编辑卡片：名称、类型、正文。",
           "需要时在头像下方色条改图标颜色，便于列表辨认。",
-          "写作时用 @ 或左栏引用该卡。",
+          "写作时用 @ 或拖卡引用该条目。",
         ],
-        tip: "图标色只影响辨认，不进正文。批量整理可用「提取设定」。",
-        related: ["extract", "at-refs", "writing", "left-sidebar"]
+        tip: "图标色只影响辨认，不进正文。批量整理可用「提取设定」。关系网见「关系与剧情图谱」。",
+        related: ["resource-rail", "extract", "at-refs", "writing", "graphs"]
+      },
+      {
+        id: "resource-rail",
+        title: "资源栏",
+        brief: "有当前书时，主区左侧常驻三个入口：设定集、片段库、对话。可收窄／拖宽，状态会记住。",
+        fig: "主区左侧资源栏三入口",
+        img: "",
+        from: "02 · 写作与故事板",
+        steps: [
+          "选中一本书后，看主区左侧资源栏。",
+          "在「设定集／片段库／对话」之间切换（三者互斥）。",
+          "片段库用于灵感摘录与素材的待处理／已完成列表（见「片段库」）。",
+          "需要时拖宽或收窄；无当前书时入口会禁用。",
+          "关系图谱、剧情图谱从「设定集」面板顶部进入。",
+        ],
+        tip: "资源栏不是第四个顶栏页，而是主视图旁的常驻工具条。",
+        related: ["settings-set", "snippets", "dialogue", "graphs", "writing"]
+      },
+      {
+        id: "graphs",
+        title: "关系与剧情图谱",
+        brief: "两张图：关系图谱看设定归属／关联；剧情图谱看章／小节叶与因果边。入口都在设定集面板顶。",
+        fig: "设定集顶 · 关系图谱／剧情图谱",
+        img: "",
+        from: "03 · 设定",
+        steps: [
+          "打开资源栏「设定集」，点顶部「关系图谱」或「剧情图谱」。",
+          "关系图谱：节点＝设定；拖移、搜索、多选（Shift）按工具栏说明操作；点节点可编条目。",
+          "剧情图谱：节点＝当前卷目录叶（有小节只铺小节，无小节铺章）；边请手拉「导致／相关」；双击或「打开写作」跳正文。",
+          "图谱内不改正文；剧情图谱 MVP 不做搜索／多选。",
+        ],
+        tip: "两张图入口相邻、数据与用途都不同，别当成同一页的两个子页签。",
+        related: ["resource-rail", "settings-set", "structure", "writing"]
+      },
+      {
+        id: "dialogue",
+        title: "对话",
+        brief: "资源栏「对话」：按功能筛选与搜索历史会话；写作页点开会加载进副驾，其它页先只读预览。",
+        fig: "资源栏 · 对话",
+        img: "",
+        from: "05 · 助理与 @引用",
+        steps: [
+          "打开资源栏「对话」。",
+          "用功能标签筛选，或搜索标题／请求／结果。",
+          "点一条会话：在写作页会打开副驾并加载；在其它页先预览，进写作后再加载。",
+          "可归档、移回历史记录或删除；需要新开时用「＋ 新助理对话」。",
+        ],
+        tip: "固定功能结果仍须「采用」才写入作品；对话列表只是入口与历史。",
+        related: ["resource-rail", "ai-panel", "writing"]
       },
       {
         id: "extract",
         title: "提取设定",
-        brief: "从正文或素材里捞人物/地点等候选，确认后写入设定库。",
+        brief: "从正文或材料里捞人物／地点等候选，确认后再合并进设定集。",
         fig: "提取设定：候选列表与确认写入",
         img: "guide-extract.webp",
         from: "03 · 设定",
         steps: [
-          "在设定相关入口选「提取设定」。",
-          "选定文本范围或当前章，跑提取。",
-          "勾选要保留的候选，确认写入设定库。",
-          "回设定库改一改名称与归类。",
+          "在「我的小说」作品卡点「提取」；参考资料条目行也有「提取」；导入文档完成后可跟进提取。",
+          "选类型与范围，确认后才外发。",
+          "在候选里预览、勾选，再合并；无有效引文的候选会被丢弃。",
+          "回设定集改名称与归类。",
         ],
-        tip: "提取是草稿，务必人工过一眼再写入，避免同人多名重复卡。",
-        related: ["settings-set", "writing", "ai-panel"]
+        tip: "提取是草稿，务必人工过一眼；已有设定时走候选确认，避免静默覆盖手写字段。",
+        related: ["settings-set", "resource-rail", "writing", "ai-panel"]
       },
       {
         id: "snippets",
-        title: "多片段",
-        brief: "同一章里并排多个草稿片段，方便试不同写法再合并。",
-        fig: "写作页多片段切换",
+        title: "片段库",
+        brief: "写作页的素材碎片：选中文字或整小节存为片段，之后从资源栏「片段库」插入正文。",
+        fig: "资源栏 · 片段库列表与插入正文",
         img: "guide-snippets.webp",
         from: "02 · 写作与故事板",
         steps: [
-          "在写作页打开片段/多草稿相关控件。",
-          "新建片段试写；在片段间切换对比。",
-          "选定后合并回主正文或删掉弃稿。",
+          "写作页选中文字，点工具栏「存片段」（无选区时存整小节）。",
+          "打开资源栏「片段库」，按待处理／已完成查看。",
+          "点「插入正文」把片段放回当前小节的光标处或选中区；也可复制全文、编辑、标记完成或删除。",
+          "在正文输入 / 选「插入片段」，也能从片段库挑一条插入。",
         ],
-        tip: "片段属于当前章。切章前先确认保存，避免找错草稿。",
-        related: ["writing", "storyboard"]
+        tip: "片段库是全书素材，不属于某一章。提示词里可用 {snippet.get(\"标题\")} 引入。灵感速记也放这里。",
+        related: ["writing", "resource-rail", "at-refs"]
       },
       {
         id: "foreshadow",
         title: "伏笔",
-        brief: "登记已埋与待回收的伏笔；审阅时可对照是否遗忘。",
-        fig: "伏笔列表：状态与关联章节",
+        brief: "登记已埋与待回收的伏笔（计划→已埋→已呼应→已回收）；审阅时看逾期／临近提醒。",
+        fig: "审阅 · 伏笔面板：状态与关联小节",
         img: "guide-foreshadow.webp",
         from: "08 · 审阅与伏笔",
         steps: [
-          "在伏笔库新建条目：埋设位置、预期回收、状态。",
-          "写作推进时更新状态。",
-          "审阅前滤一遍「未回收」。",
+          "在「审阅」页「伏笔」面板点「＋ 新建伏笔」；写作页右侧信息栏也能快捷新建。",
+          "填写标题、埋设位置、预期回收与状态。",
+          "写作推进时用右栏快捷标记「埋设／呼应／回收」，或回面板编辑。",
+          "审阅前看「⚠ 逾期／⏱ 临近」标记；有意安排的可点「豁免」。",
         ],
-        tip: "伏笔库是备忘，不会自动改正文。回收后记得改状态。",
-        related: ["review", "writing", "storyboard"]
+        tip: "伏笔库是备忘，不会自动改正文。剧情图谱不替代伏笔四态。",
+        related: ["review", "writing", "storyboard", "settings-set"]
       },
     ],
   },
@@ -13559,13 +13632,13 @@ const GUIDE_GROUPS = [
       {
         id: "appearance",
         title: "外观",
-        brief: "主题、字号、编辑区观感；改完即时作用于写作页。",
+        brief: "主题、配色、字体与编辑区观感；改完即时作用于写作页（全局，所有作品共用）。",
         fig: "设置 → 外观",
         img: "guide-appearance.webp",
         from: "06 · 外观与设置",
         steps: [
           "打开「设置 → 外观」。",
-          "调主题与字号，看写作页是否舒适。",
+          "调主题、配色、字体或字号，看写作页是否舒适。",
           "不满意再微调，一般无需重启。",
         ],
         tip: "外观不管内容；换电脑需重新调或靠数据备份恢复偏好。",
@@ -13612,24 +13685,24 @@ const GUIDE_GROUPS = [
         steps: [
           "打开「设置 → 入门」。",
           "左侧点卡片，右侧看步骤与配图。",
-          "用搜索过滤标题/摘要；键盘 ↑↓ 切换，/ 聚焦搜索。",
+          "用搜索过滤标题/摘要；键盘 ↑↓（或 j/k）切换，/ 聚焦搜索。",
         ],
-        tip: "入门只讲解不改数据。版本变更说明见「设置 → 更新」。",
-        related: ["settings-page"]
+        tip: "入门只讲解不改数据。图缺失时仍有文字步骤。版本变更说明见「设置 → 更新」。",
+        related: ["settings-page", "my-novels"]
       },
       {
         id: "data-mgmt",
-        title: "数据",
+        title: "数据管理",
         brief: "作品与配置落在本机数据夹；可导出备份、看路径。",
-        fig: "设置 → 数据",
+        fig: "设置 → 数据管理",
         img: "guide-data-mgmt.webp",
         from: "07 · 首跑与数据夹",
         steps: [
-          "打开「设置 → 数据」。",
+          "打开「设置 → 数据管理」。",
           "查看数据夹路径；需要时导出备份。",
-          "换机或重装前先备份，再在新环境导入/拷贝。",
+          "换机或重装前先备份；完整迁移优先拷贝整个数据夹，再重新填写 API Key。",
         ],
-        tip: "卸载或删数据夹会丢书。AI 密钥也在本地配置里，备份时一并考虑。",
+        tip: "卸载或删数据夹会丢书。导出包通常不含密钥。",
         related: ["my-novels", "ai-service", "settings-page"]
       },
     ],
@@ -21284,166 +21357,101 @@ function devPreviewCopy(json){
 
 /* ---------- 视图：设置 ---------- */
 function vUpdates(){
-  /* 设置→更新：V1.3（2026-10-25）在上；V1.2（2026-10-18）、V1.1（2026-10-17）在下 */
+  /* 设置→更新：只留 V1.4（2026-10-30）；V1.1–V1.3 历史卡按先生 2026-10-30 指示删除 */
   return `<div class="page">
-    <div class="card" style="margin-bottom:16px">
-    <h2 class="upd-title">故事工坊 V1.3</h2>
-	    <p class="upd-meta">2026-10-25</p>
-	    <p class="upd-intro">这一版围绕「文风与技能」展开：把你的样章提炼成可复用的写作技能，写作时随时选用；设定卡多了颜色标记，列表里一眼就能认出来；目录与章节的命名管理更加统一了，入门说明也同步更新。</p>
-
-	    <details class="upd-group" open>
-	      <summary><span class="upd-g-title">文风蒸馏与技能</span><span class="upd-g-count">4 项</span></summary>
-	      <div class="upd-body"><ul>
-	        <li><strong>文风蒸馏</strong>：设置里新增了「文风蒸馏」——丢一段你满意的样章进去，就能提炼出一份文风技能，以后写作时随时调用。</li>
-	        <li><strong>技能页</strong>：设置里多了一个「技能」页，所有提炼出来的技能都在这里集中管理，想用就打开，不用就关掉。</li>
-	        <li><strong>写作时勾选</strong>：在 AI 助手面板里勾上想用的技能，这一轮生成就会带上对应的能力或风格。</li>
-	        <li><strong>按作品分开</strong>：技能挂在当前书下，每本书的技能互不干扰，切书不会串。</li>
-	      </ul></div>
-	    </details>
-
-	    <details class="upd-group" open>
-	      <summary><span class="upd-g-title">AI 助手与拖卡访谈</span><span class="upd-g-count">3 项</span></summary>
-	      <div class="upd-body"><ul>
-	        <li><strong>推演强度与场景</strong>：助手可以调节推演强度、指定参考哪个场景，调好之后再生成。</li>
-	        <li><strong>拖卡访谈</strong>：设定卡可以直接拖进对话窗口——不用复制粘贴，AI 自动读取卡片内容，引用更准确。</li>
-	        <li><strong>重开更稳</strong>：重新打开助手面板时，之前填好的内容还在、确认一下就能继续；也修好了技能和强度偶尔不显示的小毛病。</li>
-	      </ul></div>
-	    </details>
-
-	    <details class="upd-group">
-	      <summary><span class="upd-g-title">作品结构与目录对齐</span><span class="upd-g-count">2 项</span></summary>
-	      <div class="upd-body"><ul>
-	        <li><strong>卷 · 章 · 节</strong>：章节层级统一由作品目录树决定，故事板和写作页都按这棵树的层级来展示，不再各管各的。</li>
-	        <li><strong>目录不再错位</strong>：改名、合并、拆分章节都在目录树上操作，不会再出现改了标题但目录没跟着变的情况。</li>
-	      </ul></div>
-	    </details>
-
-	    <details class="upd-group">
-	      <summary><span class="upd-g-title">设定与界面</span><span class="upd-g-count">3 项</span></summary>
-	      <div class="upd-body"><ul>
-	        <li><strong>设定卡颜色标记</strong>：头像下方可以调色，列表里一眼认出重要角色——颜色只帮助辨认，不会写进正文。</li>
-	        <li><strong>更大的新建按钮</strong>：设定库等列表的「＋」按钮加大了，点起来更方便。</li>
-	        <li><strong>入门说明翻新</strong>：设置·入门的引导卡片全面更新了文案，还新增了「技能」讲解卡，现在一共 21 张。</li>
-	      </ul></div>
-	    </details>
-
-	    <details class="upd-group">
-	      <summary><span class="upd-g-title">稳定性</span><span class="upd-g-count">1 项</span></summary>
-	      <div class="upd-body"><ul>
-	        <li><strong>设置页</strong>：修好了设置页在个别情况下加载不出来的问题。</li>
-	      </ul></div>
-	    </details>
-	  </div>
-
-<div class="card" style="margin-bottom:16px">
-    <h2 class="upd-title">故事工坊 V1.2</h2>
-    <p class="upd-meta">2026-10-18</p>
-    <p class="upd-intro">这一版主要打磨「设定」：条目之间的关系更丰富，列表更好找、更好筛，关系图谱更顺手；目录可以在两层、三层之间切换，误删的卷、章也能找回来。</p>
-
-    <details class="upd-group" open>
-      <summary><span class="upd-g-title">设定关系</span><span class="upd-g-count">3 项</span></summary>
-      <div class="upd-body"><ul>
-        <li><strong>三种关系</strong>：设定之间可以标注「归属」「下属」或「关联」，一条设定也能有多个。过去只能填一个的「父条目」，并入现在的「归属」。</li>
-        <li><strong>关系卡</strong>：点整张卡片就能跳到对方条目。两个条目之间已有关系时，再加一种会先询问；「归属」的方向可以一键调换。</li>
-        <li><strong>不能和自己关联</strong>：设定不能与自己建立关系，避免误操作。</li>
-      </ul></div>
-    </details>
-
-    <details class="upd-group" open>
-      <summary><span class="upd-g-title">设定列表</span><span class="upd-g-count">4 项</span></summary>
-      <div class="upd-body"><ul>
-        <li><strong>筛选</strong>：列表上方新增一排常用筛选，可以按「有关联／有注释／有描述／有附图／有标签／全局／有别名／有设定演进／在当前场景」快速过滤，也可以一键取消。</li>
-        <li><strong>排序</strong>：可以按提及次数或名称排列，重要的设定不再难找。</li>
-        <li><strong>类型下拉框</strong>：整个下拉框都可以点，更容易点中；宽度与旁边的图标对齐，版面更整齐。</li>
-        <li><strong>搜索与分组</strong>：搜索覆盖名称、描述、类型和标签。列表统一按六种固定类型（角色／地点／物品／世界设定／支线／其他）分组，不再按每本书自建的分类来分。</li>
-      </ul></div>
-    </details>
-
-    <details class="upd-group" open>
-      <summary><span class="upd-g-title">关系图谱</span><span class="upd-g-count">4 项</span></summary>
-      <div class="upd-body"><ul>
-        <li><strong>留在本书</strong>：在设定面板就能打开图谱，看完直接回到原来的位置，不必离开当前这本书。</li>
-        <li><strong>线条与节点</strong>：实线箭头表示「归属／下属」，虚线表示「关联」。节点越大，正文里被提到的次数越多。</li>
-        <li><strong>拖动与缩放</strong>：支持滚轮缩放、拖动背景、挪动节点；点节点直接打开这条设定的编辑。</li>
-        <li><strong>跟场景走</strong>：先选一个场景，再打开「同场景共现」，图谱就只看这个场景的设定。从写作页进入时会自动带上当前场景，在图谱里也可以跳回那一景。</li>
-      </ul></div>
-    </details>
-
-    <details class="upd-group" open>
-      <summary><span class="upd-g-title">设定如何进入 AI</span><span class="upd-g-count">4 项</span></summary>
-      <div class="upd-body"><ul>
-        <li><strong>四种方式</strong>：每条设定都可以单独选择它怎么进入 AI——「始终注入」每次都带上；「检测到时包含」正文提到才带上；「检测到时不包含」正文提到也不带，只能手动 @；「从不包含」完全不带。</li>
-        <li><strong>从不包含</strong>：选它的设定不会自动进入 AI 上下文，@ 引用里也找不到它，不再统计提及次数。</li>
-        <li><strong>默认与批量</strong>：可以给以后新建的条目定好默认方式；也可以把现有的「检测到时包含／不包含」批量统一成其中一种。「始终注入」和「从不包含」不会被批量改动。</li>
-        <li><strong>会送出的字段</strong>：梗概、摘要、别名、描述、设定演进旁会标上「将用于 AI」的记号；笔记不会被引用。</li>
-      </ul></div>
-    </details>
-
-    <details class="upd-group" open>
-      <summary><span class="upd-g-title">目录深度</span><span class="upd-g-count">4 项</span></summary>
-      <div class="upd-body"><ul>
-        <li><strong>二级或三级</strong>：新建的书默认是「卷→章」两级，一章一篇正文，显示为「章节」。想要更细的层次，可以改成「卷→章→小节」三级。</li>
-        <li><strong>切到二级会合并</strong>：切换前会先确认，再把同一章的多段正文合成一篇，多出来的部分进入回收站。这一步不能撤销；改回三级也不会把已经合并的正文拆开。</li>
-        <li><strong>二级下少一些入口</strong>：不能再新增、拆分、删除、复制或插入小节，也不能把正文调到别的章。拆章、拆卷仍然可以。</li>
-        <li><strong>送给模型的说法</strong>：默认上下文里，这一级统称「当前写作单元」。</li>
-      </ul></div>
-    </details>
-
-    <details class="upd-group" open>
-      <summary><span class="upd-g-title">回收站与写作区</span><span class="upd-g-count">3 项</span></summary>
-      <div class="upd-body"><ul>
-        <li><strong>删除先收起来</strong>：删除卷、章或小节时，内容会先收进这本书的回收站，界面上消失，还可以还原。</li>
-        <li><strong>在设置里处理</strong>：设置 · 系统 · 回收站里可以还原或彻底删除。正文里删字、以及删除整本书，不会进入这里。</li>
-        <li><strong>写作区更宽</strong>：场景正文不再限制在固定窄宽里，写起来更舒展。</li>
-      </ul></div>
-    </details>
-  </div>
   <div class="card">
-    <h2 class="upd-title">故事工坊 V1.1</h2>
-    <p class="upd-meta">2026-10-17</p>
-    <p class="upd-intro">这一版重点是写作页和审阅：写作更顺手；审阅开始能帮你对照设定查找人物矛盾；还可以接入外部工具（MCP）。</p>
+    <h2 class="upd-title">故事工坊 V1.4</h2>
+    <p class="upd-meta">2026-10-30</p>
+    <p class="upd-intro">这一版围绕「图谱与批量管理」展开：新增剧情图谱，把章和小节连成一张因果网；设定列表有了右键菜单和批量操作；设定提取升级为十章整包、审阅更聚焦近章；AI 服务可以调思考强度、一键接本机文件夹；入门说明翻新为 25 张卡，大设定集也快了不少。</p>
 
-    <details class="upd-group">
-      <summary><span class="upd-g-title">写作体验</span><span class="upd-g-count">3 项</span></summary>
+    <details class="upd-group" open>
+      <summary><span class="upd-g-title">剧情图谱（新）</span><span class="upd-g-count">6 项</span></summary>
       <div class="upd-body"><ul>
-        <li><strong>指令与对话</strong>：写作页 AI 侧栏的两种模式更好分辨，切换也更顺手。</li>
-        <li><strong>顶栏高亮</strong>：顶栏会标出你当前所在的位置，不容易走错入口。</li>
-        <li><strong>自己的发言更好认</strong>：对话里你的发言有独立样式，一眼就能和 AI 的回复区分开。</li>
+        <li><strong>全新入口</strong>：设定栏「关系图谱」右侧并排新增「剧情图谱」。当前卷的章／小节自动铺成节点网格：有小节的章只铺小节，没有小节的铺章。</li>
+        <li><strong>点开就能写</strong>：单击节点聚焦，双击或「打开写作」直接跳到对应正文。</li>
+        <li><strong>手拉因果边</strong>：任意两个节点之间可以拉出「导致」（实线）或「相关」（虚线）边；点选一条边后即可删它。</li>
+        <li><strong>跨卷引入与钉住</strong>：窗外章节可以从「引入叶」搜索放入，或从故事板时间轴直接拖进画布；常用节点可钉住，跨卷常驻；因删章断掉的边，也能把另一端拖进来接回。</li>
+        <li><strong>阅读顺序角标</strong>：节点角标按窗内目录顺序自动计算，卷内先后一目了然。</li>
+        <li><strong>画布随你存</strong>：坐标、边、钉住状态都存在书根「剧情图谱.json」，滚轮缩放、右键平移、拖动节点即存即生效。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group" open>
+      <summary><span class="upd-g-title">设定列表与关系图谱</span><span class="upd-g-count">7 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>设定行右键四键</strong>：左栏设定行右键＝对话（角色访谈／设定助理）、高亮、批量管理、删除，常用操作不必再找按钮。</li>
+        <li><strong>批量管理</strong>：进入管理态后底部浮条常驻，勾选即可批量操作；批量删除有二次确认并附上名单。</li>
+        <li><strong>批量改色与标签</strong>：整批改色（可恢复分类默认色）、追加标签、清空标签（清空有二次确认）。</li>
+        <li><strong>图谱搜索</strong>：关系图谱可按名称／别名／标签搜索，命中自动滚入视野，Enter 在结果之间循环跳转。</li>
+        <li><strong>图谱多选</strong>：Shift 点选或 Shift 拖框一次选中多个节点，整组拖动后位置一并保存，Esc 清空选择。</li>
+        <li><strong>右键平移</strong>：关系图谱右键拖动即可平移画布，和剧情图谱手势一致。</li>
+        <li><strong>选中即高亮</strong>：图谱里选中的设定，写作页左栏同步高亮；从别的页面也会先切回图谱再定位，来回切换不失焦。</li>
       </ul></div>
     </details>
 
     <details class="upd-group">
-      <summary><span class="upd-g-title">审阅 · 人物设定矛盾</span><span class="upd-g-count">5 项</span></summary>
+      <summary><span class="upd-g-title">设定提取与审阅</span><span class="upd-g-count">7 项</span></summary>
       <div class="upd-body"><ul>
-        <li><strong>人物设定矛盾检查</strong>：审阅时可以拿正文和设定做对照，找出前后不一致的地方。</li>
-        <li><strong>可接入决策模型</strong>：矛盾检查可以交给专门的判定模型，给出「冲突／一致／不确定」这类结论，再整理进审阅结果。</li>
-        <li><strong>审阅专用模型</strong>：可以在「AI 服务」里单独登记审阅专用的接口和模型，支持测试连接、保存多套方案随时切换。推荐了几家提供免费额度的决策模型渠道，优先建议 decision-model-preview；本机自建的模型仍可作备选。</li>
-        <li><strong>提示词入库</strong>：矛盾检查用到的提示词已收进提示词库，方便查看和调整。</li>
-        <li><strong>细节体验</strong>：忽略过的条目在改文之后会重新检查；拿不准的「灰区」会加脚注说明；重复提醒更安静。首次进审阅时如果还没登记专用模型，会提示你去登记，可以稍后再说，也可以不再提醒。</li>
+        <li><strong>十章整包提取</strong>：设定提取的读法升级为约 10 章整包，跨章反复出现的设定优先识别入册。</li>
+        <li><strong>超长书更稳</strong>：超过上限的大包按章拆分、每段带上章头；需要抽样时按层次均匀取代表段，不再只截头尾。</li>
+        <li><strong>首提直出</strong>：书里还没有已保存设定时，提取结果直接写入设定集；已有设定才出候选供勾选。</li>
+        <li><strong>备注说清楚</strong>：直出与候选确认在写入备注里分开标注，每条设定的来源一目了然。</li>
+        <li><strong>描述 500 字</strong>：设定描述上限与程序对齐为 500 字，超长不再错位。</li>
+        <li><strong>矛盾检查聚焦近章</strong>：审阅·人物矛盾优先对照近端约 5 章，老设定以约 10 章为候选窗；配好审阅模型后「重新检查」常驻可点。</li>
+        <li><strong>管线更严</strong>：提取五域键严格校验、候选与提及去重、失败如实披露不再静默，一批健壮性修复。</li>
       </ul></div>
     </details>
 
     <details class="upd-group">
-      <summary><span class="upd-g-title">MCP（外部工具）</span><span class="upd-g-count">5 项</span></summary>
+      <summary><span class="upd-g-title">AI 服务与 MCP</span><span class="upd-g-count">4 项</span></summary>
       <div class="upd-body"><ul>
-        <li><strong>在设置里接入本地服务</strong>：填上命令和参数，启用后即可连接，还能查看它提供了哪些工具。</li>
-        <li><strong>输入行上的确认小开关</strong>：调用外部工具前要不要确认，可以在输入行随手切换「每次确认／自动」，不必进设置。</li>
-        <li><strong>自动连接</strong>：启动程序或开始对话时，已启用的服务会自动连上，不用每次手动点「连接」。</li>
-        <li><strong>结果留在对话里</strong>：工具执行成功的结果会保留在对话中，不再被误显示成「调用失败」。</li>
-        <li><strong>改动正文仍需确认</strong>：会修改书稿的操作，仍会先给出修改提案，你确认之后才写入。</li>
+        <li><strong>思考强度</strong>：每个 AI 服务可单独配置思考强度（默认不发／关闭／低／中／高），字段按端点自动适配，不必手填。</li>
+        <li><strong>附加请求体 JSON</strong>：特殊参数直接以 JSON 附进请求体，各家新字段都能兼容。</li>
+        <li><strong>接文件系统</strong>：MCP 新增「接文件系统」——选一个目录或粘贴路径，程序自动写好命令、启用并连接，不必手改参数。</li>
+        <li><strong>失败看得见</strong>：MCP 连接失败时，提示里附上服务端的错误输出末尾，自查不用猜。</li>
       </ul></div>
     </details>
 
     <details class="upd-group">
-      <summary><span class="upd-g-title">入门与说明</span><span class="upd-g-count">2 项</span></summary>
+      <summary><span class="upd-g-title">写作与故事板</span><span class="upd-g-count">5 项</span></summary>
       <div class="upd-body"><ul>
-        <li><strong>入门附图更清楚</strong>：说明里的截图现在完整显示、带黑底衬底，不再被裁切或压扁。</li>
-        <li><strong>换了新截图</strong>：@引用、片段库、设定集等功能的说明图已经更新。</li>
+        <li><strong>摘要／大纲就地编辑</strong>：故事板时间轴与卡片上的摘要、大纲点击即可编辑，空摘要一键补写。</li>
+        <li><strong>叙述时态退场</strong>：建书、编辑表单与 AI 上下文里的「叙述时态」移除，界面更清爽（旧书数据兼容保留）。</li>
+        <li><strong>拖卡更跟手</strong>：拖拽设定卡时，跟随指针的幽灵卡居中贴合指针，还带一点轻摇动画。</li>
+        <li><strong>提及列表章题</strong>：设定「提及」列表的条目标题正确回落到章题，不再错位。</li>
+        <li><strong>小修若干</strong>：右栏「添加节拍」偶发失效、章交接已保存仍误报「放弃」、正文右键斜杠菜单需点钮才关等问题修复。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group">
+      <summary><span class="upd-g-title">性能与稳定性</span><span class="upd-g-count">4 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>设定集更快</strong>：大设定集主表先渲染 200 条、余量用「显示更多」追加；搜索、排序、筛选始终作用于全部条目。</li>
+        <li><strong>保存更快</strong>：保存打戳改为原位更新，不再为一个时间戳重跑全书投影。</li>
+        <li><strong>长文处理修复</strong>：裸中文数字章节识别、纯文本块级换行、文风蒸馏语料配额、审阅建议原文引用定位（弯直引号归一）等一批修复。</li>
+        <li><strong>审阅简化</strong>：审阅页移除「连续阅读」模式，页面更聚焦；提取与审阅管线另有一批内部健壮性修复。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group">
+      <summary><span class="upd-g-title">入门与说明</span><span class="upd-g-count">3 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>入门翻新</strong>：设置·入门重写为 25 张卡，新增「本机 MCP」「资源栏」「关系与剧情图谱」「对话」四张新卡。</li>
+        <li><strong>结构卡重写</strong>：「作品结构」卡重写为「卷 · 章 · 小节」，「片段库」卡重写，全部文案对齐现行功能与口径。</li>
+        <li><strong>说明书同步</strong>：应用手册与本版术语（CONTEXT）同步更新。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group">
+      <summary><span class="upd-g-title">其他</span><span class="upd-g-count">1 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>开源</strong>：故事工坊以 MIT 协议开源，仓库已公开。</li>
       </ul></div>
     </details>
   </div>
 </div>`;
 }
+
 
 function outlineTwo(){return !!(typeof S!=='undefined'&&S&&S.data&&S.data.settings&&S.data.settings.outlineLevels==='2')}
 function unitLabel(){return outlineTwo()?'章节':'小节'}

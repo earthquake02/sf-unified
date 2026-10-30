@@ -10,12 +10,12 @@
 
 ## 构建与验证
 
-| 动作 | 命令 |
-|---|---|
-| 构建 Windows exe | `node tools/release_rust.mjs` → `release/rust/故事工坊.exe` |
-| 快速核验（不构建） | `node tools/dev_page.mjs`（exe 服仓内页面＋隔离数据夹，刷新即生效） |
-| 类型门 | `node tools/check_types.ts`（基线 `tools/check_types.baseline.json` 只降不升；改到哪个函数就给哪个函数补 JSDoc 注解） |
-| 全量回归（最小集） | `node tools/run_all.ts` |
+| 动作             | 命令                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| 构建 Windows exe | `node tools/release_rust.mjs` → `release/rust/故事工坊.exe`                                       |
+| 快速核验（不构建）      | `node tools/dev_page.mjs`（exe 服仓内页面＋隔离数据夹，刷新即生效）                                              |
+| 类型门            | `node tools/check_types.ts`（基线 `tools/check_types.baseline.json` 只降不升；改到哪个函数就给哪个函数补 JSDoc 注解） |
+| 全量回归（最小集）      | `node tools/run_all.ts`                                                                       |
 
 **Windows 单平台铁律**：发布形态永久为 Windows 单 exe；不做任何 macOS 交叉构建，mac 产物不进本仓、不阻塞发布（ADR 0002）。
 
@@ -31,14 +31,14 @@
 
 ## 目录一览
 
-| 位置 | 职责 |
-|---|---|
-| `app/` | 程序：`index.html`、`server-rs/`、`说明书.md`、提示词 JSON |
-| `docs/` | `agents/`（协作协议三件）、`adr/`（决策记录） |
-| `tools/` | 构建/验证工具（原位本地化，不入 git） |
+| 位置          | 职责                                               |
+| ----------- | ------------------------------------------------ |
+| `app/`      | 程序：`index.html`、`server-rs/`、`说明书.md`、提示词 JSON   |
+| `docs/`     | `agents/`（协作协议三件）、`adr/`（决策记录）                   |
+| `tools/`    | 构建/验证工具（原位本地化，不入 git）                            |
 | `.scratch/` | 本地工单区（不入 git），入口见 `docs/agents/issue-tracker.md` |
-| `data/` | 运行数据（books/sources 不入库） |
-| `release/` | 构建产物（不入库） |
+| `data/`     | 运行数据（books/sources 不入库）                          |
+| `release/`  | 构建产物（不入库）                                        |
 
 ## 协作入口
 
