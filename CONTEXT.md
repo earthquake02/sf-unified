@@ -112,6 +112,9 @@ _Avoid_: 默认提示词
 **审稿-修稿闭环**:
 AI 审稿（冻结目标逐项核对）→ 逐条确认 → 修订候选 → 折叠差异对比 → 手工采纳（台账可回退）。
 
+**本机 MCP**:
+设置→AI→MCP：外接本机 stdio 单 Server（非 HTTP／SSE 远程）。可「接文件系统」一键写入 `npx -y @modelcontextprotocol/server-filesystem <目录>` 并连接；仍保留手改命令／参数为高级。连接／调用失败时提示宜带 Server stderr 尾便于自查。默认超时 60s（API 可传 5–180）。改书稿／设定仍走助理提案卡。_Avoid_: 远程 URL MCP、多 Server 并行、把超时产品大改塞进一键接。
+
 ## 基础设施
 
 **Rust 服务壳（server-rs）**:

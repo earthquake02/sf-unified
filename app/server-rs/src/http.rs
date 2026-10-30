@@ -101,6 +101,8 @@ pub async fn dispatch(State(app): State<Arc<App>>, req: Request<Body>) -> Respon
     // MCP 会等子进程，所以在这里 await。会话是进程级单例，不在 App 上。
     let reply = if method == Method::GET && path == "/api/mcp/status" {
         mcp_status().await
+    } else if method == Method::POST && path == "/api/mcp/probe" {
+        mcp_probe(&raw).await
     } else if method == Method::POST && path == "/api/mcp/connect" {
         mcp_connect(&raw).await
     } else if method == Method::POST && path == "/api/mcp/disconnect" {
@@ -129,6 +131,13 @@ fn with_ok(st: Value) -> Value {
 async fn mcp_status() -> Reply {
     match crate::mcp::status().await {
         Ok(st) => json(200, &with_ok(st), false),
+        Err(e) => from_bad(e),
+    }
+}
+
+async fn mcp_probe(raw: &[u8]) -> Reply {
+    match crate::mcp::probe(raw.to_vec()).await {
+        Ok(body) => json(200, &with_ok(body), false),
         Err(e) => from_bad(e),
     }
 }

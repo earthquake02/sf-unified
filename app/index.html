@@ -442,7 +442,8 @@ label.f{display:block; font-size:12px; color:var(--tx2); margin:10px 0 4px}
 .cpan.on{display:block}
 .codexHit{display:flex; align-items:center; gap:8px; padding:6px 2px; border-bottom:1px solid var(--line); font-size:12.5px}
 .codexHit:last-child{border-bottom:0}
-#toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--bg3); border:1px solid var(--ac); color:var(--tx); border-radius:99px; padding:9px 22px; font-size:13px; display:none; z-index:200; box-shadow:0 6px 24px rgba(0,0,0,.4)}
+#toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--bg3); border:1px solid var(--ac); color:var(--tx); border-radius:99px; padding:9px 22px; font-size:13px; display:none; z-index:200; box-shadow:0 6px 24px rgba(0,0,0,.4); max-width:min(860px,90vw); max-height:50vh; overflow:auto; white-space:pre-wrap; word-break:break-word; text-align:left}
+#mcp-status-r{min-width:0; white-space:pre-wrap; overflow-wrap:anywhere}
 /* 开发者模式（票01）：顶栏右端徽标＋自顶垂下浮层面板——仅开发者模式开启时由 devUIRender 注入 #devRoot。
    2026-10-22 卡外修复：原右下角定位压住副驾「发送 ➤」，挪顶栏（chrome 层，任何视图不遮内容）；
    徽标 z=85 让窄屏覆盖槽（z=90）展开时徽标沉到抽屉之下，不挡抽屉关闭钮。 */
@@ -5236,6 +5237,19 @@ function mcpToolsHTML(){
     return `<div style="padding:6px 8px;margin:0 0 4px;background:var(--bg);border-radius:8px;font-size:12px"><code style="color:var(--blue)">mcp:${n}</code>${d?`<div class="hint" style="margin:2px 0 0">${d}</div>`:''}</div>`;
   }).join('')+(tools.length>40?'<p class="hint">…共 '+tools.length+' 个</p>':'');
 }
+const MCP_FS_ABS=/^(?:[A-Za-z]:[\\/]|\\\\)/;
+const MCP_NO_NPX='未找到 Node.js／npx：请先安装 Node.js（装好后在终端能运行 npx），再重开故事工坊重试';
+/** 接文件系统默认显示名：目录名；盘符根回落「文件系统」。 @param {string} dir @returns {string} */
+function mcpFsName(dir){
+  const d=String(dir||'').replace(/[\\/]+$/,'');
+  const seg=d.split(/[\\/]/).pop()||'';
+  return /^[A-Za-z]:$/.test(seg)||!seg?'文件系统':seg;
+}
+/** 接文件系统的参数行；含空白按服务端 split_args 口径加双引号。 @param {string} dir @returns {string} */
+function mcpFsArgs(dir){
+  const d=String(dir||'').trim();
+  return '-y @modelcontextprotocol/server-filesystem '+(/\s/.test(d)?'"'+d+'"':d);
+}
 function mcpPersistField(key,val){
   if(roReason())return;
   if(!S.data.settings||typeof S.data.settings!=='object')S.data.settings={};
@@ -5259,13 +5273,15 @@ async function mcpHttp(method,url,body){
   }
   return j||{};
 }
+/** 刷新 MCP 连接状态与工具列表；未连接时保留已有错误（含 stderr 尾）。 @returns {Promise<{connected:boolean,tools:any[],error:string,line:string}>} */
 async function mcpRefreshStatus(){
   const u=mcpUiState();
   try{
     const j=await mcpHttp('GET','/api/mcp/status');
     u.connected=!!j.connected;
     u.tools=Array.isArray(j.tools)?j.tools:[];
-    u.error='';
+    // 未连上时保留已有错误（含 stderr 尾）；成功连接才清，避免设置页刷新把失败原因抹掉。
+    if(u.connected)u.error='';
     u.line=u.connected?('已连接 · 工具 '+u.tools.length+' 个'):'未连接';
   }catch(e){
     u.connected=false;u.tools=[];u.error='状态读取失败：'+((e&&e.message)||e);u.line=u.error;
@@ -5300,6 +5316,77 @@ async function mcpConnect(){
     u.connected=false;u.tools=[];u.error='连接失败：'+((e&&e.message)||e);u.line=u.error;
     toast(u.error,5200);render();
   }
+}
+/** 取异常的可读文案（Error 优先 message）。 @param {unknown} e @returns {string} */
+function mcpErrText(e){return String((e&&/** @type {any} */(e).message)||e)}
+/** 选要接入 MCP 的目录；无壳或取消时保留已填路径。 @returns {Promise<void>} */
+async function mcpFsPick(){
+  if(roReason()){roToast();return}
+  try{
+    const tauri=/** @type {any} */(typeof window!=='undefined'?window:null);
+    const core=(tauri&&tauri.__TAURI__&&tauri.__TAURI__.core&&typeof tauri.__TAURI__.core.invoke==='function')?tauri.__TAURI__.core:null;
+    if(!core){toast('当前窗口不支持「选目录」——请直接粘贴文件夹绝对路径',5000);return}
+    const r=await core.invoke('pick_folder');
+    if(!r){toast('没有选择文件夹',3000);return}
+    S.ui._mcpFsPath=String(r);
+    const el=/** @type {HTMLInputElement|null} */(document.getElementById('s-mcp-fs-path'));if(el)el.value=String(r);
+  }catch(e){toast('选择文件夹失败：'+mcpErrText(e),5000)}
+}
+/** 接文件系统：探测 npx／目录后写 npx 配置、启用并连接；找不到 npx 不写配置。 @returns {Promise<void>} */
+async function mcpFsOnboard(){
+  if(roReason()){roToast();return}
+  const input=/** @type {HTMLInputElement|null} */(document.getElementById('s-mcp-fs-path'));
+  const dir=String(input?input.value:S.ui._mcpFsPath||'').trim();
+  if(!dir){toast('请先选择或填写要接入的文件夹',3500);return}
+  if(!MCP_FS_ABS.test(dir)){toast('请填写文件夹绝对路径，例如 D:\\我的笔记',4000);return}
+  S.ui._mcpFsPath=dir;
+  const u=mcpUiState();
+  u.error='';
+  const showLine=()=>{const el=document.getElementById('mcp-status-r');if(el)el.textContent=u.line};
+  u.line='正在检查 npx…';showLine();
+  let probe=null;
+  try{probe=await mcpHttp('POST','/api/mcp/probe',{command:'npx',dir})}
+  catch(e){
+    u.connected=false;u.tools=[];u.error='检查失败：'+mcpErrText(e);u.line=u.error;
+    toast(u.error,6000);render();return;
+  }
+  if(!probe||probe.found!==true){
+    u.connected=false;u.tools=[];u.error=MCP_NO_NPX;u.line=u.error;
+    toast(u.error,8000);render();return;
+  }
+  if(probe.dir===false){
+    u.error='目录不存在或不是文件夹：'+dir;u.line=u.error;
+    toast(u.error,6000);render();return;
+  }
+  const args=mcpFsArgs(dir), name=mcpFsName(dir);
+  if(!S.data.settings||typeof S.data.settings!=='object')S.data.settings={};
+  S.data.settings.mcpName=name;
+  S.data.settings.mcpCmd='npx';
+  S.data.settings.mcpArgs=args;
+  S.data.settings.mcpEnabled=true;
+  save();stFlush();
+  const nameEl=/** @type {HTMLInputElement|null} */(document.getElementById('s-mcp-name'));
+  const cmdEl=/** @type {HTMLInputElement|null} */(document.getElementById('s-mcp-cmd'));
+  const argsEl=/** @type {HTMLInputElement|null} */(document.getElementById('s-mcp-args'));
+  const enEl=/** @type {HTMLInputElement|null} */(document.getElementById('s-mcp-enabled'));
+  if(nameEl)nameEl.value=name;
+  if(cmdEl)cmdEl.value='npx';
+  if(argsEl)argsEl.value=args;
+  if(enEl)enEl.checked=true;
+  u.line='连接中…';showLine();
+  try{
+    const j=await mcpHttp('POST','/api/mcp/connect',{command:'npx',args});
+    u.connected=!!j.connected;
+    u.tools=Array.isArray(j.tools)?j.tools:[];
+    u.error='';
+    u.line='已连接 · 工具 '+u.tools.length+' 个';
+    toast('文件系统已接入并连接');
+  }catch(e){
+    u.connected=false;u.tools=[];
+    u.error='连接失败：'+mcpErrText(e);u.line=u.error;
+    toast(u.error,8000);
+  }
+  render();
 }
 async function mcpDisconnect(){
   try{await mcpHttp('POST','/api/mcp/disconnect',{})}catch(e){}
@@ -21637,6 +21724,7 @@ async function skillImportConfirm(){
   toast('技能已导入到「我的」层');
   cpSkillEnsure(true).then(()=>{if(S.ui.view==='settings'&&settingsTab()==='skills')render()});
 }
+/** 设置页整页模板：按当前页签渲染入门／系统／AI 服务（含 MCP 卡）／外观等面板。 @returns {string} */
 function vSettings(){
   const st=S.data.settings;
   const n=curNovel();
@@ -21711,6 +21799,15 @@ function vSettings(){
   <div class="card" style="margin-bottom:16px" id="mcp-card" data-anchor="sf-mcp-card">
     <h3 style="margin-bottom:8px;font-size:14px">${uiIc('mcp')}MCP</h3>
     <p class="hint" style="margin:0 0 10px" title="Model Context Protocol：外接本机工具的标准协议。本版＝本地 stdio 单 Server。">外接本机 MCP Server（stdio）。改书稿／设定仍走助理提案卡；确认掰钮只约束外部副作用工具。</p>
+    <div style="margin:0 0 12px;padding:10px 12px;background:var(--bg3);border:1px solid var(--line);border-radius:10px">
+      <div class="hint" style="margin:0 0 8px;color:var(--tx2)"><strong>接文件系统</strong>：选一个文件夹，自动写好 npx 命令并连接；下方显示名／命令／参数仍可手改。</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="s-mcp-fs-path" value="${esc(S.ui._mcpFsPath||'')}" ${ro?'disabled':''} placeholder="文件夹绝对路径，如 D:\\我的笔记" style="flex:1;min-width:180px" title="要接入 MCP 的文件夹绝对路径">
+        <button type="button" class="btn sm" data-act="mcp-fs-pick" ${ro?'disabled':''} title="选择要接入的文件夹">选目录…</button>
+        <button type="button" class="btn sm pri" data-act="mcp-fs-onboard" ${ro?'disabled':''} title="写入 npx 命令、勾选启用并连接">接文件系统并连接</button>
+      </div>
+      <p class="hint" style="margin:6px 0 0">需先安装 Node.js，并确认终端能运行 npx；找不到时不会写入命令。</p>
+    </div>
     <label class="f" style="display:flex;gap:8px;align-items:center;margin:0 0 10px" title="关掉后断开子进程，助理回合不再出现外部工具">
       <input type="checkbox" id="s-mcp-enabled" ${mcpSettings().enabled?'checked':''} ${ro?'disabled':''} style="width:auto"> 启用 MCP
     </label>
@@ -24190,6 +24287,8 @@ document.addEventListener('click',async e=>{
   case'review-ai-rec':reviewAiApplyPreset(el.dataset.id);break;
   case'review-ai-test':{const r=$('#review-ai-test-r');if(r)r.textContent='测试中…';
     try{const msg=await reviewAiTest();if(r)r.textContent=msg;toast(msg,4200)}catch(err){const m='× '+((err&&err.message)||err);if(r)r.textContent=m;toast(m,5200)}break}
+  case'mcp-fs-pick':await mcpFsPick();break;
+  case'mcp-fs-onboard':await mcpFsOnboard();break;
   case'mcp-connect':await mcpConnect();break;
   case'mcp-disconnect':await mcpDisconnect();break;
   case'mcp-refresh':await mcpRefreshTools();break;
@@ -24394,6 +24493,8 @@ document.addEventListener('input',e=>{
   if(e.target.id==='rsnSearch'){S.ui.snipQ=e.target.value;resSnipFilterApply()}   // 票23：片段搜索输入即筛（零重建零写入）
   if(e.target.id==='rsnCdxSearch'){S.ui.codexQ=e.target.value;resCdxFilterApply()}   // 票38：设定搜索输入即筛（同片段口径；零重建零写入）
   if(e.target.id==='rsChatSearch'){S.ui.chatQ=e.target.value;resChatFilterApply()}   // 票57：会话搜索输入即筛（同口径零重建零写入；范围＝获准的请求/结果/标题文本）
+  const fsPathTarget=/** @type {HTMLInputElement|null} */(e.target);
+  if(fsPathTarget&&fsPathTarget.id==='s-mcp-fs-path'){S.ui._mcpFsPath=String(fsPathTarget.value||'')}
 });
 document.addEventListener('change',async e=>{
   /* 体验修补票02：旧 #novelSel 切书分支已随侧栏删除——切书清理语义迁入 switchNovel()，由 novel-open 现行入口承接 */

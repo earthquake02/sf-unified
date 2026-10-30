@@ -24,6 +24,8 @@ const DEFAULT_TIMEOUT: f64 = 60.0;
 const MAX_FRAME: i64 = 8 * 1024 * 1024;
 const STDERR_KEEP: usize = 4000;
 const STDERR_SHOW: usize = 2000;
+/// 错误 message 里带的 stderr 尾。比 status 的 `STDERR_SHOW` 短，避免长栈把 toast 撑爆。
+const STDERR_MSG_SHOW: usize = 800;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Clone, Debug)]
@@ -42,6 +44,16 @@ impl std::fmt::Display for McpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)
     }
+}
+
+/// 把当前会话 stderr 的截断尾部拼进错误 message；空 stderr 原样返回，避免「stderr：」噪声。
+fn attach_stderr(mut err: McpError, tail: &str) -> McpError {
+    let text = tail.trim();
+    if !text.is_empty() {
+        err.message.push_str("\nstderr 尾：\n");
+        err.message.push_str(&tail_chars(text, STDERR_MSG_SHOW));
+    }
+    err
 }
 
 struct WaitSlot {
@@ -136,6 +148,11 @@ impl Inner {
             stderr_thread: None,
         }
     }
+
+    /// 给错误 message 附上当前会话 stderr 尾；空尾原样返回。
+    fn with_stderr(&self, err: McpError) -> McpError {
+        attach_stderr(err, &self.stderr_tail)
+    }
 }
 
 struct Hub {
@@ -188,6 +205,10 @@ pub async fn status() -> Result<Value, Bad> {
 
 pub async fn connect(raw: Vec<u8>) -> Result<Value, Bad> {
     spawn_ok(move || connect_blocking(&raw)).await
+}
+
+pub async fn probe(raw: Vec<u8>) -> Result<Value, Bad> {
+    spawn_ok(move || probe_blocking(&raw)).await
 }
 
 pub async fn disconnect() -> Result<Value, Bad> {
@@ -306,6 +327,7 @@ fn connect_blocking(raw: &[u8]) -> Result<Value, Bad> {
     match handshake {
         Ok(st) => Ok(st),
         Err(err) => {
+            // 错误在 request/notify 返回前已附 stderr 尾（早于 disconnect_full），断开不会抹掉线索。
             disconnect_full(&inner);
             Err(to_bad(err))
         }
@@ -342,7 +364,7 @@ fn meta_field(init: &Value, key: &str) -> Value {
 
 fn ensure_alive(g: &mut Inner) -> Result<(), McpError> {
     if g.child.is_none() || !child_running(&mut g.child) || !g.connected {
-        Err(McpError::new("not-connected", "MCP 未连接或进程已退出"))
+        Err(g.with_stderr(McpError::new("not-connected", "MCP 未连接或进程已退出")))
     } else {
         Ok(())
     }
@@ -414,8 +436,82 @@ fn reap(child: &mut Child) {
     }
 }
 
+/// 接文件系统预检：只解析命令／看目录，不拉子进程、不落盘。
+fn probe_blocking(raw: &[u8]) -> Result<Value, Bad> {
+    let body = parse_object(raw)?;
+    let command = field_str(&body, "command");
+    if command.is_empty() {
+        return Err(gate::bad(400, "bad-command", "请填写启动命令"));
+    }
+    let resolved = resolve_program(&command);
+    let dir = field_str(&body, "dir");
+    Ok(json!({
+        "command": command,
+        "found": resolved.is_some(),
+        "resolved": resolved.map(|path| path.to_string_lossy().to_string()).unwrap_or_default(),
+        "dir": if dir.is_empty() { Value::Null } else { Value::Bool(std::path::Path::new(&dir).is_dir()) },
+    }))
+}
+
+/// Windows 的 Command 直启不认 `.cmd` 这类 PATHEXT 启动器；先按 PATH 解析成真实文件。
+/// 解析不到时仍交原命令给 Command，保留既有「找不到命令」错误文案。
+#[cfg(windows)]
+fn resolve_program(command: &str) -> Option<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
+    let name = command.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let path = Path::new(name);
+    if name.contains('\\') || name.contains('/') {
+        return path.is_file().then(|| path.to_path_buf());
+    }
+    let mut exts: Vec<String> = Vec::new();
+    if path.extension().is_some() {
+        exts.push(String::new());
+    } else {
+        if let Ok(value) = std::env::var("PATHEXT") {
+            exts.extend(
+                value
+                    .split(';')
+                    .map(|ext| ext.trim().to_string())
+                    .filter(|ext| !ext.is_empty()),
+            );
+        }
+        // PATHEXT 被改坏时仍能找到 Node 的 npx.cmd／python.exe。
+        for ext in [".COM", ".EXE", ".BAT", ".CMD"] {
+            if !exts.iter().any(|have| have.eq_ignore_ascii_case(ext)) {
+                exts.push(ext.to_string());
+            }
+        }
+        // 无扩展名文件排最后：Node 的 npx 同时有无扩展名 bash 脚本与 npx.cmd，优先后者。
+        exts.push(String::new());
+    }
+    let paths = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&paths) {
+        for ext in &exts {
+            let candidate: PathBuf = if ext.is_empty() {
+                dir.join(name)
+            } else {
+                dir.join(format!("{name}{ext}"))
+            };
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn resolve_program(command: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::Path::new(command);
+    (path.components().count() > 1 && path.is_file()).then(|| path.to_path_buf())
+}
+
 fn spawn_child(command: &str, args: &[String], env: Option<&Map<String, Value>>) -> Result<Child, McpError> {
-    let mut cmd = Command::new(command);
+    let program = resolve_program(command).unwrap_or_else(|| std::path::PathBuf::from(command));
+    let mut cmd = Command::new(program);
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -592,11 +688,11 @@ fn request(inner: &Arc<Mutex<Inner>>, method: &str, params: Value, timeout: f64)
         });
         let Some(stdin) = g.stdin.as_mut() else {
             g.pending.remove(&id);
-            return Err(McpError::new("not-connected", "MCP 未连接"));
+            return Err(g.with_stderr(McpError::new("not-connected", "MCP 未连接")));
         };
         if let Err(err) = write_frame(stdin, &msg) {
             g.pending.remove(&id);
-            return Err(err);
+            return Err(g.with_stderr(err));
         }
         id
     };
@@ -604,19 +700,25 @@ fn request(inner: &Arc<Mutex<Inner>>, method: &str, params: Value, timeout: f64)
     let mut g = lock(inner);
     if let Some(outcome) = waiter.take_ready() {
         g.pending.remove(&id);
-        return outcome;
+        return match outcome {
+            Ok(value) => Ok(value),
+            Err(err) => Err(g.with_stderr(err)),
+        };
     }
     g.pending.remove(&id);
-    Err(McpError::new("timeout", format!("MCP 调用超时（{method}）")))
+    Err(g.with_stderr(McpError::new("timeout", format!("MCP 调用超时（{method}）"))))
 }
 
 fn notify(inner: &Arc<Mutex<Inner>>, method: &str, params: Value) -> Result<(), McpError> {
     let mut g = lock(inner);
     let Some(stdin) = g.stdin.as_mut() else {
-        return Err(McpError::new("not-connected", "MCP 未连接"));
+        return Err(g.with_stderr(McpError::new("not-connected", "MCP 未连接")));
     };
     let msg = json!({"jsonrpc": "2.0", "method": method, "params": params});
-    write_frame(stdin, &msg)
+    if let Err(err) = write_frame(stdin, &msg) {
+        return Err(g.with_stderr(err));
+    }
+    Ok(())
 }
 
 fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> Result<(), McpError> {
@@ -628,10 +730,10 @@ fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> Result<(), McpError> {
 }
 
 fn encode_frame(msg: &Value) -> Result<Vec<u8>, McpError> {
-    let raw = serde_json::to_vec(msg)
+    // MCP stdio 规范是 NDJSON（一行一条）；官方 filesystem Server 不认 LSP 的 Content-Length。
+    let mut frame = serde_json::to_vec(msg)
         .map_err(|err| McpError::new("write-failed", format!("写入 MCP 失败：{err}")))?;
-    let mut frame = format!("Content-Length: {}\r\n\r\n", raw.len()).into_bytes();
-    frame.extend_from_slice(&raw);
+    frame.push(b'\n');
     Ok(frame)
 }
 
@@ -1058,7 +1160,8 @@ mod tests {
         let text = String::from_utf8(frame.clone()).unwrap();
         assert!(text.contains("中文"), "{text}");
         assert!(!text.contains("\\u"));
-        assert!(text.starts_with("Content-Length: "));
+        assert!(text.ends_with('\n'));
+        assert!(!text.contains("Content-Length"));
         match try_pop_frame(&frame).unwrap() {
             Pop::Frame(msg, rest) => {
                 assert_eq!(msg["n"], "中文");
@@ -1109,6 +1212,29 @@ mod tests {
 
         let neg = b"Content-Length: -1\r\n\r\n";
         assert_eq!(try_pop_frame(neg).unwrap_err().code, "bad-frame");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn probe_resolves_program_and_checks_dir() {
+        let ok = probe_blocking(br#"{"command":"cmd"}"#).unwrap();
+        assert_eq!(ok["found"], true);
+        assert!(ok["resolved"].as_str().unwrap().to_lowercase().ends_with("cmd.exe"));
+        let miss = probe_blocking(br#"{"command":"sf-mcp-no-such-command-09"}"#).unwrap();
+        assert_eq!(miss["found"], false);
+        assert_eq!(miss["resolved"], "");
+
+        let temp = std::env::temp_dir();
+        let body = json!({"command": "cmd", "dir": temp.to_string_lossy()});
+        let out = probe_blocking(&serde_json::to_vec(&body).unwrap()).unwrap();
+        assert_eq!(out["dir"], true);
+        let absent = temp.join("sf-mcp-no-such-dir-09");
+        let body = json!({"command": "cmd", "dir": absent.to_string_lossy()});
+        let out = probe_blocking(&serde_json::to_vec(&body).unwrap()).unwrap();
+        assert_eq!(out["dir"], false);
+
+        let empty = probe_blocking(br#"{"command":"   "}"#).unwrap_err();
+        assert_eq!(empty.error, "bad-command");
     }
 
     #[test]
@@ -1208,6 +1334,91 @@ mod tests {
         assert_eq!(not_conn.message, "MCP 未连接或进程已退出");
     }
 
+    #[test]
+    fn stderr_tail_attaches_when_present_and_truncates() {
+        let base = McpError::new("timeout", "MCP 调用超时（initialize）");
+        let empty = attach_stderr(base.clone(), "  \r\n\t");
+        assert_eq!(empty.message, "MCP 调用超时（initialize）");
+        let one = attach_stderr(base.clone(), "boom: missing dir\n");
+        assert_eq!(one.message, "MCP 调用超时（initialize）\nstderr 尾：\nboom: missing dir");
+        let long = format!("{}{}", "头".repeat(1000), "尾".repeat(1000));
+        let err = attach_stderr(base, &long);
+        let tail = err.message.split("\nstderr 尾：\n").nth(1).unwrap();
+        assert_eq!(tail.chars().count(), STDERR_MSG_SHOW);
+        assert!(tail.ends_with(&"尾".repeat(200)));
+    }
+
+    #[test]
+    fn timeout_and_crash_errors_carry_stderr_tail() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tools")
+            .join("_tmp")
+            .join("mcp10-stderr");
+        let _rm = RmDir(dir.clone());
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("fake.py");
+        std::fs::write(&script, FAKE_PY).unwrap();
+        let log = dir.join("log.txt");
+
+        let hang = start_local(&script, &log, "stderr-hang");
+        wait_stderr(hang.inner(), "sf-fake-stderr-marker");
+        let timeout = request(hang.inner(), "initialize", init_params(), 0.3).unwrap_err();
+        assert_eq!(timeout.code, "timeout");
+        assert!(timeout.message.contains("MCP 调用超时（initialize）"), "{}", timeout.message);
+        assert!(timeout.message.contains("sf-fake-stderr-marker"), "{}", timeout.message);
+        drop(hang);
+
+        let crash = start_local(&script, &log, "stderr-die");
+        wait_stderr(crash.inner(), "sf-fake-stderr-die");
+        let died = request(crash.inner(), "initialize", init_params(), 10.0).unwrap_err();
+        assert_eq!(died.code, "disconnected");
+        assert!(died.message.contains("MCP 进程已结束"), "{}", died.message);
+        assert!(died.message.contains("sf-fake-stderr-die"), "{}", died.message);
+    }
+
+    fn start_local(script: &std::path::Path, log: &std::path::Path, mode: &str) -> LocalSession {
+        let mut child = spawn_child(
+            "python",
+            &[
+                "-u".to_string(),
+                script.to_string_lossy().into_owned(),
+                log.to_string_lossy().into_owned(),
+                mode.to_string(),
+            ],
+            None,
+        )
+        .unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let inner = Arc::new(Mutex::new(Inner::new()));
+        {
+            let mut g = lock(&inner);
+            g.alive = true;
+            g.connected = true;
+            g.stdin = Some(stdin);
+            g.child = Some(child);
+            let reader_inner = inner.clone();
+            g.reader = Some(thread::spawn(move || read_loop(stdout, reader_inner)));
+            let stderr_inner = inner.clone();
+            g.stderr_thread = Some(thread::spawn(move || drain_stderr(stderr, stderr_inner)));
+        }
+        LocalSession(inner)
+    }
+
+    fn wait_stderr(inner: &Arc<Mutex<Inner>>, marker: &str) {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(5) {
+            if lock(inner).stderr_tail.contains(marker) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        panic!("stderr 未在限时内收到 {marker}");
+    }
+
     fn connect_fake(script: &std::path::Path, log: &std::path::Path, mode: &str) -> Result<Value, Bad> {
         let body = json!({
             "command": "python",
@@ -1265,6 +1476,20 @@ mod tests {
         }
     }
 
+    struct LocalSession(Arc<Mutex<Inner>>);
+
+    impl LocalSession {
+        fn inner(&self) -> &Arc<Mutex<Inner>> {
+            &self.0
+        }
+    }
+
+    impl Drop for LocalSession {
+        fn drop(&mut self) {
+            disconnect_full(&self.0);
+        }
+    }
+
     struct RmDir(std::path::PathBuf);
 
     impl Drop for RmDir {
@@ -1284,6 +1509,18 @@ def log(obj):
 
 log({"pid": os.getpid(), "event": "start"})
 
+if mode == "stderr-hang":
+    os.write(2, b"sf-fake-stderr-marker: cannot open config\n")
+    import time
+    time.sleep(30)
+    sys.exit(0)
+
+if mode == "stderr-die":
+    os.write(2, b"sf-fake-stderr-die: process crashed\n")
+    import time
+    time.sleep(0.5)
+    sys.exit(3)
+
 def send(obj):
     raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if mode == "ndjson":
@@ -1291,47 +1528,36 @@ def send(obj):
     else:
         os.write(1, ("Content-Length: %d\r\n\r\n" % len(raw)).encode("ascii") + raw)
 
+def handle(msg):
+    method = msg.get("method")
+    if method == "initialize":
+        log({"pid": os.getpid(), "event": "initialize", "params": msg.get("params")})
+        send({"jsonrpc": "2.0", "id": msg.get("id"), "result": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "fake", "version": "0"},
+        }})
+    elif method == "tools/list":
+        send({"jsonrpc": "2.0", "id": msg.get("id"), "result": {"tools": [
+            {"name": "echo", "description": "回声", "inputSchema": {"type": "object"}},
+            {"name": 12, "description": None, "inputSchema": "nope"},
+            "skip-me",
+        ]}})
+    elif method == "tools/call":
+        params = msg.get("params") or {}
+        args = params.get("arguments") or {}
+        send({"jsonrpc": "2.0", "id": msg.get("id"), "result": {"echo": args.get("text")}})
+
 buf = b""
 while True:
     chunk = os.read(0, 4096)
     if not chunk:
         break
     buf += chunk
-    while True:
-        if b"\r\n\r\n" not in buf:
-            break
-        header, _, rest = buf.partition(b"\r\n\r\n")
-        length = None
-        for line in header.replace(b"\r\n", b"\n").split(b"\n"):
-            if line.lower().startswith(b"content-length:"):
-                try:
-                    length = int(line.split(b":", 1)[1].strip())
-                except Exception:
-                    length = None
-        if length is None:
-            buf = rest
-            continue
-        if len(rest) < length:
-            break
-        body, buf = rest[:length], rest[length:]
-        msg = json.loads(body.decode("utf-8"))
-        method = msg.get("method")
-        if method == "initialize":
-            log({"pid": os.getpid(), "event": "initialize", "params": msg.get("params")})
-            send({"jsonrpc": "2.0", "id": msg.get("id"), "result": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "fake", "version": "0"},
-            }})
-        elif method == "tools/list":
-            send({"jsonrpc": "2.0", "id": msg.get("id"), "result": {"tools": [
-                {"name": "echo", "description": "回声", "inputSchema": {"type": "object"}},
-                {"name": 12, "description": None, "inputSchema": "nope"},
-                "skip-me",
-            ]}})
-        elif method == "tools/call":
-            params = msg.get("params") or {}
-            args = params.get("arguments") or {}
-            send({"jsonrpc": "2.0", "id": msg.get("id"), "result": {"echo": args.get("text")}})
+    while b"\n" in buf:
+        line, buf = buf.split(b"\n", 1)
+        line = line.strip()
+        if line:
+            handle(json.loads(line.decode("utf-8")))
 "#;
 }
