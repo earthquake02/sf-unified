@@ -3413,6 +3413,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "url",
+ "windows",
 ]
 
 [[package]]

@@ -16336,7 +16336,7 @@ function cpSkillPickerHTML(fnId){
     <input type="checkbox" data-act="cp-skill-toggle" data-v="${esc(s.id)}" ${sel.includes(s.id)?'checked':''} style="margin-top:3px">
     <span style="flex:1"><b style="font-weight:600">${esc(s.name)}</b><span class="hint"> ≈${s.tokens} tok · ${s.layer==='builtin'?'内置':'我的'}${s.cats.length?'':' · 全功能适用'}</span>
     ${s.desc?`<div class="hint" style="margin:1px 0 0">${esc(s.desc)}</div>`:''}</span></label>`).join('');
-  return `<div class="card" style="margin:0 0 4px;padding:6px 10px;max-height:220px;overflow:auto">
+  return `<div class="card" style="margin:0 0 4px;padding:6px 10px;max-height:220px;overflow:auto;flex-shrink:0">
     <div class="row" style="justify-content:space-between;margin:0 0 4px"><span class="hint">适用「${esc(CP_SKILL_FN_LABELS[fnId]||fnId)}」的技能（可多选）</span>
     <span class="row" style="gap:6px"><button type="button" class="btn sm" data-act="cp-skill-refresh" title="重扫内置与用户技能目录">↻ 重扫</button><button type="button" class="btn sm" data-act="cp-skill-done">完成</button></span></div>
     ${rows||'<div class="hint">暂无适用技能。到「设置 → 技能」导入本机 .md，或把 SKILL.md 放进数据夹「'+esc(CP_SKILL_DIR)+'/〈技能名〉/」（文件头 name/description/适用/triggers，正文即指令）。</div>'}

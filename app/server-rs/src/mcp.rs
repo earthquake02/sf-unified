@@ -22,7 +22,8 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 const CLIENT_NAME: &str = "storyforge";
 const DEFAULT_TIMEOUT: f64 = 60.0;
 const MAX_FRAME: i64 = 8 * 1024 * 1024;
-const STDERR_KEEP: usize = 4000;
+/// stderr 原始字节尾上限（按字节计；显示时整体解码再按字符截尾，故跨读取块的多字节字符不损坏）。
+const STDERR_KEEP: usize = 16 * 1024;
 const STDERR_SHOW: usize = 2000;
 /// 错误 message 里带的 stderr 尾。比 status 的 `STDERR_SHOW` 短，避免长栈把 toast 撑爆。
 const STDERR_MSG_SHOW: usize = 800;
@@ -125,7 +126,7 @@ struct Inner {
     pending: HashMap<i64, Arc<Waiter>>,
     tools: Vec<Value>,
     meta: Map<String, Value>,
-    stderr_tail: String,
+    stderr_tail: Vec<u8>,
     child: Option<Child>,
     stdin: Option<ChildStdin>,
     reader: Option<JoinHandle<()>>,
@@ -141,7 +142,7 @@ impl Inner {
             pending: HashMap::new(),
             tools: Vec::new(),
             meta: Map::new(),
-            stderr_tail: String::new(),
+            stderr_tail: Vec::new(),
             child: None,
             stdin: None,
             reader: None,
@@ -151,7 +152,7 @@ impl Inner {
 
     /// 给错误 message 附上当前会话 stderr 尾；空尾原样返回。
     fn with_stderr(&self, err: McpError) -> McpError {
-        attach_stderr(err, &self.stderr_tail)
+        attach_stderr(err, &decode_console_bytes(&self.stderr_tail))
     }
 }
 
@@ -383,7 +384,7 @@ fn status_from(g: &mut Inner) -> Value {
         "connected": connected,
         "tools": g.tools.clone(),
         "meta": Value::Object(g.meta.clone()),
-        "stderr": tail_chars(&g.stderr_tail, STDERR_SHOW),
+        "stderr": tail_chars(&decode_console_bytes(&g.stderr_tail), STDERR_SHOW),
     })
 }
 
@@ -599,9 +600,8 @@ fn drain_stderr(mut stderr: ChildStderr, inner: Arc<Mutex<Inner>>) {
         match stderr.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                let text = String::from_utf8_lossy(&buf[..n]);
                 let mut g = lock(&inner);
-                push_limited(&mut g.stderr_tail, &text, STDERR_KEEP);
+                push_bytes_limited(&mut g.stderr_tail, &buf[..n], STDERR_KEEP);
             }
             Err(_) => break,
         }
@@ -1100,11 +1100,11 @@ fn py_float_text(value: f64) -> String {
     }
 }
 
-fn push_limited(buf: &mut String, add: &str, max_chars: usize) {
-    buf.push_str(add);
-    let count = buf.chars().count();
-    if count > max_chars {
-        *buf = buf.chars().skip(count - max_chars).collect();
+fn push_bytes_limited(buf: &mut Vec<u8>, add: &[u8], max_bytes: usize) {
+    buf.extend_from_slice(add);
+    if buf.len() > max_bytes {
+        let cut = buf.len() - max_bytes;
+        buf.drain(..cut);
     }
 }
 
@@ -1115,6 +1115,39 @@ fn tail_chars(text: &str, max_chars: usize) -> String {
     } else {
         text.chars().skip(count - max_chars).collect()
     }
+}
+
+/// 解码子进程控制台字节：先严格 UTF-8（Node/npx 正常输出），不合法再按系统 ANSI 代码页
+/// （中文 Windows＝GBK）解码 cmd.exe 的中文报错。调用方传入累积后的完整字节尾，跨读取块的
+/// 多字节字符已在累积时拼回，故这里整体解码、不逐块切。
+fn decode_console_bytes(bytes: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.to_string();
+    }
+    decode_ansi_bytes(bytes)
+}
+
+#[cfg(windows)]
+fn decode_ansi_bytes(bytes: &[u8]) -> String {
+    use windows::Win32::Globalization::{MultiByteToWideChar, CP_ACP, MULTI_BYTE_TO_WIDE_CHAR_FLAGS};
+    unsafe {
+        let flags = MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0);
+        let len = MultiByteToWideChar(CP_ACP, flags, bytes, None);
+        if len <= 0 {
+            return String::from_utf8_lossy(bytes).into_owned();
+        }
+        let mut wide = vec![0u16; len as usize];
+        let n = MultiByteToWideChar(CP_ACP, flags, bytes, Some(&mut wide));
+        if n <= 0 {
+            return String::from_utf8_lossy(bytes).into_owned();
+        }
+        String::from_utf16_lossy(&wide[..n as usize])
+    }
+}
+
+#[cfg(not(windows))]
+fn decode_ansi_bytes(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 #[cfg(test)]
@@ -1349,6 +1382,25 @@ mod tests {
     }
 
     #[test]
+    fn decode_console_bytes_reads_gbk_cmd_error() {
+        // 「系统找不到指定的路径。」的 GBK(CP936) 字节＝中文 Windows cmd.exe 报错原文。
+        let gbk: &[u8] = &[
+            0xCF, 0xB5, 0xCD, 0xB3, 0xD5, 0xD2, 0xB2, 0xBB, 0xB5, 0xBD, 0xD6,
+            0xB8, 0xB6, 0xA8, 0xB5, 0xC4, 0xC2, 0xB7, 0xBE, 0xB6, 0xA1, 0xA3,
+        ];
+        assert_eq!(decode_console_bytes(gbk), "系统找不到指定的路径。");
+    }
+
+    #[test]
+    fn decode_console_bytes_passes_utf8_through() {
+        // Node/npx 正常输出是 UTF-8：严格 UTF-8 命中即原样直通，不走 ANSI 回退。
+        let text = "系统找不到指定的路径。";
+        assert_eq!(decode_console_bytes(text.as_bytes()), text);
+        assert_eq!(decode_console_bytes(b"plain ascii error\n"), "plain ascii error\n");
+        assert_eq!(decode_console_bytes(b""), "");
+    }
+
+    #[test]
     fn timeout_and_crash_errors_carry_stderr_tail() {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -1376,6 +1428,28 @@ mod tests {
         assert_eq!(died.code, "disconnected");
         assert!(died.message.contains("MCP 进程已结束"), "{}", died.message);
         assert!(died.message.contains("sf-fake-stderr-die"), "{}", died.message);
+    }
+
+    #[test]
+    fn stderr_cjk_split_across_reads_decodes_intact() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tools")
+            .join("_tmp")
+            .join("mcp-stderr-cjk");
+        let _rm = RmDir(dir.clone());
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("fake.py");
+        std::fs::write(&script, FAKE_PY).unwrap();
+        let log = dir.join("log.txt");
+
+        // 假 Server 把 GBK 消息的首字节单独写出再补剩余，强制跨 512 字节读取块拆分。
+        let sess = start_local(&script, &log, "stderr-cjk");
+        wait_stderr(sess.inner(), "系统找不到指定的路径。");
+        let tail = decode_console_bytes(&lock(sess.inner()).stderr_tail);
+        assert!(tail.contains("系统找不到指定的路径。"), "{tail}");
+        assert!(!tail.contains('\u{FFFD}'), "出现替换字符（多字节被切断）：{tail}");
     }
 
     fn start_local(script: &std::path::Path, log: &std::path::Path, mode: &str) -> LocalSession {
@@ -1411,7 +1485,7 @@ mod tests {
     fn wait_stderr(inner: &Arc<Mutex<Inner>>, marker: &str) {
         let start = Instant::now();
         while start.elapsed() < Duration::from_secs(5) {
-            if lock(inner).stderr_tail.contains(marker) {
+            if decode_console_bytes(&lock(inner).stderr_tail).contains(marker) {
                 return;
             }
             thread::sleep(Duration::from_millis(20));
@@ -1520,6 +1594,15 @@ if mode == "stderr-die":
     import time
     time.sleep(0.5)
     sys.exit(3)
+
+if mode == "stderr-cjk":
+    msg = "系统找不到指定的路径。".encode("gbk")
+    os.write(2, msg[:1])
+    import time
+    time.sleep(0.2)
+    os.write(2, msg[1:])
+    time.sleep(30)
+    sys.exit(0)
 
 def send(obj):
     raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
