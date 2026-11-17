@@ -13168,13 +13168,13 @@ const APPEAR_FACTORY=[
   {id:'moyan',name:'墨砚',bg:'#09090b',bg2:'#18181b',bg3:'#27272a',line:'#52525b',tx:'#d6d3d1',tx2:'#a8a29e',tx3:'#71717a',ac:'#c9a66b',paper:'#18181b',ink:'#d6d3d1',mark:'#f59e0b',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
   {id:'xuantie',name:'玄铁',bg:'#0c0e12',bg2:'#151820',bg3:'#1e2430',line:'#3a4254',tx:'#e2e6ee',tx2:'#9aa3b5',tx3:'#6b7385',ac:'#8b9cb3',paper:'#151820',ink:'#e2e6ee',mark:'#f0b429',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
   {id:'qingrang',name:'青壤',bg:'#0f1410',bg2:'#171d18',bg3:'#222a22',line:'#3a463a',tx:'#dce6dc',tx2:'#9aab9a',tx3:'#6e7d6e',ac:'#6b9b6e',paper:'#171d18',ink:'#dce6dc',mark:'#c9a227',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:16},
+  {id:'xiangyue',name:'向月',bg:'#141022',bg2:'#211c35',bg3:'#2e2846',line:'#554b6c',tx:'#f0eafa',tx2:'#c5b9da',tx3:'#a898c4',ac:'#e9b4df',paper:'#1b1630',ink:'#f0eafa',mark:'#e9b4df',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
   {id:'xuanzhi',name:'宣纸',bg:'#f5f0e6',bg2:'#faf6ee',bg3:'#ebe4d4',line:'#d9d0bc',tx:'#3a3428',tx2:'#6b6354',tx3:'#8a8170',ac:'#8b5a2b',paper:'#faf6ee',ink:'#3a3428',mark:'#c9a227',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:18},
   {id:'sujian',name:'素笺',bg:'#f7f5f0',bg2:'#fffcf7',bg3:'#eeeae2',line:'#ddd8ce',tx:'#2c2a26',tx2:'#5c5952',tx3:'#8a8680',ac:'#5a6b4e',paper:'#fffcf7',ink:'#2c2a26',mark:'#d4a017',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:18},
   {id:'yuebai',name:'月白',bg:'#f4f6f8',bg2:'#ffffff',bg3:'#e8ecf0',line:'#d0d5dc',tx:'#2a3038',tx2:'#5a6570',tx3:'#8a93a0',ac:'#5b7c99',paper:'#ffffff',ink:'#2a3038',mark:'#d97706',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
-  {id:'xiangyue',name:'向月',bg:'#141022',bg2:'#211c35',bg3:'#2e2846',line:'#554b6c',tx:'#f0eafa',tx2:'#c5b9da',tx3:'#a898c4',ac:'#e9b4df',paper:'#1b1630',ink:'#f0eafa',mark:'#e9b4df',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
   {id:'xiangri',name:'向日',bg:'#f4ecd9',bg2:'#fff8ee',bg3:'#f3e1cd',line:'#d3c1af',tx:'#49382f',tx2:'#725c50',tx3:'#806858',ac:'#913a62',paper:'#fffdf8',ink:'#49382f',mark:'#c292a6',uiFont:'微软雅黑',bodyFont:'',bodySize:16}
 ];
-/* 出厂八套＝墨砚／玄铁／青壤／宣纸／素笺／月白／向月／向日；默认与回退＝墨砚。
+/* 出厂八套＝墨砚／玄铁／青壤／向月／宣纸／素笺／月白／向日；默认与回退＝墨砚。
    旧四套（夜读／灯下／竹子／雾蓝）退出厂；已落盘色若不匹配出厂则显示为自定义。 */
 function appearSchemeById(id){return APPEAR_FACTORY.find(x=>x.id===id)||null}
 /* C3：按时自动亮／暗。白天默认宣纸（强调色暖度最接近墨砚）；夜间默认墨砚。
