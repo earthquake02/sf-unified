@@ -1869,6 +1869,7 @@ function stGuidePage(kind,e){
 }
 
 /* ---- 数据文件夹读写：G3 起库侧＝结构化文本（扫描重建／投影 diff），设置侧＝_工坊/settings.json（CAS） ---- */
+/** 读快照并归一内存态。启动时记录快照与归一耗时，不改变装载结果。 */
 async function stLoad(isBoot){
   let set=null,scan=null,legacy=null,sec=null,secErr=null,secUnsup=false;
   try{
@@ -1876,7 +1877,7 @@ async function stLoad(isBoot){
       try{sec=await stSecRead(SEC_NAME)}catch(e){if(e&&e.code==='secret-unreadable')secErr=e;else throw e}
     }else secUnsup=true;   // 传输没有机密端点（旧服务/未来壳）：Key 只在本会话内存里可用、不落盘（横幅告知）
     set=await stRead(DF_SET);
-    scan=await g3Scan({verCap:SC_VER_CAP_MAX,onRead:isBoot?stBootScanHook():undefined});   // 读盘按上限收（不按当前设置值）：设置改小不该让盘上快照在一次写盘里被永久删掉（复核 L-2）。票06：仅启动扫描挂已读计数，非启动不传回调
+    scan=await g3Scan({verCap:SC_VER_CAP_MAX,onRead:isBoot?stBootScanHook():undefined,perfBoot:!!isBoot});   // 读盘按上限收（不按当前设置值）：设置改小不该让盘上快照在一次写盘里被永久删掉（复核 L-2）。票06：仅启动扫描挂已读计数，非启动不传回调
     if(isBoot)stBootNote('扫描数据文件夹…已读 '+(scan.files?scan.files.size:0)+' 个文件');   // 末笔补齐（中间按 8 个一刷）
     legacy=await g3LegacyRead();                                     // 旧库文件（G2 形态 _工坊/书库.json）：G3 起退役
   }catch(e){
@@ -1906,7 +1907,9 @@ async function stLoad(isBoot){
       else ST.scanWarns.push('数据夹里还留着旧库文件 '+G3_LIB+'（已不再读写；磁盘上的书以结构化文本为准）');
     }
   }
+  if(isBoot)sfPerfMark('sf:normalize-start');
   load(doc,set?set.text:null);
+  if(isBoot){sfPerfMark('sf:normalize-end');sfPerfMeasure('sf:normalize','sf:normalize-start','sf:normalize-end')}
   /* G4 机密：设置文件已剔密（Key 字段为空），真正的 Key 从 `_工坊/机密/AI密钥.dat` 解出后并回内存态。
      旧档（settings.json 仍带明文 Key）走同一条路：密文文件不存在时保留内存里的明文值，首次写盘即封存并剔密。
      ST.setLast 记「盘上那份设置文件的原文」（可能含旧明文）——首次写盘 diff 才会把它改成剔密版。 */
@@ -2381,19 +2384,59 @@ function roReason(){
 }
 function roToast(){const t=Date.now();if(t-roToastAt<3000)return;roToastAt=t;const r=roReason();if(r)toast('⚠ 只读模式（'+r+'）：本会话不写入',3000)}
 /* ---- 启动：接本地服务 → 扫描数据文件夹 → 建内存态 → 渲染 ---- */
+let sfPerfPaintArmed=0;
+/** 启动耗时标记。计时失败不影响启动。
+ * @param {string} name */
+function sfPerfMark(name){
+  try{if(typeof performance!=='undefined'&&performance&&typeof performance.mark==='function')performance.mark(name)}catch(e){}
+}
+/** 启动耗时区间。缺标记时静默跳过。
+ * @param {string} name @param {string} start @param {string} end */
+function sfPerfMeasure(name,start,end){
+  try{if(typeof performance!=='undefined'&&performance&&typeof performance.measure==='function')performance.measure(name,start,end)}catch(e){}
+}
+/** 启动页首帧。只登记一次，不阻塞后续启动。 */
+function sfPerfArmFirstPaint(){
+  if(sfPerfPaintArmed)return;
+  sfPerfPaintArmed=1;
+  const fire=()=>sfPerfMark('sf:first-paint');
+  try{if(typeof requestAnimationFrame==='function')requestAnimationFrame(fire);else setTimeout(fire,0)}catch(e){try{setTimeout(fire,0)}catch(_e){}}
+}
+/** 已验证可写且主界面首帧。未就绪或仍停在启动页时不标记。 */
+function sfPerfArmVerified(){
+  const fire=()=>{
+    try{
+      if(!ST.ready)return;
+      if(document.getElementById('bootProg'))return;
+      if(!document.querySelector('#topNav button'))return;
+      sfPerfMark('sf:verified-ready');
+    }catch(e){}
+  };
+  try{if(typeof requestAnimationFrame==='function')requestAnimationFrame(fire);else setTimeout(fire,0)}catch(e){try{setTimeout(fire,0)}catch(_e){}}
+}
+/** 预留：只有缓存只读界面真正画出时才可调用。当前启动链没有缓存路径，禁止调用。 */
+function sfPerfCacheRender(){
+  sfPerfMark('sf:cache-render');
+}
+/** 启动：接本地服务、扫描、归一、写盘、渲染。耗时标记不改变其中的顺序与结果。 */
 async function stBoot(){
   ST.mode=stForm();
   if(ST.mode!=='local'){stGuidePage(ST.mode);return}   // file:// 等非本服务来源：只读引导页，不进应用
   const m=document.getElementById('main');
   if(m)m.innerHTML='<div class="page"><h1 class="pt" id="bootProg">正在连接本地服务…</h1><p class="pd" id="bootProgSub">正在连接本地服务…</p></div>';
+  sfPerfArmFirstPaint();
   let info=null;
   try{info=await stStatus()}catch(e){stGuidePage('noservice',e);return}
   ST.info=info;ST.port=info.port||ST.port;ST.dataRoot=info.dataRoot||'';
   if(!info.configured||!info.dataOk){stGuidePage('setup');return}
   if((await stLoad(true))===false)return;
   ST.ready=true;
+  sfPerfMark('sf:write-start');
   if(ST.migrate)await g3Migrate(stBootWriteHook);      // G2 旧库文件（_工坊/书库.json）：一次性迁移为结构化文本后退役
   else await stFlush(true,false,stBootWriteHook);      // 首跑建全局文件/设置文件；此后只补「磁盘上缺的」（diff 空则零写入；票34：等删除腿走完再报回收数；票06：写盘阶段显示 N/M）
+  sfPerfMark('sf:write-end');
+  sfPerfMeasure('sf:write','sf:write-start','sf:write-end');
+  /* 无缓存路径：不标记 sf:cache-render。 */
   /* 票34：扫描认领的旧共享设定文件随首轮写盘的删除腿移入回收站——只读（版本闸/冲突）或写入失败时不谎报，
      旧文件原样留在数据夹，下次可写打开自动重试。 */
   if(ST.sharedRetired&&!roReason()&&!ST.lastErr&&!ST.conflict)
@@ -2402,7 +2445,11 @@ async function stBoot(){
   hoWarmAll();
   applyInitialHash();   // 票60：地址栏旧/新哈希在首帧按决策解析进入（覆盖 UI_KEY 上次视图）
   try{
+    sfPerfMark('sf:render-start');
     render();
+    sfPerfMark('sf:render-end');
+    sfPerfMeasure('sf:render','sf:render-start','sf:render-end');
+    if(ST.ready)sfPerfArmVerified();
   }catch(e){
     try{console.error('[SF] boot render',e)}catch(_e){}
     try{const main=document.getElementById('main');if(main)main.innerHTML='<div class="page"><h1 class="pt">启动后界面出错</h1><p class="pd">'+esc((e&&e.message)||e)+'</p></div>'}catch(_e){}
@@ -7242,13 +7289,17 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
   out.entryImages=await g3ScanEntryImages(files,warns,dir+'/'+G3_DIR.image,n.id);
   return out;
 }
+/** 扫描数据夹重建文档。perfBoot 只给启动打快照耗时，不改变扫描结果。 */
 async function g3Scan(opts){
   const files=new Map(),warns=[],paths=new Map();   // paths＝id→段名（路径名稳定：改标题不搬文件）
   const onRead=opts&&typeof opts.onRead==='function'?opts.onRead:null;
   if(onRead)files.sfOnRead=onRead;   // 票06：读进度挂在本次文件表上，扫完即拆，不留给后续写盘
   const prevSnap=g3Snap; g3Snap=null;
   try{
+    const perfBoot=!!(opts&&opts.perfBoot);
+    if(perfBoot)sfPerfMark('sf:snapshot-start');
     try{const r=await stSnapshot(); if(r&&r.dirs&&r.files)g3Snap=r}catch(e){g3Snap=null}
+    if(perfBoot){sfPerfMark('sf:snapshot-end');sfPerfMeasure('sf:snapshot','sf:snapshot-start','sf:snapshot-end')}
   const doc={schemaVersion:0,novels:[],acts:[],chapters:[],scenes:[],codexCategories:[],codexEntries:[],snippets:[],foreshadows:[],chats:[],chatSessions:[],tagDefs:[],recycleBin:[]};
   doc.assistants=[];
   doc.entryImages=[];
