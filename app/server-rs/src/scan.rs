@@ -232,7 +232,7 @@ pub fn parse_scan_workers(raw: Option<&str>) -> usize {
         Some("8") => 8,
         Some("16") => 16,
         Some("32") => 32,
-        _ => 8,
+        _ => 32,
     }
 }
 
@@ -724,14 +724,14 @@ mod tests {
     }
 
     #[test]
-    fn scan_worker_values_fall_back_to_eight() {
-        assert_eq!(parse_scan_workers(None), 8);
+    fn scan_worker_values_fall_back_to_thirty_two() {
+        assert_eq!(parse_scan_workers(None), 32);
         for raw in ["1", "4", "8", "16", "32", " 8 ", "32\n"] {
             let n: usize = raw.trim().parse().unwrap();
             assert_eq!(parse_scan_workers(Some(raw)), n, "{raw}");
         }
         for raw in ["", "0", "2", "3", "7", "08", "64", "8.0", "abc", "-1"] {
-            assert_eq!(parse_scan_workers(Some(raw)), 8, "{raw}");
+            assert_eq!(parse_scan_workers(Some(raw)), 32, "{raw}");
         }
         assert!(!perf_enabled(None));
         assert!(!perf_enabled(Some("0")));
@@ -906,13 +906,13 @@ mod tests {
     fn empty_root_snapshot_is_complete() {
         let dir = Temp::new("empty");
         std::fs::create_dir_all(dir.path()).unwrap();
-        let built = build_snapshot(&dir.app(), &FsRead, 8, DEFAULT_LIMITS).unwrap();
+        let built = build_snapshot(&dir.app(), &FsRead, 32, DEFAULT_LIMITS).unwrap();
         assert_eq!(snapshot(&dir.app()).unwrap(), built.value);
         assert_eq!(built.value["ok"], true);
         assert_eq!(built.metrics.files, 0);
         assert_eq!(built.metrics.bytes, 0);
         assert_eq!(built.metrics.conc, 0);
-        assert_eq!(built.metrics.workers, 8);
+        assert_eq!(built.metrics.workers, 32);
         assert!(built.value["dirs"].as_object().unwrap().contains_key(""));
     }
 
@@ -980,7 +980,7 @@ mod tests {
         assert_eq!(serial.metrics.bytes, parallel.metrics.bytes);
         let serial_hash = file_hash_blob(&serial.value);
         let parallel_hash = file_hash_blob(&parallel.value);
-        assert_eq!(serial_hash, parallel_hash, "workers=1 与默认并行的文件哈希不一致");
+        assert_eq!(serial_hash, parallel_hash, "workers=1 与并行的文件哈希不一致");
         let fp = fingerprint_via_node(&parallel.value);
         assert_eq!(fp.files, 5532, "files");
         assert_eq!(fp.dirs, 974, "dirs");
