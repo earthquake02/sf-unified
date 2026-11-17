@@ -448,7 +448,24 @@ fn real_under_secret(sec: &Path, target: &Path) -> bool {
     is_within(&rs, &rt) || normcase(&rs) == normcase(&rt)
 }
 
+#[cfg(test)]
+thread_local! {
+    static CHAIN_WALKS: std::cell::Cell<usize> = std::cell::Cell::new(0);
+}
+
+#[cfg(test)]
+pub(crate) fn reset_chain_walks() {
+    CHAIN_WALKS.with(|n| n.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn chain_walks() -> usize {
+    CHAIN_WALKS.with(|n| n.get())
+}
+
 fn path_chain_has_reparse(root: &Path, target: &Path) -> bool {
+    #[cfg(test)]
+    CHAIN_WALKS.with(|n| n.set(n.get() + 1));
     let Ok(root_p) = std::path::absolute(root) else {
         return true;
     };
@@ -596,6 +613,77 @@ pub fn check_data_root_created(raw: &str) -> Result<(PathBuf, bool), Bad> {
     std::fs::create_dir_all(path.join("_工坊"))
         .map_err(|e| bad(400, "bad-root", format!("无法创建或写入该文件夹：{e}")))?;
     Ok((path, created))
+}
+
+/// 一次快照复用的重解析结论。普通路径只做词法机密判断。
+pub struct ScanFacts {
+    root_reparse: bool,
+    ws_reparse: bool,
+    secret_reparse: bool,
+    secret_dir: PathBuf,
+    secret_lex: String,
+    secret_lex_prefix: String,
+    secret_real: Option<PathBuf>,
+}
+
+impl ScanFacts {
+    pub fn collect(root: &Path) -> Self {
+        let ws = root.join(WS_NAME);
+        let secret = secret_dir(root);
+        let root_reparse = is_reparse(root);
+        let ws_reparse = is_reparse(&ws);
+        let secret_reparse = is_reparse(&secret);
+        let secret_lex = normcase(&abs_lexical(&secret));
+        let secret_real = if root_reparse || ws_reparse || secret_reparse {
+            try_realpath(&secret)
+        } else {
+            None
+        };
+        Self {
+            root_reparse,
+            ws_reparse,
+            secret_reparse,
+            secret_dir: secret,
+            secret_lex_prefix: format!("{secret_lex}\\"),
+            secret_lex,
+            secret_real,
+        }
+    }
+
+    /// 与 `guard_secret_read` 同结论。`saw` 为假且根、`_工坊`、机密都不是重解析点时，不再逐级查父链。
+    pub fn blocks_text_read(&self, target: &Path, saw: bool) -> bool {
+        if target == &self.secret_dir || target.starts_with(&self.secret_dir) {
+            return true;
+        }
+        if self.lexical_hit(target) {
+            return true;
+        }
+        if std::path::absolute(target).is_err() {
+            return true;
+        }
+        let ordinary = !saw && !self.root_reparse && !self.ws_reparse && !self.secret_reparse;
+        if ordinary {
+            return false;
+        }
+        if !lexists(target) && !lexists(&self.secret_dir) {
+            return false;
+        }
+        if saw || self.root_reparse {
+            return real_under_secret(&self.secret_dir, target);
+        }
+        match &self.secret_real {
+            None => true,
+            Some(real) => {
+                let file_real = abs_lexical(target);
+                is_within(real, &file_real) || normcase(real) == normcase(&file_real)
+            }
+        }
+    }
+
+    fn lexical_hit(&self, target: &Path) -> bool {
+        let lexical = normcase(&abs_lexical(target));
+        lexical == self.secret_lex || lexical.starts_with(&self.secret_lex_prefix)
+    }
 }
 
 fn is_abs_win(p: &str) -> bool {
@@ -782,5 +870,29 @@ mod tests {
         for raw in ["_工坊/公开/x", "机密/x", "a/机密/b"] {
             assert!(!secret_in_path(raw), "{raw}");
         }
+    }
+
+    #[test]
+    fn scan_facts_ordinary_path_matches_guard_without_chain_walk() {
+        let root = std::env::temp_dir().join(format!("sf-scan-facts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("_工坊").join("机密")).unwrap();
+        let book = root.join("书").join("正文");
+        std::fs::create_dir_all(&book).unwrap();
+        let ordinary = book.join("章.txt");
+        let secret = root.join("_工坊").join("机密").join("密钥.txt");
+        std::fs::write(&ordinary, "普通").unwrap();
+        std::fs::write(&secret, "机密正文").unwrap();
+        let facts = ScanFacts::collect(&root);
+        reset_chain_walks();
+        let ordinary_blocked = facts.blocks_text_read(&ordinary, false);
+        let secret_blocked = facts.blocks_text_read(&secret, false);
+        assert_eq!(chain_walks(), 0, "普通路径和词法机密判断不应逐级查询父目录");
+        assert!(!ordinary_blocked);
+        assert!(secret_blocked);
+        assert_eq!(ordinary_blocked, guard_secret_read(&root, &ordinary).is_err());
+        assert_eq!(secret_blocked, guard_secret_read(&root, &secret).is_err());
+        assert!(chain_walks() >= 1, "原闸门仍会查父链，快照不能再走这条");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

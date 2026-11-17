@@ -35,6 +35,7 @@ pub(crate) struct Reply {
     body: Vec<u8>,
     content_type: &'static str,
     close: bool,
+    server_timing: Option<String>,
 }
 
 pub async fn dispatch(State(app): State<Arc<App>>, req: Request<Body>) -> Response<Body> {
@@ -98,8 +99,10 @@ pub async fn dispatch(State(app): State<Arc<App>>, req: Request<Body>) -> Respon
         return finish(reply, head);
     }
 
-    // MCP 会等子进程，所以在这里 await。会话是进程级单例，不在 App 上。
-    let reply = if method == Method::GET && path == "/api/mcp/status" {
+    // 快照读盘离开异步线程，探活才不会被整夹扫描堵住。
+    let reply = if method == Method::GET && path == "/api/fs/snapshot" {
+        snapshot_route(Arc::clone(&app)).await
+    } else if method == Method::GET && path == "/api/mcp/status" {
         mcp_status().await
     } else if method == Method::POST && path == "/api/mcp/probe" {
         mcp_probe(&raw).await
@@ -226,9 +229,6 @@ fn route(app: &App, method: &Method, path: &str, query: &str, raw: &[u8]) -> Rep
     if path == "/api/fs/stat" && method == Method::GET {
         return from_fs(crate::scan::stat(app, &query_first(query, "path")));
     }
-    if path == "/api/fs/snapshot" && method == Method::GET {
-        return from_fs(crate::scan::snapshot(app));
-    }
     if path == "/api/secret/read" && method == Method::GET {
         return secret_read(app, query);
     }
@@ -236,6 +236,28 @@ fn route(app: &App, method: &Method, path: &str, query: &str, raw: &[u8]) -> Rep
         return secret_write(app, raw);
     }
     err(404, "not-found", "无此端点", false)
+}
+
+async fn snapshot_route(app: Arc<App>) -> Reply {
+    match off_runtime(move || crate::scan::snapshot_parts(&app)).await {
+        Ok(parts) => {
+            let mut reply = json_bytes(200, parts.body, false);
+            reply.server_timing = Some(parts.metrics.server_timing());
+            reply
+        }
+        Err(e) => from_bad(e),
+    }
+}
+
+async fn off_runtime<T, F>(work: F) -> Result<T, Bad>
+where
+    F: FnOnce() -> Result<T, Bad> + Send + 'static,
+    T: Send + 'static,
+{
+    match tokio::task::spawn_blocking(work).await {
+        Ok(result) => result,
+        Err(_) => Err(gate::bad(500, "snapshot-failed", "快照扫描失败")),
+    }
 }
 
 fn from_fs(result: Result<Value, Bad>) -> Reply {
@@ -758,7 +780,13 @@ fn guide(name: &str) -> Reply {
         return text(404, "not found");
     }
     match guide_bytes(name) {
-        Some((data, ctype)) => Reply { status: 200, body: data, content_type: ctype, close: false },
+        Some((data, ctype)) => Reply {
+            status: 200,
+            body: data,
+            content_type: ctype,
+            close: false,
+            server_timing: None,
+        },
         None => text(404, "not found"),
     }
 }
@@ -822,6 +850,7 @@ fn skills(app: &App, rest: &str) -> Reply {
             body: skill_manifest(app).into_bytes(),
             content_type: "application/json; charset=utf-8",
             close: false,
+            server_timing: None,
         };
     }
     let Some((name, file)) = rest.split_once('/') else {
@@ -837,6 +866,7 @@ fn skills(app: &App, rest: &str) -> Reply {
                 body: bytes,
                 content_type: "text/markdown; charset=utf-8",
                 close: false,
+                server_timing: None,
             },
             None => text(404, "not found"),
         };
@@ -857,7 +887,13 @@ fn skills(app: &App, rest: &str) -> Reply {
             } else {
                 "text/plain; charset=utf-8"
             };
-            Reply { status: 200, body: bytes, content_type: ct, close: false }
+            Reply {
+                status: 200,
+                body: bytes,
+                content_type: ct,
+                close: false,
+                server_timing: None,
+            }
         }
         None => text(404, "not found"),
     }
@@ -1076,6 +1112,7 @@ fn text(status: u16, body: &str) -> Reply {
         body: body.as_bytes().to_vec(),
         content_type: "text/plain; charset=utf-8",
         close: false,
+        server_timing: None,
     }
 }
 
@@ -1085,6 +1122,7 @@ fn html(body: &[u8]) -> Reply {
         body: body.to_vec(),
         content_type: "text/html; charset=utf-8",
         close: false,
+        server_timing: None,
     }
 }
 
@@ -1109,11 +1147,16 @@ pub(crate) fn from_bad(e: Bad) -> Reply {
 
 fn json<T: Serialize>(status: u16, body: &T, close: bool) -> Reply {
     let bytes = serde_json::to_vec(body).unwrap_or_else(|_| br#"{"ok":false,"error":"internal","message":"JSON"}"#.to_vec());
+    json_bytes(status, bytes, close)
+}
+
+fn json_bytes(status: u16, body: Vec<u8>, close: bool) -> Reply {
     Reply {
         status,
-        body: bytes,
+        body,
         content_type: "application/json; charset=utf-8",
         close,
+        server_timing: None,
     }
 }
 
@@ -1129,6 +1172,9 @@ pub(crate) fn finish(reply: Reply, head: bool) -> Response<Body> {
         .header("Server", format!("SFServer/{VER} "));
     if reply.close {
         builder = builder.header("Connection", "close");
+    }
+    if let Some(timing) = &reply.server_timing {
+        builder = builder.header("Server-Timing", timing.as_str());
     }
     builder.body(body).unwrap_or_else(|_| Response::new(Body::empty()))
 }
@@ -1197,4 +1243,113 @@ struct SecretWriteJson<'a> {
     bytes: usize,
     hash: String,
     created: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
+
+    use axum::body::Body;
+    use axum::extract::State;
+    use axum::http::{Method, Request};
+    use http_body_util::BodyExt;
+    use serde_json::Value;
+
+    use super::*;
+    use crate::state::PING_MARK;
+
+    fn bare() -> App {
+        App {
+            token: "t".into(),
+            port: 1,
+            exe_dir: std::env::temp_dir(),
+            data: std::sync::Mutex::new(None),
+            lock: std::sync::Mutex::new(None),
+            cfg: std::sync::Mutex::new(Value::Null),
+            write_lock: std::sync::Mutex::new(()),
+            app_override: None,
+            shell: false,
+            origins: HashSet::new(),
+            hosts: HashSet::new(),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ping_answers_while_snapshot_work_blocks() {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let pending = tokio::spawn(async move {
+            off_runtime(move || {
+                entered_tx.send(()).expect("进入阻塞线程");
+                release_rx.recv().expect("放行");
+                Ok::<(), crate::gate::Bad>(())
+            })
+            .await
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(10)))
+            .await
+            .expect("等待阻塞线程")
+            .expect("快照工作没有离开异步线程");
+        let reply = route(&bare(), &Method::GET, "/__sf_ping", "", b"");
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.body, PING_MARK.as_bytes());
+        release_tx.send(()).unwrap();
+        pending.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn snapshot_panic_is_complete_500() {
+        let err = off_runtime(|| -> Result<Vec<u8>, crate::gate::Bad> { panic!("worker-down") })
+            .await
+            .unwrap_err();
+        assert_eq!(err.status, 500);
+        assert_eq!(err.error, "snapshot-failed");
+        let reply = from_bad(err);
+        assert!(reply.server_timing.is_none());
+        let body: Value = serde_json::from_slice(&reply.body).unwrap();
+        assert_eq!(body["ok"], false);
+        assert_eq!(body["error"], "snapshot-failed");
+        assert!(body.get("dirs").is_none());
+        assert!(body.get("files").is_none());
+        assert!(body.get("text").is_none());
+        assert!(!reply.body.windows(12).any(|w| w == b"worker-down"));
+    }
+
+    #[tokio::test]
+    async fn snapshot_response_has_phase_timing_without_text() {
+        let root = std::env::temp_dir().join(format!("sf-http-snap-{}-{}", std::process::id(), line!()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("书").join("正文")).unwrap();
+        std::fs::write(root.join("书").join("项目.json"), b"{}").unwrap();
+        std::fs::write(root.join("书").join("正文").join("a.txt"), "phase-marker").unwrap();
+        let mut app = bare();
+        app.token = "tok".into();
+        app.hosts.insert("127.0.0.1".into());
+        app.install_data(root.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/fs/snapshot")
+            .header("host", "127.0.0.1")
+            .header("x-sf-token", "tok")
+            .body(Body::empty())
+            .unwrap();
+        let res = dispatch(State(Arc::new(app)), req).await;
+        assert_eq!(res.status(), 200);
+        let timing = res.headers().get("server-timing").unwrap().to_str().unwrap().to_string();
+        for name in ["enum;dur=", "read;dur=", "assemble;dur=", "serialize;dur=", "files;desc=", "bytes;desc=", "conc;desc=", "workers;desc="]
+        {
+            assert!(timing.contains(name), "{timing}");
+        }
+        let workers = crate::scan::parse_scan_workers(std::env::var("SF_SCAN_WORKERS").ok().as_deref());
+        assert!(timing.contains(&format!("workers;desc=\"{workers}\"")), "{timing}");
+        assert!(!timing.contains("phase-marker"));
+        assert!(!timing.contains("项目"));
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["files"]["书/正文/a.txt"]["text"], "phase-marker");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
