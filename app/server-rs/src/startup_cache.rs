@@ -125,7 +125,7 @@ pub fn load(app: &App) -> Result<Value, Bad> {
             }
         };
     }
-    match read_disk(&root, &id) {
+    match read_disk(&root, &real, &id) {
         Ok(view) => {
             confirm(&root, &real, &view)?;
             install_clean_if_cold(app, &root, &id, &view);
@@ -506,7 +506,34 @@ fn clear_warm(inner: &mut Inner) {
     inner.generation = inner.generation.wrapping_add(1);
 }
 
-fn read_disk(root: &Path, expect_root: &str) -> Result<View, Bad> {
+/// `_工坊`、`_工坊/缓存`、`启动快照.json` 任一级是重解析点，或实路径越出数据根、落进机密，都不读写。
+/// 文件可以不存在。数据根自身的重解析点不在这三级里，越界与否交给 `reparse_blocked`。
+fn cache_chain_blocked(root: &Path, real: &Path) -> bool {
+    let mut cur = root.to_path_buf();
+    for seg in ["_工坊", "缓存", "启动快照.json"] {
+        cur.push(seg);
+        if gate::is_reparse(&cur) {
+            return true;
+        }
+        if std::fs::symlink_metadata(&cur).is_ok() && gate::reparse_blocked(root, real, &cur) {
+            return true;
+        }
+    }
+    false
+}
+
+fn cache_write_blocked(path: &Path) -> bool {
+    let Some(root) = path.parent().and_then(|p| p.parent()).and_then(|p| p.parent()) else {
+        return true;
+    };
+    let real = gate::try_realpath(root).unwrap_or_else(|| root.to_path_buf());
+    cache_chain_blocked(root, &real)
+}
+
+fn read_disk(root: &Path, real: &Path, expect_root: &str) -> Result<View, Bad> {
+    if cache_chain_blocked(root, real) {
+        return Err(miss("重解析"));
+    }
     let path = cache_file(root);
     let meta = match std::fs::metadata(&path) {
         Ok(meta) => meta,
@@ -764,7 +791,13 @@ fn write_once(shared: &Shared) -> bool {
         (generation, path, bytes)
     };
     let (generation, path, bytes) = payload;
-    match fsops::atomic_write(&path, &bytes) {
+    let blocked = cache_write_blocked(&path);
+    let result = if blocked {
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "reparse"))
+    } else {
+        fsops::atomic_write(&path, &bytes)
+    };
+    match result {
         Ok(()) => {
             let mut guard = shared.mu.lock().unwrap_or_else(|e| e.into_inner());
             if guard.generation == generation {
@@ -777,9 +810,15 @@ fn write_once(shared: &Shared) -> bool {
             log_fail("io");
             let mut guard = shared.mu.lock().unwrap_or_else(|e| e.into_inner());
             if guard.generation == generation && guard.dirty {
-                let now = Instant::now();
-                guard.dirty_since = Some(now);
-                guard.last_edit = Some(now);
+                if blocked {
+                    // 重解析点不会因为重试消失。放弃这一次，避免每秒刷日志。
+                    guard.dirty = false;
+                    guard.dirty_since = None;
+                } else {
+                    let now = Instant::now();
+                    guard.dirty_since = Some(now);
+                    guard.last_edit = Some(now);
+                }
             }
             false
         }
@@ -1074,6 +1113,7 @@ mod tests {
 
     struct Temp {
         path: PathBuf,
+        junctions: Vec<PathBuf>,
     }
 
     impl Temp {
@@ -1084,11 +1124,15 @@ mod tests {
                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
             ));
             std::fs::create_dir_all(path.join("_工坊")).unwrap();
-            Self { path }
+            Self { path, junctions: Vec::new() }
         }
 
         fn path(&self) -> &Path {
             &self.path
+        }
+
+        fn keep_junction(&mut self, path: PathBuf) {
+            self.junctions.push(path);
         }
 
         fn app(&self) -> App {
@@ -1112,6 +1156,9 @@ mod tests {
 
     impl Drop for Temp {
         fn drop(&mut self) {
+            for link in &self.junctions {
+                let _ = std::fs::remove_dir(link);
+            }
             let _ = std::fs::remove_dir_all(&self.path);
         }
     }
@@ -1592,6 +1639,104 @@ mod tests {
         let _ = std::fs::remove_dir_all(root.join("_工坊").join("缓存"));
     }
 
+    #[test]
+    fn cache_dir_junction_outside_root_is_not_read_or_written() {
+        let outside = Temp::new("cout-ext");
+        let mut dir = Temp::new("cout");
+        refuse_cache_dir_link(&mut dir, outside.path(), "SF-EXTERNAL-MARKER-a91c");
+    }
+
+    #[test]
+    fn cache_dir_junction_into_secrets_is_not_read_or_written() {
+        let mut dir = Temp::new("csec");
+        let secret = dir.path().join("_工坊").join("机密");
+        std::fs::create_dir_all(&secret).unwrap();
+        refuse_cache_dir_link(&mut dir, &secret, "SF-SECRET-MARKER-b7e2");
+    }
+
+    #[test]
+    fn junction_data_root_still_hits_its_own_cache() {
+        let dir = Temp::new("root-real");
+        let marker = "SF-ROOT-LINK-MARKER-c2";
+        let app = dir.app();
+        widen_flush_window(&app);
+        write_rel(dir.path(), "书/项目.json", b"{}");
+        write_rel(dir.path(), "书/正文/a.txt", marker.as_bytes());
+        scan::snapshot(&app).unwrap();
+        assert!(write_once(&app.startup_cache.shared));
+        let link = std::env::temp_dir().join(format!(
+            "sf-cache-rootlink-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        if let Err(reason) = junction(&link, dir.path()) {
+            assert!(!reason.trim().is_empty(), "跳过链接测试必须写明原因");
+            println!("SKIP 链接测试：{reason}");
+            return;
+        }
+        let _guard = LinkGuard { path: link.clone() };
+        let via = app_at(&link);
+        let hit = load(&via).expect("数据根自身是联接时，缓存仍应命中");
+        assert_eq!(hit["snapshot"]["files"]["书/正文/a.txt"]["text"], marker);
+    }
+
+    fn refuse_cache_dir_link(dir: &mut Temp, target: &Path, marker: &str) {
+        let filler = "Y".repeat(marker.len());
+        assert_ne!(filler, marker);
+        let app = dir.app();
+        widen_flush_window(&app);
+        write_rel(dir.path(), "书/项目.json", b"{}");
+        write_rel(dir.path(), "书/正文/a.txt", marker.as_bytes());
+        scan::snapshot(&app).unwrap();
+        assert!(write_once(&app.startup_cache.shared), "正常目录应能落盘");
+        let planted = std::fs::read(cache_file(dir.path())).unwrap();
+        assert!(planted.windows(marker.len()).any(|w| w == marker.as_bytes()));
+        let mtimes = saved_mtimes(dir.path());
+        std::fs::write(abs_of(dir.path(), "书/正文/a.txt"), filler.as_bytes()).unwrap();
+        std::fs::remove_dir_all(dir.path().join("_工坊").join("缓存")).unwrap();
+        std::fs::create_dir_all(target).unwrap();
+        std::fs::write(target.join("启动快照.json"), &planted).unwrap();
+        std::fs::write(target.join("标记.txt"), marker.as_bytes()).unwrap();
+        let link = dir.path().join("_工坊").join("缓存");
+        assert!(std::fs::symlink_metadata(&link).is_err(), "旧缓存目录未删掉");
+        if let Err(reason) = junction(&link, target) {
+            if gate::is_reparse(&link) {
+                dir.keep_junction(link);
+            }
+            assert!(!reason.trim().is_empty(), "跳过链接测试必须写明原因");
+            println!("SKIP 链接测试：{reason}");
+            return;
+        }
+        dir.keep_junction(link);
+        for (path, mtime) in &mtimes {
+            set_mtime(path, *mtime);
+        }
+        // 这份字节若被读入就会命中并带出标记。未命中不能只是因为夹具对不上。
+        assert_would_hit(dir.path(), &planted);
+        invalidate(&app);
+        match load(&app) {
+            Ok(hit) => panic!("重解析缓存不应命中：{hit}"),
+            Err(err) => {
+                assert_eq!(err.error, "cache-miss");
+                let rendered = format!("{} {}", err.error, err.message);
+                assert!(!rendered.contains(marker), "读缓存带进了标记：{rendered}");
+                assert!(!rendered.contains(&filler));
+            }
+        }
+        scan::snapshot(&app).unwrap();
+        let before = snapshot_tree(target);
+        assert!(before.iter().all(|(_, bytes)| !contains_bytes(bytes, filler.as_bytes())));
+        let at = log_len();
+        assert!(!write_once(&app.startup_cache.shared), "重解析点上不应落盘");
+        let after = snapshot_tree(target);
+        assert_eq!(before, after, "缓存写改了联接目标");
+        assert!(after.iter().all(|(_, bytes)| !contains_bytes(bytes, filler.as_bytes())), "快照正文写进了联接目标");
+        let log = log_tail(at);
+        assert!(log.contains("启动缓存落盘失败"), "{log}");
+        assert!(!log.contains(marker), "{log}");
+        assert!(!log.contains(&filler), "{log}");
+    }
+
     fn flush_best_effort_ok(app: &App) -> bool {
         write_once(&app.startup_cache.shared)
     }
@@ -1668,5 +1813,108 @@ mod tests {
         }
         lines.sort();
         util::sha256_hex(lines.join("\n").as_bytes())
+    }
+
+    struct LinkGuard {
+        path: PathBuf,
+    }
+
+    impl Drop for LinkGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir(&self.path);
+        }
+    }
+
+    fn assert_would_hit(root: &Path, bytes: &[u8]) {
+        let real = gate::try_realpath(root).unwrap_or_else(|| root.to_path_buf());
+        let view = parse_envelope(bytes, &root_id(&real)).unwrap_or_else(|e| panic!("夹具缓存应能解析：{}", e.message));
+        confirm(root, &real, &view).unwrap_or_else(|e| panic!("夹具应与磁盘元数据一致，否则测试是空的：{}", e.message));
+    }
+
+    fn saved_mtimes(root: &Path) -> Vec<(PathBuf, SystemTime)> {
+        let mut out = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(cur) = stack.pop() {
+            let rel = cur.strip_prefix(root).ok().map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+            if rel == "_工坊/缓存" || rel.starts_with("_工坊/缓存/") {
+                continue;
+            }
+            if cur != root && gate::is_reparse(&cur) {
+                continue;
+            }
+            if let Ok(meta) = std::fs::metadata(&cur) {
+                if let Ok(mtime) = meta.modified() {
+                    out.push((cur.clone(), mtime));
+                }
+            }
+            if !cur.is_dir() {
+                continue;
+            }
+            if let Ok(rd) = std::fs::read_dir(&cur) {
+                for ent in rd.flatten() {
+                    stack.push(ent.path());
+                }
+            }
+        }
+        out
+    }
+
+    fn set_mtime(path: &Path, mtime: SystemTime) {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        let file = std::fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+            .unwrap_or_else(|e| panic!("打开 {} 以恢复 mtime 失败：{e}", path.display()));
+        file.set_modified(mtime).unwrap_or_else(|e| panic!("恢复 mtime {} 失败：{e}", path.display()));
+    }
+
+    fn snapshot_tree(dir: &Path) -> Vec<(String, Vec<u8>)> {
+        fn walk(dir: &Path, root: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+            let rd = std::fs::read_dir(dir).unwrap();
+            for ent in rd {
+                let path = ent.unwrap().path();
+                let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+                if gate::is_reparse(&path) {
+                    out.push((rel, b"<reparse>".to_vec()));
+                    continue;
+                }
+                let meta = std::fs::symlink_metadata(&path).unwrap();
+                if meta.is_dir() {
+                    walk(&path, root, out);
+                } else if meta.is_file() {
+                    out.push((rel, std::fs::read(&path).unwrap()));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(dir, dir, &mut out);
+        out.sort();
+        out
+    }
+
+    fn contains_bytes(hay: &[u8], needle: &[u8]) -> bool {
+        !needle.is_empty() && hay.windows(needle.len()).any(|w| w == needle)
+    }
+
+    fn junction(link: &Path, target: &Path) -> Result<(), String> {
+        if std::fs::symlink_metadata(link).is_ok() {
+            return Err(format!("链接已存在：{}", link.display()));
+        }
+        let output = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg("mklink")
+            .arg("/J")
+            .arg(link)
+            .arg(target)
+            .output()
+            .map_err(|e| format!("无法启动 mklink：{e}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let detail = format!("{} {}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        Err(format!("mklink /J 失败，状态 {}。权限不足或不支持目录联接。{detail}", output.status))
     }
 }
