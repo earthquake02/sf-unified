@@ -135,7 +135,7 @@ pub fn load(app: &App) -> Result<Value, Bad> {
     }
 }
 
-/// 给启动界面的缓存。嵌套图目录的正文不逐个重哈希，响应里也不带它们。
+/// 给启动界面的缓存。嵌套图目录的旁路正文不进响应。
 pub fn load_boot(app: &App) -> Result<Value, Bad> {
     let Some((root, real)) = app.data_snapshot() else {
         return Err(bad(409, "no-data-root", "尚未设置数据文件夹"));
@@ -154,7 +154,7 @@ pub fn load_boot(app: &App) -> Result<Value, Bad> {
     if cache_chain_blocked(&root, &real) {
         return Err(miss("重解析"));
     }
-    let view = read_disk_hash(&root, &real, &id, false)?;
+    let view = read_disk(&root, &real, &id)?;
     confirm(&root, &real, &view)?;
     Ok(hit_body_filtered(&view))
 }
@@ -590,37 +590,10 @@ fn read_disk(root: &Path, real: &Path, expect_root: &str) -> Result<View, Bad> {
     if bytes.len() as u64 != meta.len() {
         return Err(miss("截断"));
     }
-    parse_envelope_hash(&bytes, expect_root, true)
-}
-
-fn read_disk_hash(root: &Path, real: &Path, expect_root: &str, hash_all: bool) -> Result<View, Bad> {
-    if cache_chain_blocked(root, real) {
-        return Err(miss("重解析"));
-    }
-    let path = cache_file(root);
-    let meta = match std::fs::metadata(&path) {
-        Ok(meta) => meta,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(miss("不存在")),
-        Err(_) => return Err(miss("损坏")),
-    };
-    if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_CACHE {
-        return Err(miss("损坏"));
-    }
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(_) => return Err(miss("损坏")),
-    };
-    if bytes.len() as u64 != meta.len() {
-        return Err(miss("截断"));
-    }
-    parse_envelope_hash(&bytes, expect_root, hash_all)
+    parse_envelope(&bytes, expect_root)
 }
 
 fn parse_envelope(bytes: &[u8], expect_root: &str) -> Result<View, Bad> {
-    parse_envelope_hash(bytes, expect_root, true)
-}
-
-fn parse_envelope_hash(bytes: &[u8], expect_root: &str, hash_all: bool) -> Result<View, Bad> {
     if bytes.is_empty() {
         return Err(miss("为空"));
     }
@@ -684,7 +657,7 @@ fn parse_envelope_hash(bytes: &[u8], expect_root: &str, hash_all: bool) -> Resul
         if !valid_rel(key, false) || forbidden_rel(key) {
             return Err(miss("路径非法"));
         }
-        let item = clean_file(file, hash_all || boot_file_keep(key))?;
+        let item = clean_file(file)?;
         let (parent, name) = split_parent(key);
         if !files_align_one(&dirs, parent, name, &item) {
             return Err(miss("形状不符"));
@@ -711,7 +684,7 @@ fn clean_entry(v: &Value) -> Result<Value, Bad> {
     Ok(entry_parts(name, typ, bytes, mtime))
 }
 
-fn clean_file(v: &Value, check_hash: bool) -> Result<Value, Bad> {
+fn clean_file(v: &Value) -> Result<Value, Bad> {
     let Some(text) = v.get("text").and_then(|x| x.as_str()) else { return Err(miss("形状不符")) };
     let Some(bytes) = v.get("bytes").and_then(|x| x.as_u64()) else { return Err(miss("形状不符")) };
     let Some(hash) = v.get("hash").and_then(|x| x.as_str()) else { return Err(miss("形状不符")) };
@@ -719,7 +692,7 @@ fn clean_file(v: &Value, check_hash: bool) -> Result<Value, Bad> {
         return Err(miss("形状不符"));
     }
     let mtime = mtime_from_disk(v.get("mtime").unwrap_or(&Value::Null))?;
-    if check_hash && !hash_matches(text, hash, bytes) {
+    if !hash_matches(text, hash, bytes) {
         return Err(miss("形状不符"));
     }
     Ok(json!({"text": text, "bytes": bytes, "hash": hash, "mtime": mtime}))
@@ -1203,6 +1176,25 @@ mod tests {
         assert!(files.contains_key("合成书/图/a.png.txt"));
         assert!(!files.contains_key("合成书/图/d0/f.txt"));
         assert!(out["snapshot"]["dirs"].is_object());
+    }
+
+    #[test]
+    fn boot_cache_rejects_bad_hash_in_filtered_file() {
+        let dir = Temp::new("boot-bad-hash");
+        let app = dir.app();
+        widen_flush_window(&app);
+        book(dir.path());
+        write_rel(dir.path(), "书/图/d0/f.txt", b"img");
+        scan::snapshot(&app).unwrap();
+        flush_best_effort(&app);
+        let bytes = cache_bytes(dir.path()).unwrap();
+        let mut parsed: Value = serde_json::from_slice(&bytes).unwrap();
+        parsed["files"]["书/图/d0/f.txt"]["hash"] = json!("0".repeat(64));
+        std::fs::write(cache_file(dir.path()), serde_json::to_vec(&parsed).unwrap()).unwrap();
+        invalidate(&app);
+        let err = load_boot(&app).unwrap_err();
+        assert_eq!(err.error, "cache-miss");
+        assert!(err.message.contains("形状不符"));
     }
 
     const CANARY: &str = "SF-CACHE-CANARY-7c1e9a-settings-key";
