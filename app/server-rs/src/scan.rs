@@ -16,7 +16,7 @@ use crate::state::{App, MAX_READ};
 
 const TMP_PREFIX: &str = ".sf-tmp-";
 const SNAPSHOT_MAX_PREREAD_FILES: usize = 8000;
-const SNAPSHOT_MAX_PREREAD_BYTES: u64 = 48 * 1024 * 1024;
+pub(crate) const SNAPSHOT_MAX_PREREAD_BYTES: u64 = 48 * 1024 * 1024;
 const BOOK_SUBS: &[&str] = &["正文", "设定", "伏笔", "片段", "会话", "对话", "图"];
 const WS_TOP: &[&str] = &[
     "提示词.json",
@@ -205,6 +205,7 @@ struct ReadOk {
     text: String,
     hash: String,
     raw_len: u64,
+    meta_unchanged: bool,
 }
 
 enum ReadOutcome {
@@ -273,29 +274,39 @@ fn build_snapshot<R: FileRead>(
         return Err(bad(409, "no-data-root", "尚未设置数据文件夹"));
     };
     let workers = workers.max(1);
-    let started = Instant::now();
     let facts = ScanFacts::collect(&root);
-    let (dirs, candidates) = enumerate(&root, &real_root, &facts);
-    let enum_ms = elapsed_ms(started);
-    let started = Instant::now();
-    let (oks, conc) = read_candidates(reader, &candidates, workers, limits)?;
-    let read_ms = elapsed_ms(started);
-    let started = Instant::now();
-    let (files, file_count, byte_count) = commit(&candidates, oks, limits);
-    let assemble_ms = elapsed_ms(started);
-    Ok(Built {
-        value: json!({ "ok": true, "dirs": dirs, "files": files }),
-        metrics: ScanMetrics {
-            enum_ms,
-            read_ms,
-            assemble_ms,
-            serialize_ms: 0.0,
-            files: file_count,
-            bytes: byte_count,
-            workers,
-            conc,
-        },
-    })
+    let mut retried = false;
+    loop {
+        let started = Instant::now();
+        let (dirs, candidates) = enumerate(&root, &real_root, &facts);
+        let enum_ms = elapsed_ms(started);
+        let started = Instant::now();
+        let (oks, conc) = read_candidates(reader, &candidates, workers, limits)?;
+        let read_ms = elapsed_ms(started);
+        let metadata_stable = oks.iter().flatten().all(|ok| ok.meta_unchanged);
+        let started = Instant::now();
+        let (files, file_count, byte_count) = commit(&candidates, oks, limits);
+        let assemble_ms = elapsed_ms(started);
+        if metadata_stable {
+            return Ok(Built {
+                value: json!({ "ok": true, "dirs": dirs, "files": files }),
+                metrics: ScanMetrics {
+                    enum_ms,
+                    read_ms,
+                    assemble_ms,
+                    serialize_ms: 0.0,
+                    files: file_count,
+                    bytes: byte_count,
+                    workers,
+                    conc,
+                },
+            });
+        }
+        if retried {
+            return Err(bad(409, "snapshot-changed", "扫描期间数据文件夹持续变化，请稍后重试"));
+        }
+        retried = true;
+    }
 }
 
 fn enumerate(root: &Path, real_root: &Path, facts: &ScanFacts) -> (Map<String, Value>, Vec<Candidate>) {
@@ -586,8 +597,12 @@ fn read_one<R: FileRead>(reader: &R, cand: &Candidate) -> ReadOutcome {
     };
     let hash = sha256_hex(&data);
     let raw_len = data.len() as u64;
+    // 读后复查普通元数据；同元数据未被辨识的改写及复查后的写入都由 CAS 拦截。
+    let meta_unchanged = std::fs::metadata(&cand.abs)
+        .map(|meta| meta.is_file() && meta.len() == cand.meta_bytes && mtime_of(&meta) == cand.mtime)
+        .unwrap_or(false);
     match decode_utf8_sig(&data) {
-        Ok(text) => ReadOutcome::Ok(ReadOk { text, hash, raw_len }),
+        Ok(text) => ReadOutcome::Ok(ReadOk { text, hash, raw_len, meta_unchanged }),
         Err(()) => ReadOutcome::Fail,
     }
 }
@@ -1191,6 +1206,75 @@ mod tests {
             }
             std::fs::read(path)
         }
+    }
+
+    struct RewriteAfterRead {
+        target: PathBuf,
+        replacement: &'static [u8],
+        restore_mtime: bool,
+        changed: AtomicBool,
+    }
+
+    impl FileRead for RewriteAfterRead {
+        fn read_file(&self, path: &Path) -> std::io::Result<Vec<u8>> {
+            let data = std::fs::read(path)?;
+            if path == self.target && !self.changed.swap(true, Ordering::AcqRel) {
+                let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+                std::fs::write(path, self.replacement)?;
+                if self.restore_mtime {
+                    if let Some(mtime) = modified {
+                        let file = std::fs::OpenOptions::new().write(true).open(path)?;
+                        file.set_modified(mtime)?;
+                    }
+                }
+            }
+            Ok(data)
+        }
+    }
+
+    #[test]
+    fn metadata_rewrite_after_read_is_rechecked_and_claimed_by_retry() {
+        let dir = Temp::new("rewrite-after-read");
+        write_book(dir.path(), &[("项目.json", b"{}")]);
+        let target = dir.path().join("书").join("正文").join("a.txt");
+        write_rel(dir.path(), "书/正文/a.txt", b"old");
+        let reader = RewriteAfterRead {
+            target,
+            replacement: b"new-content",
+            restore_mtime: false,
+            changed: AtomicBool::new(false),
+        };
+        let snap = build_snapshot(&dir.app(), &reader, 1, DEFAULT_LIMITS).unwrap().value;
+        assert!(reader.changed.load(Ordering::Acquire));
+        assert_eq!(snap["files"]["书/正文/a.txt"]["text"], "new-content");
+        assert_eq!(snap["files"]["书/正文/a.txt"]["bytes"], 11);
+    }
+
+    #[test]
+    fn same_meta_rewrite_after_read_is_post_scan_and_cas_protects_it() {
+        let dir = Temp::new("same-meta-after-read");
+        let app = dir.app();
+        write_book(dir.path(), &[("项目.json", b"{}")]);
+        let target = dir.path().join("书").join("正文").join("a.txt");
+        write_rel(dir.path(), "书/正文/a.txt", b"abcd");
+        let reader = RewriteAfterRead {
+            target: target.clone(),
+            replacement: b"wxyz",
+            restore_mtime: true,
+            changed: AtomicBool::new(false),
+        };
+        let snap = build_snapshot(&app, &reader, 1, DEFAULT_LIMITS).unwrap().value;
+        assert_eq!(snap["files"]["书/正文/a.txt"]["text"], "abcd");
+        assert_eq!(std::fs::read(&target).unwrap(), b"wxyz");
+        let body = serde_json::to_vec(&json!({
+            "path": "书/正文/a.txt",
+            "text": "window-version",
+            "baseHash": snap["files"]["书/正文/a.txt"]["hash"].as_str().unwrap(),
+        }))
+        .unwrap();
+        let err = crate::fsapi::write_file(&app, &body).unwrap_err();
+        assert_eq!(err.error, "conflict");
+        assert_eq!(std::fs::read(&target).unwrap(), b"wxyz");
     }
 
     struct Fp {

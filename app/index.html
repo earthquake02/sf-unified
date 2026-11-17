@@ -1933,7 +1933,7 @@ async function stLoad(isBoot){
 }
 /** 把扫描结果归一进内存。不取快照。缓存路径与完整路径共用文档、账本和 schema。
  * @param {boolean} isBoot
- * @param {{set:any,scan:any,legacy:any,sec:any,secErr:any,secUnsup:boolean,skipFont?:boolean}} src
+ * @param {{set:any,scan:any,legacy:any,sec:any,secErr:any,secUnsup:boolean}} src
  * @returns {Promise<boolean>} */
 async function stLoadApply(isBoot,src){
   const set=src.set,scan=src.scan,legacy=src.legacy,sec=src.sec,secErr=src.secErr,secUnsup=src.secUnsup;
@@ -1981,7 +1981,7 @@ async function stLoadApply(isBoot,src){
   /* ADR 0004：持久化章交接记忆的 sourceTextHash 守卫式迁移（旧口径→块级换行口径）。
      只改验证通过的记忆；stBoot 随后的强制写盘会把变化章节落盘。只读档不动。 */
   if(!roReason()){try{await handoffHashMigrate()}catch(e){try{console.error('[SF] handoff hash migrate',e)}catch(_e){}}}
-  if(!src.skipFont&&typeof appearFontScan==='function'){try{await appearFontScan()}catch(e){}}
+  if(typeof appearFontScan==='function'){try{await appearFontScan()}catch(e){}}
   return true;
 }
 function autoSaveSec(){const v=Math.floor(Number(S&&S.data&&S.data.settings&&S.data.settings.autoSaveSec));return (v>=ST_SAVE_MIN&&v<=ST_SAVE_MAX)?v:ST_SAVE_DEF}
@@ -2192,6 +2192,7 @@ function stSaveLabelSync(){try{if(ST.dirty)return;const el=document.getElementBy
 function stBannerHTML(){
   if(typeof S!=='undefined'&&S&&S.ui&&S.ui.schemaAhead)return '⚠ 当前数据由新版程序创建（v'+esc(S.data&&S.data.schemaVersion)+'），本程序（支持至 v'+DATA_SCHEMA_VERSION+'）仅可只读浏览，请升级程序后再编辑';
   if(ST.conflict)return '⚠ 数据文件已被其他窗口或程序改动：本窗口已暂停写入 <button class="btn sm" data-act="st-conflict">处理冲突…</button> <button class="btn sm" data-act="st-reload">重新载入</button>';
+  if(ST.bootPhase==='cached'&&ST.lastErr)return '⚠ '+esc(ST.lastErr)+'；核对未完成，仍保持只读，请修正数据文件夹问题后重新打开';
   if(ST.bootPhase==='cached')return '⚠ 正在核对磁盘，编辑暂不可用';
   if(ST.secBroken)return '⚠ AI Key 密文解不开（可能由另一个 Windows 账号或另一台电脑加密，也可能已损坏）：请到设置页重新填写 API Key——原密文会移入回收站保留，不会被静默销毁';
   if(ST.secUnsupported)return '⚠ 本地服务版本过旧，无法加密保存 API Key：本次会话仍可使用，但<b>不会写入磁盘</b>'+(ST.setPlainKeys?'（盘上原有明文 Key 保持原样；请更新 故事工坊.exe 后再保存设置）':'（也不会退回明文存储）')+'——请更新 故事工坊.exe';
@@ -2481,19 +2482,22 @@ function stBootTrace(tag){const t=/** @type {any} */(ST)._bootTrace;if(Array.isA
 /** 给测量工具留一个不含正文的标记。
  * @param {string} key @param {string|number} val */
 function stBootFlag(key,val){try{if(typeof window!=='undefined')/** @type {any} */(window)[key]=val}catch(e){}}
-/** 提前发起已验证快照并记下耗时。失败变成 null，不抛。
+/** 提前发起已验证快照并记下耗时。失败保留真实原因；挂空拒绝处理，避免缓存读取期间产生未处理拒绝。
  * @returns {Promise<{dirs:Object,files:Object}|null>} */
 function stBootStartSnap(){
   sfPerfMark('sf:snapshot-start');
-  return stSnapshot().then(r=>{
+  const p=stSnapshot().then(r=>{
     sfPerfMark('sf:snapshot-end');
     sfPerfMeasure('sf:snapshot','sf:snapshot-start','sf:snapshot-end');
-    return (r&&r.dirs&&r.files)?r:null;
-  }).catch(()=>{
+    if(!r||!r.dirs||!r.files)throw new Error('已验证快照为空或形状不符');
+    return r;
+  }).catch(e=>{
     sfPerfMark('sf:snapshot-end');
     sfPerfMeasure('sf:snapshot','sf:snapshot-start','sf:snapshot-end');
-    return null;
+    throw e;
   });
+  p.catch(()=>{});
+  return p;
 }
 /** 干净的现代数据才允许先画缓存。返回拒绝原因，空串表示可以。
  * @param {any} scan @param {any} legacy @param {?{text?:string}} setFile
@@ -2553,7 +2557,7 @@ function stBootDigest(data, paths){
  * @returns {any} */
 function stBootCaptureView(){
   const ui=(S&&S.ui)||{};
-  const keys=['view','novelId','sceneId','chatId','settingsTab','res','resW','resNarrow','edL','edR','copilotOpen','cpW','editorTab','codexCat'];
+  const keys=['view','novelId','sceneId','chatId','settingsTab','res','resW','resNarrow','edL','edR','copilotOpen','cpW','editorTab','codexCat','sbView','sbDim','sbScope'];
   /** @type {any} */
   const out={};
   for(const k of keys)out[k]=ui[k];
@@ -2571,7 +2575,7 @@ function stBootCaptureView(){
  * @param {any} v */
 function stBootRestoreView(v){
   if(!v||!S||!S.ui)return;
-  const keys=['view','novelId','sceneId','chatId','settingsTab','res','resW','resNarrow','edL','edR','copilotOpen','cpW','editorTab','codexCat'];
+  const keys=['view','novelId','sceneId','chatId','settingsTab','res','resW','resNarrow','edL','edR','copilotOpen','cpW','editorTab','codexCat','sbView','sbDim','sbScope'];
   for(const k of keys)if(v[k]!==undefined)S.ui[k]=v[k];
   if(v._edScroll&&typeof v._edScroll==='object')S.ui._edScroll=v._edScroll;
   if(S.data&&Array.isArray(S.data.novels)&&v.novelId&&!S.data.novels.some((/** @type {any} */ n)=>n&&n.id===v.novelId)){S.ui.novelId=null;S.ui.sceneId=null}
@@ -2629,7 +2633,7 @@ async function stBootFromCache(snapP){
   const scan=await g3ScanSnapshot(cache,{verCap:SC_VER_CAP_MAX,perfBoot:false});
   const why=stCacheReject(scan,legacy,set);
   if(why){stBootTrace('reject:'+why);stBootFlag('__sfCacheSkip',why);return false}
-  const applied=await stLoadApply(true,{set,scan,legacy,sec,secErr,secUnsup,skipFont:true});
+  const applied=await stLoadApply(true,{set,scan,legacy,sec,secErr,secUnsup});
   if(applied===false)return false;
   if(stCacheWriteback(scan)){
     stBootTrace('reject:writeback');
@@ -2657,11 +2661,12 @@ async function stBootFromCache(snapP){
  * @param {Promise<{dirs:Object,files:Object}|null>} snapP
  * @returns {Promise<void>} */
 async function stBootVerify(snapP){
-  let snap=null;
-  try{snap=await snapP}catch(e){snap=null}
   let scan=null;
-  try{scan=await g3ScanSnapshot(snap,{verCap:SC_VER_CAP_MAX,onRead:stBootScanHook(),perfBoot:false})}
-  catch(e){
+  try{
+    const snap=await snapP;
+    scan=await g3ScanSnapshot(snap,{verCap:SC_VER_CAP_MAX,onRead:stBootScanHook(),perfBoot:false});
+  }catch(e){
+    ST.ready=false;
     ST.lastErr='核对磁盘失败：'+((/** @type {any} */(e).message)||e);
     try{stBootReleaseReadonly()}catch(_e){}
     return;
@@ -2674,13 +2679,14 @@ async function stBootVerify(snapP){
     set=await stRead(DF_SET);
     legacy=await g3LegacyRead();
   }catch(e){
+    ST.ready=false;
     ST.lastErr='核对磁盘失败：'+((/** @type {any} */(e).message)||e);
     try{stBootReleaseReadonly()}catch(_e){}
     return;
   }
   const view=stBootCaptureView();
   const before=stBootDigest(S&&S.data, ST.paths);
-  const applied=await stLoadApply(false,{set,scan,legacy,sec,secErr,secUnsup,skipFont:true});
+  const applied=await stLoadApply(false,{set,scan,legacy,sec,secErr,secUnsup});
   if(applied===false){ST.lastErr=ST.lastErr||'核对磁盘失败';try{stBootReleaseReadonly()}catch(_e){}return}
   stBootRestoreView(view);
   if(typeof handoffHashMigrate==='function'&&!(S&&S.ui&&S.ui.schemaAhead)){try{await handoffHashMigrate()}catch(e){}}
@@ -2705,7 +2711,7 @@ async function stBootVerify(snapP){
     try{toast('旧共享设定已清理：'+ST.sharedRetired+' 个旧文件已移入数据夹回收站（可回溯，不再进入任何作品）',8000)}catch(e){}
   try{stBootReleaseReadonly()}catch(e){}
   try{if(ST.ready)sfPerfArmVerified()}catch(e){}
-  if(typeof appearFontScan==='function'){try{appearFontScan()}catch(e){}}
+  if(typeof appearFontKick==='function'){try{appearFontKick()}catch(e){}}
   try{if(typeof appearAutoArm==='function')appearAutoArm()}catch(e){}
   try{if(typeof mcpEnsureConnected==='function'){const p=mcpEnsureConnected({quiet:true});if(p&&typeof p.catch==='function')p.catch(()=>{})}}catch(e){}
   if(ST.scanWarns&&ST.scanWarns.length)setTimeout(()=>{try{toast('⚠ 打开数据文件夹时有 '+ST.scanWarns.length+' 处跳过项：'+ST.scanWarns[0],9000)}catch(e){}},600);
@@ -2727,7 +2733,7 @@ async function stBoot(){
   let shown=false;
   try{shown=await stBootFromCache(snapP)}catch(e){stGuidePage('readfail',e);return}
   if(shown)return;
-  stBootHeldSnap=await snapP;
+  try{stBootHeldSnap=await snapP}catch(e){stGuidePage('readfail',e);return}
   if((await stLoad(true))===false)return;
   ST.bootPhase='verified';
   ST.ready=true;

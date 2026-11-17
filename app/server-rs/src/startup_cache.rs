@@ -16,6 +16,7 @@ use crate::{fsops, scan, util};
 const FORMAT: u64 = 1;
 const MAX_CACHE: u64 = 64 * 1024 * 1024;
 const MAX_FILES: usize = 8000;
+const MAX_BYTES: u64 = scan::SNAPSHOT_MAX_PREREAD_BYTES;
 const MAX_DIR_KEYS: usize = 16_000;
 const MAX_CHILDREN: usize = 32_000;
 const QUIET: Duration = Duration::from_secs(1);
@@ -321,6 +322,14 @@ fn update_file(inner: &mut Inner, root: &Path, rel: &str, parent: &str, name: &s
     let mtime = scan::mtime_seconds(&meta);
     let bytes = meta.len();
     if parent_scans_files(parent, name) && text_like(name) && bytes <= MAX_READ && bytes == text.as_bytes().len() as u64 {
+        let old_bytes = inner.files.get(rel).and_then(|v| v.get("bytes")).and_then(Value::as_u64).unwrap_or(0);
+        let total = inner.files.values().fold(0u64, |sum, v| {
+            sum.saturating_add(v.get("bytes").and_then(Value::as_u64).unwrap_or(0))
+        });
+        let count = inner.files.len() + usize::from(!inner.files.contains_key(rel));
+        if count > MAX_FILES || total.saturating_sub(old_bytes).saturating_add(bytes) > MAX_BYTES {
+            return false;
+        }
         inner.files.insert(rel.to_string(), file_value(text, bytes, mtime));
     } else {
         inner.files.remove(rel);
@@ -1563,6 +1572,70 @@ mod tests {
         let err = post(&app, "mkdir", json!({"path": "书/正文/a.txt"})).unwrap_err();
         assert_eq!(err.error, "conflict");
         assert_eq!(load(&app).unwrap()["snapshot"]["files"]["书/正文/a.txt"]["text"], "乙");
+    }
+
+    #[test]
+    fn ordinary_write_never_exceeds_snapshot_file_budget() {
+        let dir = Temp::new("write-file-budget");
+        let app = dir.app();
+        book(dir.path());
+        scan::snapshot(&app).unwrap();
+        {
+            let mut inner = lock(&app);
+            inner.files.clear();
+            for i in 0..MAX_FILES {
+                let key = if i == 0 { "书/正文/a.txt".to_string() } else { format!("书/正文/fill-{i}.txt") };
+                inner.files.insert(key, file_value("x", 1, 1.0));
+            }
+        }
+        post(&app, "write", json!({"path": "书/正文/a.txt", "text": "边界"})).unwrap();
+        {
+            let inner = lock(&app);
+            assert!(inner.warm, "满额时替换已有文件仍应保持缓存");
+            assert_eq!(inner.files.len(), MAX_FILES);
+        }
+        post(&app, "write", json!({"path": "书/正文/new.txt", "text": "新增"})).unwrap();
+        assert_eq!(std::fs::read(abs_of(dir.path(), "书/正文/new.txt")).unwrap(), "新增".as_bytes());
+        let inner = lock(&app);
+        assert!(!inner.warm || inner.files.len() <= MAX_FILES, "普通写后内存缓存不得突破文件预算");
+    }
+
+    #[test]
+    fn ordinary_write_never_exceeds_snapshot_byte_budget() {
+        const TOTAL: u64 = 48 * 1024 * 1024;
+        let exact = Temp::new("write-byte-budget-exact");
+        let exact_app = exact.app();
+        book(exact.path());
+        scan::snapshot(&exact_app).unwrap();
+        {
+            let mut inner = lock(&exact_app);
+            inner.files.clear();
+            inner.files.insert("书/正文/a.txt".into(), file_value("abc", 3, 1.0));
+            inner.files.insert("书/正文/fill.txt".into(), file_value("x", TOTAL - 6, 1.0));
+        }
+        post(&exact_app, "write", json!({"path": "书/正文/a.txt", "text": "乙乙"})).unwrap();
+        {
+            let inner = lock(&exact_app);
+            let bytes = inner.files.values().filter_map(|v| v.get("bytes")).filter_map(Value::as_u64).sum::<u64>();
+            assert!(inner.warm, "恰好到字节预算仍应保留缓存");
+            assert_eq!(bytes, TOTAL);
+        }
+
+        let dir = Temp::new("write-byte-budget-over");
+        let app = dir.app();
+        book(dir.path());
+        scan::snapshot(&app).unwrap();
+        {
+            let mut inner = lock(&app);
+            inner.files.clear();
+            inner.files.insert("书/正文/a.txt".into(), file_value("abc", 3, 1.0));
+            inner.files.insert("书/正文/fill.txt".into(), file_value("x", TOTAL - 3, 1.0));
+        }
+        post(&app, "write", json!({"path": "书/正文/a.txt", "text": "乙乙"})).unwrap();
+        assert_eq!(std::fs::read(abs_of(dir.path(), "书/正文/a.txt")).unwrap(), "乙乙".as_bytes());
+        let inner = lock(&app);
+        let bytes = inner.files.values().filter_map(|v| v.get("bytes")).filter_map(Value::as_u64).sum::<u64>();
+        assert!(!inner.warm || bytes <= TOTAL, "普通写后内存缓存不得突破 48 MiB 字节预算");
     }
 
     #[test]
