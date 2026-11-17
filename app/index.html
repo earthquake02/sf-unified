@@ -2402,13 +2402,14 @@ function sfPerfArmFirstPaint(){
   const fire=()=>sfPerfMark('sf:first-paint');
   try{if(typeof requestAnimationFrame==='function')requestAnimationFrame(fire);else setTimeout(fire,0)}catch(e){try{setTimeout(fire,0)}catch(_e){}}
 }
-/** 已验证可写且主界面首帧。未就绪或仍停在启动页时不标记。 */
+/** 已验证可写且主界面首帧。写闸未开、未就绪或仍停在启动页时不标记。 */
 function sfPerfArmVerified(){
   const fire=()=>{
     try{
       if(!ST.ready)return;
       if(document.getElementById('bootProg'))return;
       if(!document.querySelector('#topNav button'))return;
+      if(roReason())return;
       sfPerfMark('sf:verified-ready');
     }catch(e){}
   };
