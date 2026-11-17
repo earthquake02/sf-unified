@@ -258,8 +258,12 @@ label.f{display:block; font-size:12px; color:var(--tx2); margin:10px 0 4px}
 .edcol-toggle:hover{background:var(--bg3); color:var(--tx)}
 .edcol-toggle:focus-visible{outline:1px solid var(--ac2)}
 .edcol-tx{display:none}
-#edLeftCol{width:250px}
+#edLeftCol{width:250px; position:relative}   /* v1-5 票03：position 给右缘拖宽把手定位 */
 #edLeftCol .edcol-head{border-right:1px solid var(--line)}
+#edLeftDrag{position:absolute; top:0; bottom:0; right:-4px; width:8px; cursor:col-resize; z-index:6; touch-action:none}   /* v1-5 票03：结构左栏拖宽把手（#resDrag 同款） */
+#edLeftDrag::after{content:''; position:absolute; top:0; bottom:0; left:3px; width:1px; background:transparent}
+#edLeftDrag:hover::after,#edLeftDrag:focus-visible::after{background:var(--ac)}
+#edLeftCol.collapsed #edLeftDrag{display:none}   /* v1-5 票03：26px 收起态隐藏把手 */
 #edRightCol{width:300px}
 #edRightCol .edcol-head{border-left:1px solid var(--line)}
 .edcol .edcol-body{flex:1; min-height:0; position:relative; overflow:hidden}
@@ -294,6 +298,7 @@ label.f{display:block; font-size:12px; color:var(--tx2); margin:10px 0 4px}
   #edLeftCol.np-open,#edRightCol.np-open,#resCol.np-open{display:flex; position:fixed; left:0; top:0; bottom:0; width:min(320px,86vw); z-index:90;
     background:var(--bg2); border-right:1px solid var(--line); box-shadow:6px 0 24px rgba(0,0,0,.45)}
   #resCol.np-open{width:min(360px,88vw)}
+  #edLeftCol.np-open #edLeftDrag{display:none}   /* v1-5 票03：窄屏覆盖槽宽度由槽 CSS 决定，隐藏拖宽把手（不占位态整栏本就 display:none） */
   /* 资源栏覆盖槽＝横排入口＋内容（压过 .narrow 竖排/隐面板的宽屏收窄态） */
   #resCol.np-open #resHead{flex-direction:row; height:var(--bar-h); border-bottom:1px solid var(--line); padding-top:0}
   #resCol.np-open .resTabs{flex-direction:row; flex:1; align-items:stretch; width:auto; padding:0}
@@ -2328,7 +2333,7 @@ async function stWipe(){   // 清空＝结构化文本与设置文件移入数�
   location.reload();
 }
 /* ---- 瞬态 UI 态（localStorage 唯一用途）：上次视图/小说/场景/设置分类/折叠记忆/关联场景配置（按书），跨刷新续位 ---- */
-function uiStateSave(){try{const m=edScrollMem();localStorage.setItem(UI_KEY,JSON.stringify({view:S.ui.view,novelId:S.ui.novelId,sceneId:S.ui.sceneId,settingsTab:S.ui.settingsTab,res:S.ui.res,resW:S.ui.resW,resNarrow:S.ui.resNarrow,edL:S.ui.edL,edR:S.ui.edR,edScroll:{l:m.l,r:m.r},folds:uiFolds(),edFolds:edFolds(),relCfg:relCfgMem(),cdxCollapsed:cdxCollapsedMem(),snipCollapsed:snipCollapsedMem(),cdxSort:cdxSortMem(),copilotOpen:!!S.ui.copilotOpen,cpW:S.ui.cpW,asstPtHideNote:!!S.ui.asstPtHideNote,plFavs:Array.isArray(S.ui.plFavs)?S.ui.plFavs:[],plPins:Array.isArray(S.ui.plPins)?S.ui.plPins:[],plRecent:Array.isArray(S.ui.plRecent)?S.ui.plRecent:[],conflictIgnored:(S.ui.conflictIgnored&&typeof S.ui.conflictIgnored==='object')?S.ui.conflictIgnored:{},cfLastFp:(S.ui._cfLastFp&&typeof S.ui._cfLastFp==='object')?S.ui._cfLastFp:{},cfDismissed:(S.ui._cfDismissed&&typeof S.ui._cfDismissed==='object')?S.ui._cfDismissed:{},reviewAiNudgeMute:!!S.ui.reviewAiNudgeMute,graphLayout:(S.ui.graphLayout&&typeof S.ui.graphLayout==='object')?S.ui.graphLayout:{},graphScale:(S.ui.graphScale&&typeof S.ui.graphScale==='object')?S.ui.graphScale:{}}))}catch(e){}}
+function uiStateSave(){try{const m=edScrollMem();localStorage.setItem(UI_KEY,JSON.stringify({view:S.ui.view,novelId:S.ui.novelId,sceneId:S.ui.sceneId,settingsTab:S.ui.settingsTab,res:S.ui.res,resW:S.ui.resW,resNarrow:S.ui.resNarrow,edL:S.ui.edL,edR:S.ui.edR,edScroll:{l:m.l,r:m.r},folds:uiFolds(),edFolds:edFolds(),edLW:S.ui.edLW,relCfg:relCfgMem(),cdxCollapsed:cdxCollapsedMem(),snipCollapsed:snipCollapsedMem(),cdxSort:cdxSortMem(),copilotOpen:!!S.ui.copilotOpen,cpW:S.ui.cpW,asstPtHideNote:!!S.ui.asstPtHideNote,plFavs:Array.isArray(S.ui.plFavs)?S.ui.plFavs:[],plPins:Array.isArray(S.ui.plPins)?S.ui.plPins:[],plRecent:Array.isArray(S.ui.plRecent)?S.ui.plRecent:[],conflictIgnored:(S.ui.conflictIgnored&&typeof S.ui.conflictIgnored==='object')?S.ui.conflictIgnored:{},cfLastFp:(S.ui._cfLastFp&&typeof S.ui._cfLastFp==='object')?S.ui._cfLastFp:{},cfDismissed:(S.ui._cfDismissed&&typeof S.ui._cfDismissed==='object')?S.ui._cfDismissed:{},reviewAiNudgeMute:!!S.ui.reviewAiNudgeMute,graphLayout:(S.ui.graphLayout&&typeof S.ui.graphLayout==='object')?S.ui.graphLayout:{},graphScale:(S.ui.graphScale&&typeof S.ui.graphScale==='object')?S.ui.graphScale:{}}))}catch(e){}}
 let _uiSaveT=null;
 function uiStateSaveSoon(){if(_uiSaveT)return;_uiSaveT=setTimeout(()=>{_uiSaveT=null;try{uiStateSave()}catch(e){}},800)}
 function uiStateRestore(ui){
@@ -2354,6 +2359,7 @@ function uiStateRestore(ui){
     /* 票26：写作双栏开合（结构左栏 edL／信息右栏 edR）——只认布尔；缺值/坏值一律留默认双展 */
     if(typeof j.edL==='boolean')ui.edL=j.edL;
     if(typeof j.edR==='boolean')ui.edR=j.edR;
+    if(typeof j.edLW==='number'&&Number.isFinite(j.edLW))ui.edLW=j.edLW;   // v1-5 票03：左栏拖宽（有限数校验；应用端 edLW() 再按窗口夹取，坏值/缺值回默认 250）
     /* 助理增强批票01：右侧 AI 面板开合——只认布尔；缺值/坏值＝默认收起（不写作品文件） */
     if(typeof j.copilotOpen==='boolean')ui.copilotOpen=j.copilotOpen;
     if(typeof j.cpW==='number'&&Number.isFinite(j.cpW))ui.cpW=j.cpW;
@@ -11739,6 +11745,10 @@ const CP_W_MIN=280,CP_W_MAX=720,CP_W_DEFAULT=500;
 function cpMaxW(){return Math.max(CP_W_MIN,Math.min(CP_W_MAX,window.innerWidth-420))}
 function cpW(){const w=Number(S.ui.cpW);return Number.isFinite(w)?Math.max(CP_W_MIN,Math.min(cpMaxW(),Math.round(w))):CP_W_DEFAULT}
 function applyCpWidth(){const slot=$('#edRightSlot');if(!slot||slot.classList.contains('slot-collapsed')||!edColOpen('edR'))return;slot.style.width=cpW()+'px';const g=$('#cpDrag');if(g){g.setAttribute('aria-valuemin',String(CP_W_MIN));g.setAttribute('aria-valuemax',String(cpMaxW()));g.setAttribute('aria-valuenow',String(cpW()))}}
+/* v1-5 票03：写作页结构左栏拖宽——默认 250、最小 160、上限 420；窗口上限参考右槽 window.innerWidth-420 口径（不破最小值） */
+const ED_L_W_MIN=160,ED_L_W_MAX=420,ED_L_W_DEFAULT=250;
+function edLMaxW(){return Math.max(ED_L_W_MIN,Math.min(ED_L_W_MAX,window.innerWidth-420))}
+function edLW(){const w=Number(S.ui.edLW);return Number.isFinite(w)?Math.max(ED_L_W_MIN,Math.min(edLMaxW(),Math.round(w))):ED_L_W_DEFAULT}   // 读取端二次夹取（坏值/缺值回默认 250）
 const resLegal=v=>RES.some(x=>x.v===v);
 function resMaxW(){return Math.max(RES_W_MIN,Math.min(RES_W_MAX,window.innerWidth-460))}   // 留出可编辑正文宽度（体验修补票02：旧侧栏 210px 预留随删除取消）
 function resW(){const w=Number(S.ui.resW);return Number.isFinite(w)?Math.max(RES_W_MIN,Math.min(resMaxW(),Math.round(w))):RES_W_MIN}
@@ -14367,7 +14377,7 @@ function render(){
   // 主区
   const V={novels:vNovels,outline:vOutline,storyboard:vStoryboard,timeline:vTimeline,editor:vEditor,review:vReview,codex:vCodex,graph:vGraph,'plot-graph':vPlotGraph,snippets:vSnippets,prompts:vPrompts,settings:vSettings,style:vStyle};
   $('#main').innerHTML=((/** @type {any} */(V))[S.ui.view]||vNovels)();
-  if(S.ui.view==='editor'){bindEditor();applyNarrowUI();   // 票27：渲染后铺窄屏覆盖槽态（宽屏＝按记忆铺宽屏类名，行为不变）
+  if(S.ui.view==='editor'){bindEdLeftDrag();bindEditor();applyNarrowUI();   // v1-5 票03：左栏拖宽绑定在 bindEditor 的 curScene() 早退之外（空书/无小节仍可调宽）；票27：渲染后铺窄屏覆盖槽态
     if(S.ui._edHlEntryId){   // 票07：跳提及小节后补刷正文高亮（一次性挂起）
       const eid=String(S.ui._edHlEntryId||'');S.ui._edHlEntryId=null;
       const ent=(S.data.codexEntries||[]).find((/** @type {any} */ x)=>x&&x.id===eid&&x.novelId===S.ui.novelId);
@@ -15441,6 +15451,14 @@ function applyEdCols(){
   const edge=$('#cpEdgeToggle');
   if(edge){edge.setAttribute('aria-expanded',r?'true':'false');edge.title=r?'收起右栏':'展开右栏';edge.textContent=r?'▸':'◂'}
   const drag=$('#cpDrag');if(drag)drag.tabIndex=r?0:-1;
+  applyEdLeftWidth();   // v1-5 票03：左栏宽度铺设（展开宽屏＝内联宽；收起/窄屏＝清内联宽交还 CSS）
+}
+function applyEdLeftWidth(){   // v1-5 票03：#edLeftCol 与 #sceneList 同步铺宽（外层与列表一体），并刷新把手 ARIA/Tab 序
+  const wide=edColOpen('edL')&&!isNarrowView();
+  const col=$('#edLeftCol'),list=$('#sceneList'),g=$('#edLeftDrag');
+  if(col)col.style.width=wide?edLW()+'px':'';
+  if(list)list.style.width=wide?edLW()+'px':'';
+  if(g){g.setAttribute('aria-valuemin',String(ED_L_W_MIN));g.setAttribute('aria-valuemax',String(edLMaxW()));g.setAttribute('aria-valuenow',String(edLW()));g.tabIndex=wide?0:-1}
 }
 /* 双栏滚动记忆（票26）：每栏按「书/景身份」**各存一格**（`edScrollKey` 复合键＋LRU 上限，多书多景
    往返互不覆盖）——收起展开、切页往返、切书来回、换景往返与刷新（随 UI_KEY 备份）都按同书/同景续位。
@@ -15510,7 +15528,32 @@ function edColHTML(side,open,inner){
   const isL=side==='left',name=isL?'结构栏':'信息栏',lab=(open?'收起':'展开')+name;
   return `<div id="${isL?'edLeftCol':'edRightCol'}" class="edcol${open?'':' collapsed'}">${npNavHTML(true)}
     <div class="edcol-head"><button type="button" id="${isL?'edLeftToggle':'edRightToggle'}" class="edcol-toggle" data-act="${isL?'ed-left-toggle':'ed-right-toggle'}" aria-expanded="${open?'true':'false'}" aria-controls="${isL?'sceneList':'edSide'}" title="${lab}" aria-label="${lab}"><span class="edcol-ic">${isL?'◂':'▸'}</span><span class="edcol-tx">${name}</span></button></div>
-    <div class="edcol-body">${inner}</div></div>`;
+    <div class="edcol-body">${inner}</div>${isL?`<div id="edLeftDrag" role="separator" aria-orientation="vertical" aria-label="拖宽结构栏" title="拖动调整结构栏宽度；方向键微调" tabindex="${open?0:-1}"></div>`:''}</div>`;
+}
+function bindEdLeftDrag(){   // v1-5 票03：结构左栏拖宽——复用 #resDrag/#cpDrag 同款指针捕获与键盘模式；拖动中只改 S.ui.edLW 与两处 DOM 宽（零整页 render、不碰正文/副驾）
+  const g=/** @type {HTMLElement & {_edLDragBound?:boolean}} */(document.getElementById('edLeftDrag'));if(!g||g._edLDragBound)return;g._edLDragBound=true;
+  const canDrag=()=>S.ui.view==='editor'&&edColOpen('edL')&&!isNarrowView();
+  const clamp=(/** @type {number} */ w)=>Math.max(ED_L_W_MIN,Math.min(edLMaxW(),w));
+  let start=/** @type {{x:number,w:number}|null} */(null);
+  g.addEventListener('pointerdown',e=>{
+    if(!canDrag())return;
+    e.preventDefault();start={x:e.clientX,w:edLW()};
+    try{g.setPointerCapture(e.pointerId)}catch(_){}
+  });
+  g.addEventListener('pointermove',e=>{
+    if(!start)return;
+    const w=clamp(Math.round(start.w+e.clientX-start.x));   // 票面公式：start.w + e.clientX - start.x
+    if(w!==edLW()){S.ui.edLW=w;applyEdLeftWidth()}
+  });
+  const end=()=>{if(start){start=null;uiStateSaveSoon()}};   // 松手才去抖落 UI_KEY（浏览/拖动零作品写盘）
+  g.addEventListener('pointerup',end);g.addEventListener('pointercancel',end);
+  g.addEventListener('keydown',e=>{
+    if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;
+    e.preventDefault();
+    if(!canDrag())return;
+    const w=clamp(edLW()+(e.key==='ArrowRight'?24:-24));   // 左右方向键 24px 步进
+    if(w!==edLW()){S.ui.edLW=w;applyEdLeftWidth();uiStateSaveSoon()}
+  });
 }
 
 /* ---------- 窄屏单槽临时覆盖（写作体验票27／决策票#08） ----------
@@ -15575,7 +15618,7 @@ function narrowSync(){
   if(S.ui.view==='editor'&&edColOpen('edR'))cpPosition();   // sync shared slot width across narrow/wide
 }
 NARROW_MQ.addEventListener('change',narrowSync);
-window.addEventListener('resize',()=>{if(S.ui.view==='editor'&&edColOpen('edR'))cpPosition()});   // sync shared slot width when expanded
+window.addEventListener('resize',()=>{if(S.ui.view!=='editor')return;applyEdLeftWidth();if(edColOpen('edR'))cpPosition()});   // v1-5 票03：窗口变化重夹左栏宽并刷新 ARIA；右槽同步宽度（原行为）
 
 /* ---------- 视图：写作（编辑器） ---------- */
 function vEditor(){
