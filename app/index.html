@@ -8221,12 +8221,28 @@ Compare setting vs excerpt. Prefer conflict when any explicit contradiction exis
 - consistent: Excerpt clearly follows or reasonably elaborates setting`}
  ]},
  {id:'bp-style-distill',name:'文风蒸馏',category:'文风蒸馏',builtin:true,model:'',maxTokens:8192,messages:[
-  {role:'system',content:`你在故事工坊为《{input("bookTitle")}》蒸馏「本书文风」技能正文。
-只根据语料归纳表达与用笔习惯，不要编造语料未体现的情节、人设或世界观当「文风」。
+  {role:'system',content:`你在故事工坊为《{input("bookTitle")}》蒸馏可挂载的「文风技能」正文。
+只根据语料归纳表达、用笔与互动动力学机制，不要照搬语料的专有人名、地名或具体剧情事件。
 输出一整份 SKILL.md（可含 frontmatter；写入前程序会覆写 novelId/name）。
-建议章节：定位／用词习惯／句式与节奏／对话／描写与画面／叙事习惯／标志调性（抽象句式，禁止大段抄语料）／倾向与禁忌／可选对照／交付与优先级。
+建议章节：定位／用词与本土化换算／句式与节奏／对话与角色动力学／描写与跨体裁转译／叙事习惯与场景张力分级／标志调性（短锚点+抽象骨架）／倾向与禁忌／可选对照／交付与优先级。
+跨体裁与跨风格蒸馏铁律（必须写进技能正文并贯穿各节）：
+1. 体裁识别与跨媒介转译（若语料为剧本/视觉小说/对话体）：
+   - 严禁把原始剧本的格式外壳（\`角色名：台词\`、\`信息：地点\`、选项重复行）直接搬进小说，但必须保留其「单行快拍、动作/音效先行、内心嘀咕外化」的灵魂节奏；
+   - 视觉小说靠立绘和背景图省去了空间与动作过渡，转译为散文小说时：复杂的空间尺度、生理伤势或技术清单必须保留因果连贯的短段叙述（2～4 句，不强拆成断头碎词），而在人物反应、情绪落点与对话交锋处切回极短句快拍。
+2. 剥离源题材贴纸，提炼「本土化换算」的降维机制：
+   - 严禁把源语料特有的现代/异界题材词（如「下班、社畜、低保、无限续杯、时薪、面包房」）列为通用词表要求下游生塞进异质世界观；
+   - 必须提炼其底层的「世俗/生理降维机制」（即用角色最切身的物质匮乏、身体劳损、睡眠/口粮/电量/轮值差事去碰撞宏大危机），并规定：**运用本技能时必须100%换算为目标作品本土的器物与概念**（例如在机关/古代/科幻求生作品中，用「干粮见底、电池掉电、轮值记过、铜钱/备件紧缺、倒头睡一觉」来承载同构的冷幽默，绝不出现违背目标世界观的现代网络/职场词）。
+3. 角色动力学映射与人设声口保护伞：
+   - 提炼语料的「常识人冷面吐槽 ↔ 脱线/率真者外放 ↔ 夹缝碎碎念」三角张力，但必须立下铁律：**角色固有性格与说话分寸高于全局口癖**。
+   - 活泼/孩童角色可充分释放尾音（\`啦/呀/呢/～\`）、叠词、鼓腮歪头等漫画式灵动反应；冷峻寡言或沉稳克制的角色**严禁**被强行安上撒娇尾音或破防尖叫，其喜剧张力应通过「一本正经地报出冷酷数据/干脆动作 + 视点人物在心底半公开的冷面吐槽/无奈叹气」来实现。
+4. 场景张力双轨分级（防止生死场沦为恶搞闹剧）：
+   - **日常/松弛/初遇互动场（A轨）**：全量启用快拍乒乓对话、连珠炮发问、拉长尾音（\`～\`）、括号小动作与尾部「真诚脱线暴击（Punchline）」；
+   - **高压/生死突围/重伤实操场（B轨）**：收起脱离处境的撒娇尾音与散漫耍宝，保留生死压迫感与硬核动作因果链，仅在喘息间隙用「短促冷硬的拟声词 + 身体不听使唤的狼狈实感 + 一句苦中作乐的咬牙冷吐槽」点缀，绝不消解追兵威胁与伏笔重量。
+5. 与「默认文风」的协同豁免声明：
+   - 明确声明：本技能刻意采用的「短句单行切拍、独立/嵌首拟声词、括号/破折号内心碎碎念、漫画式微动作定格」属于目标文风的核心声口，**豁免于「默认文风」的「删电报体碎句／禁微动作」规则**；
+   - 同时写明：在不增减核心事实、不违背人物当前知情边界的前提下，可将冗长沉闷的静态说明拆解为「具体小动作 + 简短对话回合/内心冷面搭腔」以激活乒乓节奏。
 {input("softCaps")}
-优先级须写明：作者当场指令 > 本技能 > 默认文风。
+优先级须写明：作者当场指令 > 任务基座（不改核心事实、因果链与人物当场知情边界） > 本技能（表达、节奏、跨体裁转译与本土化降维） > 默认文风。
 不要输出除 SKILL.md 以外的开场白。`},
   {role:'user',content:`【书名】{input("bookTitle")}
 
@@ -9076,10 +9092,103 @@ function novelProsePlain(nid){
   }
   return{text:parts.join('\n\n'),chapters:chapHit,scenes:sceneHit,chars:0};
 }
+/**
+ * 文风语料三级智能切块（兼容带 `## ` 的拼接稿、带常见中英文章题行的普通外部 txt、以及完全无章题的纯文本长文）：
+ * 1) 第 1 级（Markdown `## ` 章头）：按 `\n(?=## )` 切分；若切出 >= 2 块，直接返回；
+ * 2) 第 2 级（常见小说章题行）：逐行检测独立章题行（优先复用 impChapterTitleInfo，并内置等效正则识别
+ *    `第…章/节/回/部/集/卷/篇`、`Chapter N`、`序章/楔子/引子/尾声/终章/番外`、或独立 `【…】` 场题行）；
+ *    若切出 >= 2 块，返回按章题行切分的章节块数组；
+ * 3) 第 3 级（完全无章题的纯文本长文按自然段定长切块兜底）：若连章题行都不足 2 处，当文本含换行符 `\n` 且总长 >= 3000 字时，
+ *    按自然段边界（`\n`）每约 2500 字聚合切分为等效章节块；若为无换行的单行文本则保持 [t] 单块返回。
+ * @param {string} text
+ * @returns {string[]}
+ */
+function styleSplitBlocks(text){
+  const t=String(text||'');
+  if(!t)return[''];
+  const mdParts=t.split(/\n(?=## )/);
+  if(mdParts.length>=2)return mdParts;
+  if(!t.includes('\n'))return[t];
+  const lines=t.split('\n');
+  const headRe=/^(?:第\s*[0-9０-９零〇一二两三四五六七八九十百千万亿廿卅]+\s*[章节回部集卷篇]|Chapter[ 　]*[0-9０-９]+(?=$|[ 　:：.\-—·])|(?:序章|序言|前言|楔子|引子|尾声|终章|后记|附录|番外(?:篇)?)(?=$|[ 　:：、.\-—·0-9０-９A-Z])|【[^】\n]{1,30}】\s*$)/i;
+  const tailBadRe=/[。？！…；;!?]$/;
+  /** @param {string} ln @returns {boolean} */
+  const isChapLine=(ln)=>{
+    const raw=String(ln||'').replace(/^\uFEFF/,'');
+    const s=raw.trim();
+    if(!s||s.length>40||tailBadRe.test(s))return false;
+    if(typeof impChapterTitleInfo==='function'&&impChapterTitleInfo(raw))return true;
+    return headRe.test(s);
+  };
+  /** @type {string[]} */
+  const chapBlocks=[];
+  /** @type {string[]} */
+  let cur=[];
+  let hitHeads=0;
+  for(let i=0;i<lines.length;i++){
+    const ln=lines[i];
+    if(isChapLine(ln)){
+      if(cur.length){
+        const blk=cur.join('\n').trim();
+        if(blk)chapBlocks.push(blk);
+        cur=[];
+      }
+      hitHeads++;
+    }
+    cur.push(ln);
+  }
+  if(cur.length){
+    const blk=cur.join('\n').trim();
+    if(blk)chapBlocks.push(blk);
+  }
+  if(hitHeads>=2&&chapBlocks.length>=2)return chapBlocks;
+  const yellowMin=typeof STYLE_YELLOW_CHARS==='number'?STYLE_YELLOW_CHARS:3000;
+  if(t.length>=yellowMin){
+    const CHUNK_TARGET=2500;
+    /** @type {string[]} */
+    const paraBlocks=[];
+    /** @type {string[]} */
+    let buf=[];
+    let bufLen=0;
+    for(let i=0;i<lines.length;i++){
+      const ln=lines[i];
+      buf.push(ln);
+      bufLen+=ln.length+1;
+      if(bufLen>=CHUNK_TARGET&&ln.trim()){
+        paraBlocks.push(buf.join('\n').trim());
+        buf=[];bufLen=0;
+      }
+    }
+    if(buf.length){
+      const tail=buf.join('\n').trim();
+      if(tail){
+        if(paraBlocks.length&&tail.length<600)paraBlocks[paraBlocks.length-1]+='\n'+tail;
+        else paraBlocks.push(tail);
+      }
+    }
+    if(paraBlocks.length>=2)return paraBlocks;
+  }
+  return[t];
+}
+/**
+ * 统计文风语料字数、有效章节数与红/黄/绿分档。
+ * 当 chapHint <= 0 且文本非空时：先通过 styleSplitBlocks(t) 识别三级块数（`## ` 块 / 普通小说章题块 / 2500字自然段块）；
+ * 若仍 < 2 且字数已达黄档门槛（STYLE_YELLOW_CHARS=3000，如单行无换行长文），按每 2500 字折算等效章节数（至少 2 章）。
+ * @param {string} text
+ * @param {number} [chapHint]
+ * @returns {{text:string,chars:number,chapters:number,tier:'green'|'yellow'|'red'}}
+ */
 function styleCorpusStats(text,chapHint){
   const t=String(text||'').replace(/\r\n?/g,'\n').trim();
   const chars=t.length;
-  const chaps=Math.max(0,Number(chapHint)||0);
+  let chaps=Math.max(0,Number(chapHint)||0);
+  if(chaps<=0&&chars>0){
+    const blks=styleSplitBlocks(t);
+    if(blks.length>=2)chaps=blks.length;
+    else if(chars>=STYLE_YELLOW_CHARS)chaps=Math.max(2,Math.floor(chars/2500));
+    else chaps=1;
+  }
+  /** @type {'green'|'yellow'|'red'} */
   let tier='red';
   if(chars>=STYLE_GREEN_CHARS&&chaps>=STYLE_GREEN_CHAPS)tier='green';
   else if(chars>=STYLE_YELLOW_CHARS&&chaps>=STYLE_YELLOW_CHAPS)tier='yellow';
@@ -9088,6 +9197,9 @@ function styleCorpusStats(text,chapHint){
 /**
  * 文风语料抽稀：预算优先给内容——分隔符若挤占保底配额则先截块再配额；
  * 块数可控时仍按块配额保留后续块（R1 不均块口径）；kept＝实际保留块数；输出必含非换行。
+ * 大窗口（cap >= 4000 且 >= 3 块）时：先经 styleSplitBlocks 三级切块，滤除 <400 字空壳短块（有效块 >= 8 时），
+ * 超出 maxKeep＝floor((limit+2)/(2200+2))（至少 8）时均匀抽样代表性完整块；
+ * 超配额多行长块按「前段 55% + \n…\n + 尾段 45%」行边界对齐裁剪（配额 <400 或单行正文时直接 slice 兜底）。
  * @param {string} text
  * @param {number} cap
  * @returns {{text:string,thinned:boolean,kept:number,orig:number}}
@@ -9096,7 +9208,7 @@ function styleCorpusThin(text,cap){
   const t=String(text||'');
   const limit=Math.max(1,Number(cap)||STYLE_CORPUS_HARD);
   const orig=t.length;
-  const parts=t.split(/\n(?=## )/);
+  const parts=typeof styleSplitBlocks==='function'?styleSplitBlocks(t):t.split(/\n(?=## )/);
   if(t.length<=limit)return{text:t,thinned:false,kept:Math.max(1,parts.length),orig};
   if(parts.length<3){
     const head=Math.floor(limit*0.4),tail=Math.floor(limit*0.4),mid=limit-head-tail-20;
@@ -9106,7 +9218,7 @@ function styleCorpusThin(text,cap){
     if(!/[^\r\n]/.test(out))out=(t.replace(/[\r\n]+/g,' ').trim()||'…').slice(0,limit);
     return{text:out,thinned:true,kept:1,orig};
   }
-  const SEP=2,MIN_BLOCK=12;
+  const SEP=2,MIN_BLOCK=12,VALID_BLOCK_MIN=400,TARGET_BLOCK=2200,MIN_KEEP_BLOCKS=8;
   /** @param {string[]} arr @param {number} nKeep @returns {string[]} */
   const pickBlocks=(arr,nKeep)=>{
     if(nKeep>=arr.length)return arr.slice();
@@ -9131,6 +9243,13 @@ function styleCorpusThin(text,cap){
     return uniq.map(i=>arr[i]);
   };
   let work=parts;
+  if(limit>=4000&&parts.length>=3){
+    /* 大窗口模式：滤空壳短块（有效块>=8 才滤，防小语料误伤）＋保底完整块均匀抽样 */
+    const longParts=parts.filter(/** @param {string} p @returns {boolean} */p=>p.length>=VALID_BLOCK_MIN);
+    if(longParts.length>=MIN_KEEP_BLOCKS)work=longParts;
+    const maxKeep=Math.max(MIN_KEEP_BLOCKS,Math.floor((limit+SEP)/(TARGET_BLOCK+SEP)));
+    if(work.length>maxKeep)work=pickBlocks(work,maxKeep);
+  }
   const sepCost=SEP*(work.length-1);
   let left=limit-sepCost;
   if(left<work.length*MIN_BLOCK){
@@ -9161,9 +9280,33 @@ function styleCorpusThin(text,cap){
     }
     if(!progressed)break;
   }
-  /* 丢掉配额为 0 的块，kept 只计实际保留 */
+  /* 丢掉配额为 0 的块，kept 只计实际保留；超配额长块按首尾双段行边界对齐裁剪 */
+  /** @param {string} blk @param {number} quota @returns {string} */
+  const trimBlock=(blk,quota)=>{
+    if(blk.length<=quota)return blk;
+    const firstNl=blk.indexOf('\n');
+    const body=firstNl>=0?blk.slice(firstNl+1):blk;
+    /* 正文（去首行标题）单行或配额过小：直接截断兜底（保既有断言口径） */
+    if(!body.includes('\n')||quota<VALID_BLOCK_MIN)return blk.slice(0,quota);
+    const midSep='\n…\n';
+    const avail=quota-midSep.length;
+    const headBudget=Math.floor(avail*0.55);
+    let headPart=blk.slice(0,headBudget);
+    if(blk[headBudget]!=='\n'){
+      const ln=headPart.lastIndexOf('\n');
+      if(ln>=Math.floor(headBudget*0.5))headPart=headPart.slice(0,ln);
+    }
+    const remTail=quota-headPart.length-midSep.length;
+    if(remTail<=0)return blk.slice(0,quota);
+    let tailPart=blk.slice(blk.length-remTail);
+    if(blk[blk.length-remTail-1]!=='\n'){
+      const tn=tailPart.indexOf('\n');
+      if(tn>=0&&tailPart.length-tn-1>=Math.floor(remTail*0.5))tailPart=tailPart.slice(tn+1);
+    }
+    return headPart+midSep+tailPart;
+  };
   const keptParts=[];
-  for(let i=0;i<n;i++)if(quotas[i]>0)keptParts.push(work[i].slice(0,quotas[i]));
+  for(let i=0;i<n;i++)if(quotas[i]>0)keptParts.push(trimBlock(work[i],quotas[i]));
   let out=keptParts.join('\n\n');
   if(out.length>limit)out=out.slice(0,limit);
   if(!/[^\r\n]/.test(out)){
@@ -22447,6 +22590,10 @@ function bindSettings(){
 }
 
 /* ---------- 文风蒸馏：视图 + 绑定 + 流程 ---------- */
+/**
+ * 文风蒸馏页视图：语料区（合并方式/textarea/状态栏 #sty-stat-line）＋蒸馏按钮＋本书文风 Skill 卡片。
+ * @returns {string}
+ */
 function vStyle(){
   const n=curNovel();
   if(!n)return `<div class="page"><h1 class="pt">${uiIc('style')}文风蒸馏</h1><p class="pd">请先在「我的小说」选择或新建作品。</p></div>`;
@@ -22476,7 +22623,7 @@ function vStyle(){
       <label class="hint"><input type="radio" name="sty-merge" value="replace" ${merge==='replace'?'checked':''} style="width:auto"> 外部替换正文</label>
     </div>
     <textarea id="sty-corpus" rows="12" placeholder="点「一键拼本书正文」，或在此粘贴／上传外部 txt。">${esc(corp.text||'')}</textarea>
-    <p class="hint" style="margin-top:6px">字数 ${fmtN(st.chars)} · 章节 ${st.chapters} · <span style="color:${tierColor}">${esc(styleTierLabel(st.tier))}</span>${corp.source?(' · 来源 '+esc(corp.source)):''}</p>
+    <p class="hint" id="sty-stat-line" style="margin-top:6px">字数 ${fmtN(st.chars)} · 章节 ${st.chapters} · <span style="color:${tierColor}">${esc(styleTierLabel(st.tier))}</span>${corp.source?(' · 来源 '+esc(corp.source)):''}</p>
     <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px">可选：当次辅料对照（1～3 组，不落库）</summary>
       <p class="hint">仅加入本次蒸馏提示，不写回样本库。</p>
       <textarea id="sty-aux" rows="4" placeholder="格式示例：&#10;【对照1】&#10;原文：…&#10;认可版：…">${esc((corp.aux)||'')}</textarea>
@@ -22501,6 +22648,11 @@ function vStyle(){
       :'<div class="empty">尚未蒸馏。准备语料后点「蒸馏为 Skill」。</div>'}
   </div></div>`;
 }
+/**
+ * 文风蒸馏页绑定：语料 textarea 手改（非 book 源传 0 重算三级块章数并就地刷新 #sty-stat-line，
+ * 不调 render() 以免 textarea 丢焦点）、辅料、合并方式、外部 txt 上传。
+ * @returns {void}
+ */
 function bindStyle(){
   const n=curNovel();if(!n)return;
   if(roReason()){
@@ -22511,8 +22663,17 @@ function bindStyle(){
   if(ta)ta.addEventListener('input',()=>{
     const text=ta.value;
     const cur=styleGetCorpus()||{};
-    const st=styleCorpusStats(text,cur.chapters||0);
-    styleSetCorpus({text,chars:st.chars,source:cur.source||'paste'});
+    /* 手改文本：非 book 源传 0 触发三级切块重算有效章节；book 拼接稿沿用既有章数提示 */
+    const st=cur.source==='book'?styleCorpusStats(text,cur.chapters||0):styleCorpusStats(text,0);
+    styleSetCorpus({text,chapters:st.chapters,chars:st.chars,source:cur.source||'paste'});
+    /* 就地刷新状态栏与蒸馏按钮 disabled（不整页重绘，防 textarea 丢焦点） */
+    const line=$('#sty-stat-line');
+    if(line){
+      const tc=st.tier==='green'?'var(--ok)':(st.tier==='yellow'?'var(--warn)':'var(--err)');
+      line.innerHTML='字数 '+fmtN(st.chars)+' · 章节 '+st.chapters+' · <span style="color:'+tc+'">'+esc(styleTierLabel(st.tier))+'</span>'+(cur.source?(' · 来源 '+esc(cur.source)):'');
+    }
+    const db=$('[data-act="sty-distill"]');
+    if(db)db.disabled=!st.chars;
   });
   const aux=$('#sty-aux');
   if(aux)aux.addEventListener('input',()=>styleSetCorpus({aux:aux.value}));
@@ -22597,6 +22758,12 @@ function styDistillConfirm(force){
       <button class="btn pri" data-act="sty-distill-go" data-force="${force?'1':'0'}">确认发送</button></div>`);
   S.ui._styDistillPending={text:thin.text,chapters:st0.chapters,tier:st0.tier,aux,thinned:thin.thinned,kept:thin.kept,orig:thin.orig};
 }
+/**
+ * 蒸馏发送：按 bp-style-distill 模板组装消息调 AI，产出 Skill 候选供确认写入。
+ * {input("softCaps")} 固定为通用建议，不拼分档标记（防「语料不足（草稿）」污染生成的 SKILL.md 标题）；
+ * 分档仅在状态栏与 styDistillConfirm 确认框展示。
+ * @returns {Promise<void>}
+ */
 async function styDistillGo(){
   const n=curNovel();if(!n)return;
   const pend=S.ui._styDistillPending;if(!pend){toast('没有待发送的蒸馏');return}
@@ -22604,12 +22771,11 @@ async function styDistillGo(){
   const st=S.data.settings;
   const tempEff=(p.temp!==undefined&&p.temp!==null&&p.temp!=='')?Number(p.temp):Number(st.aiTemp);
   const mtEff=Math.min(Math.max(Number(p.maxTokens)||0,Number(st.aiMaxTokens)||0,4096),16000)||8192;
-  const draftNote=pend.tier==='green'?'':'（语料标记：'+styleTierLabel(pend.tier)+'）';
   const PH={
     '{input("corpus")}':pend.text,
     '{input("bookTitle")}':n.title||'',
     '{input("optionalPairs")}':pend.aux||'（无）',
-    '{input("softCaps")}':'建议正文 800～2500 tok；标志句抽象，禁止大段抄语料；'+draftNote
+    '{input("softCaps")}':'建议正文 800～2500 tok；标志句抽象，禁止大段抄语料；'
   };
   const msgs=p.messages.map(m=>({role:m.role,content:String(m.content||'').replace(/\{input\("(corpus|bookTitle|optionalPairs|softCaps)"\)\}/g,mm=>PH[mm]||'')}));
   openModal(`<h2>${uiIc('style')}文风蒸馏 · Skill 候选</h2>
@@ -22670,7 +22836,7 @@ function styleSkillFinalize(raw,n){
   ].join('\n');
   /* 幂等：以落盘稳定段标题判定是否已含兜底，不依赖模型可能漏写的「作者当场指令」短语 */
   if(!/^##\s*交付与优先级\s*$/m.test(body)){
-    body=body.replace(/\s+$/,'')+'\n\n## 交付与优先级\n\n- 作者当场说的范围与禁改，压过本技能与默认文风。\n- 本技能只约束表达与用笔，不改事实、人物所知、伏笔揭露顺序。\n- 与「默认文风」同时装载时：去套式归默认文风，本书用词与节奏以本技能为准。\n- 输出只要改后正文（或作者指定段落），不要对照表、说明或开场白。\n';
+    body=body.replace(/\s+$/,'')+'\n\n## 交付与优先级\n\n- 优先级：作者当场说的范围与禁改 > 任务基座（不改核心事实、因果链与人物当场知情边界） > 本技能 > 默认文风。\n- 本技能只约束表达、用笔与互动节奏，不改事实、人物所知、伏笔揭露顺序；角色固有性格与世界观本土词汇优先，严禁生塞违背目标世界观的现代/异界专有词。\n- 与「默认文风」同时装载时：去套式归默认文风；本技能明确要求的短句快拍、拟声词、微动作定格与内心吐槽以本技能为准（豁免于默认文风的碎句/微动作删减）。\n- 输出只要改后正文（或作者指定段落），不要对照表、说明或开场白。\n';
   }
   return fm+body.replace(/^\r?\n+/,'');
 }
