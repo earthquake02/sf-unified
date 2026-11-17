@@ -135,6 +135,40 @@ pub fn load(app: &App) -> Result<Value, Bad> {
     }
 }
 
+/// 给启动界面的缓存。嵌套图目录的正文不逐个重哈希，响应里也不带它们。
+pub fn load_boot(app: &App) -> Result<Value, Bad> {
+    let Some((root, real)) = app.data_snapshot() else {
+        return Err(bad(409, "no-data-root", "尚未设置数据文件夹"));
+    };
+    let id = root_id(&real);
+    if let Some(view) = memory_view(app, &id) {
+        let generation = view.generation;
+        return match confirm(&root, &real, &view) {
+            Ok(()) => Ok(hit_body_filtered(&view)),
+            Err(e) => {
+                discard_if(app, generation);
+                Err(e)
+            }
+        };
+    }
+    if cache_chain_blocked(&root, &real) {
+        return Err(miss("重解析"));
+    }
+    let view = read_disk_hash(&root, &real, &id, false)?;
+    confirm(&root, &real, &view)?;
+    Ok(hit_body_filtered(&view))
+}
+
+fn hit_body_filtered(view: &View) -> Value {
+    let mut files = Map::new();
+    for (key, value) in &view.files {
+        if boot_file_keep(key) {
+            files.insert(key.clone(), value.clone());
+        }
+    }
+    json!({"ok": true, "snapshot": {"dirs": view.dirs, "files": files}})
+}
+
 /// 用刚成功的完整快照替换内存缓存，并安排关键路径之外的落盘。不改快照本身。
 pub fn remember_snapshot(app: &App, snapshot: &Value) {
     let Some((root, real)) = app.data_snapshot() else { return };
@@ -556,10 +590,37 @@ fn read_disk(root: &Path, real: &Path, expect_root: &str) -> Result<View, Bad> {
     if bytes.len() as u64 != meta.len() {
         return Err(miss("截断"));
     }
-    parse_envelope(&bytes, expect_root)
+    parse_envelope_hash(&bytes, expect_root, true)
+}
+
+fn read_disk_hash(root: &Path, real: &Path, expect_root: &str, hash_all: bool) -> Result<View, Bad> {
+    if cache_chain_blocked(root, real) {
+        return Err(miss("重解析"));
+    }
+    let path = cache_file(root);
+    let meta = match std::fs::metadata(&path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(miss("不存在")),
+        Err(_) => return Err(miss("损坏")),
+    };
+    if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_CACHE {
+        return Err(miss("损坏"));
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => return Err(miss("损坏")),
+    };
+    if bytes.len() as u64 != meta.len() {
+        return Err(miss("截断"));
+    }
+    parse_envelope_hash(&bytes, expect_root, hash_all)
 }
 
 fn parse_envelope(bytes: &[u8], expect_root: &str) -> Result<View, Bad> {
+    parse_envelope_hash(bytes, expect_root, true)
+}
+
+fn parse_envelope_hash(bytes: &[u8], expect_root: &str, hash_all: bool) -> Result<View, Bad> {
     if bytes.is_empty() {
         return Err(miss("为空"));
     }
@@ -623,7 +684,7 @@ fn parse_envelope(bytes: &[u8], expect_root: &str) -> Result<View, Bad> {
         if !valid_rel(key, false) || forbidden_rel(key) {
             return Err(miss("路径非法"));
         }
-        let item = clean_file(file)?;
+        let item = clean_file(file, hash_all || boot_file_keep(key))?;
         let (parent, name) = split_parent(key);
         if !files_align_one(&dirs, parent, name, &item) {
             return Err(miss("形状不符"));
@@ -650,7 +711,7 @@ fn clean_entry(v: &Value) -> Result<Value, Bad> {
     Ok(entry_parts(name, typ, bytes, mtime))
 }
 
-fn clean_file(v: &Value) -> Result<Value, Bad> {
+fn clean_file(v: &Value, check_hash: bool) -> Result<Value, Bad> {
     let Some(text) = v.get("text").and_then(|x| x.as_str()) else { return Err(miss("形状不符")) };
     let Some(bytes) = v.get("bytes").and_then(|x| x.as_u64()) else { return Err(miss("形状不符")) };
     let Some(hash) = v.get("hash").and_then(|x| x.as_str()) else { return Err(miss("形状不符")) };
@@ -658,7 +719,7 @@ fn clean_file(v: &Value) -> Result<Value, Bad> {
         return Err(miss("形状不符"));
     }
     let mtime = mtime_from_disk(v.get("mtime").unwrap_or(&Value::Null))?;
-    if !hash_matches(text, hash, bytes) {
+    if check_hash && !hash_matches(text, hash, bytes) {
         return Err(miss("形状不符"));
     }
     Ok(json!({"text": text, "bytes": bytes, "hash": hash, "mtime": mtime}))
@@ -709,6 +770,22 @@ fn entry_eq(a: &Value, b: &Value) -> bool {
 
 fn hit_body(view: &View) -> Value {
     json!({"ok": true, "snapshot": {"dirs": view.dirs, "files": view.files}})
+}
+
+/// 启动界面只用得到扫描会打开的文本。嵌在「图/」下面的旁路文件仍留在目录清单里，正文不进这次响应。
+pub fn boot_body(mut body: Value) -> Value {
+    if let Some(files) = body.get_mut("snapshot").and_then(|s| s.get_mut("files")).and_then(|f| f.as_object_mut()) {
+        files.retain(|path, _| boot_file_keep(path));
+    }
+    body
+}
+
+fn boot_file_keep(path: &str) -> bool {
+    let marker = "/图/";
+    match path.find(marker) {
+        Some(i) => !path[i + marker.len()..].contains('/'),
+        None => true,
+    }
 }
 
 fn miss(reason: &str) -> Bad {
@@ -1106,6 +1183,27 @@ mod tests {
     use axum::extract::State;
     use axum::http::Request;
     use http_body_util::BodyExt;
+
+    #[test]
+    fn boot_body_keeps_scanned_text_and_drops_nested_image_payloads() {
+        let body = serde_json::json!({
+            "ok": true,
+            "snapshot": {
+                "dirs": {"": []},
+                "files": {
+                    "合成书/项目.json": {"text": "{}"},
+                    "合成书/图/a.png.txt": {"text": "img"},
+                    "合成书/图/d0/f.txt": {"text": "bulk-not-for-boot"}
+                }
+            }
+        });
+        let out = boot_body(body);
+        let files = out["snapshot"]["files"].as_object().unwrap();
+        assert!(files.contains_key("合成书/项目.json"));
+        assert!(files.contains_key("合成书/图/a.png.txt"));
+        assert!(!files.contains_key("合成书/图/d0/f.txt"));
+        assert!(out["snapshot"]["dirs"].is_object());
+    }
 
     const CANARY: &str = "SF-CACHE-CANARY-7c1e9a-settings-key";
     const SECRET_CANARY: &str = "SF-SECRET-CANARY-b4e0c2-not-a-manuscript";

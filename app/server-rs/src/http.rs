@@ -103,7 +103,8 @@ pub async fn dispatch(State(app): State<Arc<App>>, req: Request<Body>) -> Respon
     let reply = if method == Method::GET && path == "/api/fs/snapshot" {
         snapshot_route(Arc::clone(&app)).await
     } else if method == Method::GET && path == "/api/fs/startup-cache" {
-        startup_cache_route(Arc::clone(&app)).await
+        let boot = query_first(&query, "boot") == "1";
+        startup_cache_route(Arc::clone(&app), boot).await
     } else if method == Method::GET && path == "/api/mcp/status" {
         mcp_status().await
     } else if method == Method::POST && path == "/api/mcp/probe" {
@@ -251,8 +252,10 @@ async fn snapshot_route(app: Arc<App>) -> Reply {
     }
 }
 
-async fn startup_cache_route(app: Arc<App>) -> Reply {
-    match off_runtime(move || crate::startup_cache::load(&app)).await {
+async fn startup_cache_route(app: Arc<App>, boot: bool) -> Reply {
+    match off_runtime(move || {
+        if boot { crate::startup_cache::load_boot(&app) } else { crate::startup_cache::load(&app) }
+    }).await {
         Ok(body) => json(200, &body, false),
         Err(e) => from_bad(e),
     }

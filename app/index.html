@@ -1446,7 +1446,7 @@ const fmtTs=v=>{const s=String(v||'');if(!s)return '—';const d=new Date(s);if(
 const fmtTsDay=v=>{const s=String(v||'');if(!s)return '—';const d=new Date(s);if(Number.isNaN(d.getTime()))return s.slice(0,10);const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())};
 const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 function toast(msg,ms=2200){const t=$('#toast');t.textContent=msg;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',ms)}
-function download(name,text,type='application/json'){const b=new Blob([text],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
+function download(name,text,type='application/json'){if(typeof stBootLocked==='function'&&stBootLocked()){try{roToast()}catch(e){}return}const b=new Blob([text],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
 function downloadBytes(name,bytes,type){const b=new Blob([bytes],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
 function readFileAsText(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsText(file,'utf-8')})}
 function htmlToText(html){let s=String(html||'').replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi,' ').replace(/<img\b[^>]*>/gi,' ');const d=document.createElement('div');d.innerHTML=s;return (d.textContent||'').replace(/\u00a0/g,' ')}
@@ -1666,7 +1666,8 @@ function schemaGate(d){
      ②存储层 ST：库侧＝结构化文本（G3：扫描重建／投影 diff／逐文件 CAS 账本）＋设置文件 _工坊/settings.json、
        脏标记与落盘节律、冲突/失败状态。
      ③对上：S.data 内存真源＋ save()/load() 接口不变式（S0~S21 功能层零改动）。
-   只读来源（roReason）：F0 数据结构版本闸（ahead 档）＋ CAS 冲突未决 ＋ 未接本地服务。
+   只读来源（roReason）：F0 数据结构版本闸（ahead 档）＋ CAS 冲突未决 ＋ 缓存核对未完成 ＋ 未接本地服务。
+   启动阶段只看 ST.bootPhase（loading／cached／verified）。ST.ready 只在 verified 为 true。
    file://（及一切非本服务来源）：不启动应用，只显示只读引导页（指路 故事工坊.exe）——不许半可用。
    localStorage 降为瞬态 UI 态（UI_KEY：上次视图/小说/场景），不再是数据真源。 */
 const SF_TOKEN=(typeof window!=='undefined'&&typeof window.__SF_TOKEN__==='string')?window.__SF_TOKEN__:'';
@@ -1677,7 +1678,7 @@ const DF_SEC=DF_WS+'/机密', SEC_NAME='AI密钥', DF_SECFILE=DF_SEC+'/'+SEC_NAM
 const ST_SAVE_MIN=30, ST_SAVE_MAX=3600, ST_SAVE_DEF=300;   // 自动保存节律（秒）：默认 300，吸收游蜂 auto_save_interval 口径
 const UI_KEY='novel-studio-ui-v1';
 const SEC_FORMAT='novel-studio-secrets-v1';
-const ST={mode:'boot',tp:'http',port:SF_PORT,ver:SF_VER,dataRoot:'',ready:false,
+const ST={mode:'boot',tp:'http',port:SF_PORT,ver:SF_VER,dataRoot:'',ready:false,bootPhase:'loading',
   files:new Map(),paths:new Map(),migrate:0,scanWarns:[],sharedRetired:0,    // G3：结构化文本文件账本（路径→{text,hash,keep}）＋id→段名（路径名稳定）；sharedRetired＝本次扫描认领的旧共享设定文件数（票34 退役回收）
   setHash:null,setLast:'',dirty:false,gen:0,writing:false,pending:false,timer:null,forceWin:false,noStamp:false,
   conflict:null,lastErr:'',lastWriteAt:0,wiping:0,info:null,
@@ -1686,6 +1687,14 @@ if(typeof window!=='undefined')window.ST=ST;   // 壳关窗探测读 window.ST�
 function stErr(code,msg,extra){const e=new Error(msg||'存储操作失败');e.code=code;if(extra)Object.assign(e,extra);return e}
 function stByteLen(s){try{if(typeof TextEncoder!=='undefined')return new TextEncoder().encode(s).length}catch(e){}return String(s).length*2}   // UTF-8 字节数（keepalive 门槛按字节判）
 function stIsConflict(e){return !!(e&&e.status===409&&e.code==='conflict')}
+/** 缓存界面已画出、磁盘核对尚未完成。此阶段写闸关闭。
+ * @returns {boolean} */
+function stBootLocked(){return ST.bootPhase==='cached'}
+/** 缓存阶段拒绝写入。未锁定时不做事。
+ * @returns {void} */
+function stBootRefuseWrite(){if(stBootLocked())throw stErr('boot-locked','正在核对磁盘，编辑暂不可用')}
+/** @type {{dirs:Object,files:Object}|null} */
+let stBootHeldSnap=null;
 
 /* ---- 传输层：HTTP（第一实现）。令牌＋Origin 由服务端校验；本层只管搬运与错误映射 ---- */
 async function sfHttp(method,url,body,opt){
@@ -1711,29 +1720,42 @@ const SF_TPLS={
   http:{
     async read(p){try{const j=await sfHttp('GET','/api/fs/read?path='+encodeURIComponent(p));return {text:j.text,hash:j.hash,bytes:j.bytes,mtime:j.mtime}}
                  catch(e){if(e.status===404)return null;throw e}},   // 不存在＝null（首跑建库路径）
-    async write(p,text,baseHash,opt){const b={path:p,text};if(baseHash!==undefined)b.baseHash=baseHash;return sfHttp('POST','/api/fs/write',b,opt)},
+    async write(p,text,baseHash,opt){stBootRefuseWrite();const b={path:p,text};if(baseHash!==undefined)b.baseHash=baseHash;return sfHttp('POST','/api/fs/write',b,opt)},
     async list(p){const j=await sfHttp('GET','/api/fs/list?path='+encodeURIComponent(p));return j.entries||[]},
     async snapshot(){return sfHttp('GET','/api/fs/snapshot')},
+    /** 启动缓存。未命中只返回 null；其它错误抛出，不能当成空库。
+     * @returns {Promise<{dirs:Object,files:Object}|null>} */
+    async cachedSnapshot(){
+      try{
+        const j=await sfHttp('GET','/api/fs/startup-cache?boot=1');
+        const snap=j&&j.snapshot;
+        if(!snap||typeof snap!=='object'||!snap.dirs||!snap.files)throw stErr('cache-bad','启动缓存响应不完整');
+        return snap;
+      }catch(e){if(/** @type {any} */(e).code==='cache-miss')return null;throw e}
+    },
     async stat(p){try{return await sfHttp('GET','/api/fs/stat?path='+encodeURIComponent(p))}catch(e){if(e.status===404)return null;throw e}},
-    async mkdir(p){return sfHttp('POST','/api/fs/mkdir',{path:p})},
-    async del(p){return sfHttp('POST','/api/fs/delete',{path:p})},
+    async mkdir(p){stBootRefuseWrite();return sfHttp('POST','/api/fs/mkdir',{path:p})},
+    async del(p){stBootRefuseWrite();return sfHttp('POST','/api/fs/delete',{path:p})},
     async status(){return sfHttp('GET','/api/sys/status')},
     /* G4 机密：明文只在内存与本机服务之间走；落盘一律服务端 DPAPI 封装（密文不可当文本读走）。
        第二传输按同接口实现 readSecret/writeSecret 即可，上层零改动；
        缺这两个方法＝该传输不支持机密端点（stSecOk() 判），Key 只在本会话内存里可用、不落盘。 */
     async readSecret(name){try{const j=await sfHttp('GET','/api/secret/read?name='+encodeURIComponent(name));return {text:j.text,hash:j.hash,bytes:j.bytes,mtime:j.mtime}}
                  catch(e){if(e.status===404)return null;throw e}},
-    async writeSecret(name,text,baseHash,opt){const b={name,text};if(baseHash!==undefined)b.baseHash=baseHash;return sfHttp('POST','/api/secret/write',b,opt)},
+    async writeSecret(name,text,baseHash,opt){stBootRefuseWrite();const b={name,text};if(baseHash!==undefined)b.baseHash=baseHash;return sfHttp('POST','/api/secret/write',b,opt)},
   },
 };
-function stTp(){return SF_TPLS[ST.tp]||SF_TPLS.http}
+function stTp(){return /** @type {any} */(SF_TPLS)[ST.tp]||SF_TPLS.http}
 async function stRead(p){return stTp().read(p)}
 /* 助理票05：数据夹以外的只读。只在这条对话创建时抄下了整盘读取时才会被调用。机密目录由服务端再拒一次。 */
 async function stDiskRead(p){
   try{const j=await sfHttp('GET','/api/disk/read?path='+encodeURIComponent(p));return {text:j.text,hash:j.hash,bytes:j.bytes,mtime:j.mtime}}
   catch(e){if(e.status===404)return null;throw e}
 }
-async function stWrite(p,text,baseHash,opt){return stTp().write(p,text,baseHash,opt)}
+/** 普通写。缓存核对期间在包装层拒绝，不发出请求。
+ * @param {any} p @param {any} text @param {any} [baseHash] @param {any} [opt]
+ * @returns {Promise<any>} */
+async function stWrite(p,text,baseHash,opt){stBootRefuseWrite();return stTp().write(p,text,baseHash,opt)}
 async function stList(p){return stTp().list(p)}
 async function stSnapshot(){const tp=stTp();return typeof tp.snapshot==='function'?tp.snapshot():null}
 /* 助理票04：联网搜索只走本地服务的 /api/search。不读数据夹，不看整盘读取。停止时放弃这一次请求。 */
@@ -1764,11 +1786,29 @@ async function stWebSearch(q){
   }
 }
 async function stStat(p){return stTp().stat(p)}
-async function stDel(p){return stTp().del(p)}
+/** 删除。缓存核对期间在包装层拒绝。
+ * @param {any} p @returns {Promise<any>} */
+async function stDel(p){stBootRefuseWrite();return stTp().del(p)}
+/** 建目录。缓存核对期间在包装层拒绝。
+ * @param {any} p @returns {Promise<any>} */
+async function stMkdir(p){stBootRefuseWrite();const tp=stTp();return tp.mkdir(p)}
 async function stStatus(){return stTp().status()}
 function stSecOk(){const tp=stTp();return typeof tp.readSecret==='function'&&typeof tp.writeSecret==='function'}
 async function stSecRead(name){return stTp().readSecret(name)}
-async function stSecWrite(name,text,baseHash,opt){return stTp().writeSecret(name,text,baseHash,opt)}
+/** 机密写。缓存核对期间在包装层拒绝。
+ * @param {any} name @param {any} text @param {any} [baseHash] @param {any} [opt]
+ * @returns {Promise<any>} */
+async function stSecWrite(name,text,baseHash,opt){stBootRefuseWrite();return stTp().writeSecret(name,text,baseHash,opt)}
+/** 读启动缓存。传输没有该方法、或明确未命中，都只返回 null。其它错误原样抛出。
+ * @returns {Promise<{dirs:Object,files:Object}|null>} */
+async function stCachedSnapshot(){
+  const tp=stTp();
+  if(typeof tp.cachedSnapshot!=='function')return null;
+  const snap=await tp.cachedSnapshot();
+  if(snap==null)return null;
+  if(typeof snap!=='object'||!snap.dirs||!snap.files)throw stErr('cache-bad','启动缓存响应不完整');
+  return snap;
+}
 
 /* ---- G4 机密与剔密：AI Key 不进 settings.json，只进 `_工坊/机密/AI密钥.dat`（服务端 DPAPI，绑 Windows 账号） ----
    三条不变式：①settings.json 与一切导出包永不含 Key 明文（settingsWire 剔密）；②Key 只在内存与密文文件里，
@@ -1823,6 +1863,7 @@ function setHasPlainKeys(st){   // 盘上设置对象里是否还留着明文 Ke
   return Array.isArray(st.reviewAiServices)&&st.reviewAiServices.some(p=>p&&String(p.key||''));
 }
 function exportAllData(){   // 「导出全部数据（备份）」：整库深拷贝 + 设置剔密——导出包 grep 不得命中任何 Key
+  if(typeof stBootLocked==='function'&&stBootLocked()){try{roToast()}catch(e){}return null}
   const j=JSON.parse(JSON.stringify(S.data));
   if(j.settings&&typeof j.settings==='object')j.settings=settingsWire(j.settings);
   return j;
@@ -1877,7 +1918,10 @@ async function stLoad(isBoot){
       try{sec=await stSecRead(SEC_NAME)}catch(e){if(e&&e.code==='secret-unreadable')secErr=e;else throw e}
     }else secUnsup=true;   // 传输没有机密端点（旧服务/未来壳）：Key 只在本会话内存里可用、不落盘（横幅告知）
     set=await stRead(DF_SET);
-    scan=await g3Scan({verCap:SC_VER_CAP_MAX,onRead:isBoot?stBootScanHook():undefined,perfBoot:!!isBoot});   // 读盘按上限收（不按当前设置值）：设置改小不该让盘上快照在一次写盘里被永久删掉（复核 L-2）。票06：仅启动扫描挂已读计数，非启动不传回调
+    if(stBootHeldSnap){
+      const held=stBootHeldSnap;stBootHeldSnap=null;
+      scan=await g3ScanSnapshot(held,{verCap:SC_VER_CAP_MAX,onRead:isBoot?stBootScanHook():undefined,perfBoot:false});
+    }else scan=await g3Scan({verCap:SC_VER_CAP_MAX,onRead:isBoot?stBootScanHook():undefined,perfBoot:!!isBoot});   // 读盘按上限收（不按当前设置值）：设置改小不该让盘上快照在一次写盘里被永久删掉（复核 L-2）。票06：仅启动扫描挂已读计数，非启动不传回调
     if(isBoot)stBootNote('扫描数据文件夹…已读 '+(scan.files?scan.files.size:0)+' 个文件');   // 末笔补齐（中间按 8 个一刷）
     legacy=await g3LegacyRead();                                     // 旧库文件（G2 形态 _工坊/书库.json）：G3 起退役
   }catch(e){
@@ -1885,6 +1929,14 @@ async function stLoad(isBoot){
     else{ST.lastErr='重新载入失败：'+((e&&e.message)||e);toast('⚠ '+ST.lastErr,6000);render()}   // 运行期读不了：横幅＋保留当前界面（复核 F5）
     return false;
   }
+  return stLoadApply(isBoot,{set,scan,legacy,sec,secErr,secUnsup});
+}
+/** 把扫描结果归一进内存。不取快照。缓存路径与完整路径共用文档、账本和 schema。
+ * @param {boolean} isBoot
+ * @param {{set:any,scan:any,legacy:any,sec:any,secErr:any,secUnsup:boolean,skipFont?:boolean}} src
+ * @returns {Promise<boolean>} */
+async function stLoadApply(isBoot,src){
+  const set=src.set,scan=src.scan,legacy=src.legacy,sec=src.sec,secErr=src.secErr,secUnsup=src.secUnsup;
   ST.setHash=set?set.hash:'';
   ST.files=scan.files;ST.paths=scan.paths||new Map();ST.scanWarns=(scan.warns||[]).slice(0,6);
   ST.migrate=0;ST.sharedRetired=scan.sharedRetired||0;   // 票34：本次扫描认领的旧共享设定文件数（boot flush 回收后 toast 报数）
@@ -1929,7 +1981,7 @@ async function stLoad(isBoot){
   /* ADR 0004：持久化章交接记忆的 sourceTextHash 守卫式迁移（旧口径→块级换行口径）。
      只改验证通过的记忆；stBoot 随后的强制写盘会把变化章节落盘。只读档不动。 */
   if(!roReason()){try{await handoffHashMigrate()}catch(e){try{console.error('[SF] handoff hash migrate',e)}catch(_e){}}}
-  if(typeof appearFontScan==='function'){try{await appearFontScan()}catch(e){}}
+  if(!src.skipFont&&typeof appearFontScan==='function'){try{await appearFontScan()}catch(e){}}
   return true;
 }
 function autoSaveSec(){const v=Math.floor(Number(S&&S.data&&S.data.settings&&S.data.settings.autoSaveSec));return (v>=ST_SAVE_MIN&&v<=ST_SAVE_MAX)?v:ST_SAVE_DEF}
@@ -1973,8 +2025,9 @@ function stBeforeUnload(e){
 /** 保存写盘：一次全书投影→打戳原位刷新边车→逐文件 diff/CAS 写入；失败按节律补写。 */
 async function stFlush(force,beacon,onProg){
   if(ST.wiping||typeof S==='undefined'||!S)return;
+  if(stBootLocked())return;                               // 缓存核对：强制写、关页写都不发出
   if(!ST.ready&&!force)return;
-  if(roReason())return;                                   // 只读（ahead/冲突/未接服务）一律零写入
+  if(roReason())return;                                   // 只读（ahead/冲突/核对中/未接服务）一律零写入
   if(ST.writing){ST.pending=true;return}                  // 在途写：记一笔，写完补一轮（不并发、不交错）
   if(!ST.dirty&&!force){ST.pending=false;return}          // 补写轮到此发现无待写（脏标记已被上一轮清掉）＝本笔了结：pending 必须一并清，否则「待写入」永久滞留（票39 运行期暴露的潜伏项）
   ST.writing=true;ST.pending=false;
@@ -2116,6 +2169,7 @@ async function stConflictReload(){
   if(ok!==false){render();toast('已按数据文件夹里的最新内容重新载入',4000)}
 }
 async function stConflictOverwrite(){
+  if(stBootLocked()){try{roToast()}catch(e){}return}
   const c=ST.conflict;if(!c)return;
   try{
     if(c.path!==DF_SECFILE){try{await stDel(c.path)}catch(e){if(!e||e.status!==404)throw e}}   // 他方版本入回收站（可回溯），再以本窗口内容重建；机密不走这条（见下：服务端强制覆盖自己会移旧）
@@ -2130,7 +2184,7 @@ async function stConflictOverwrite(){
   }catch(e){if(stIsConflict(e))stMarkConflict(c.path,e);else toast('覆盖失败：'+((e&&e.message)||e),5000)}
 }
 /* 关页/切后台尽力写一次：异步 fetch 可能在关页瞬间被浏览器取消（如实披露），节律与冲突闸照旧 */
-function stFlushBeacon(){if(!ST.ready||!ST.dirty||roReason())return;stFlush(false,true)}
+function stFlushBeacon(){if(stBootLocked()||!ST.ready||!ST.dirty||roReason())return;stFlush(false,true)}
 function stSaveLabel(){return ST.dirty?'待保存':'已保存'}
 function stSaveLabelSync(){try{if(ST.dirty)return;const el=document.getElementById('saveState');if(el&&el.textContent&&el.textContent.indexOf('待保存')>=0)el.textContent='已保存'}catch(e){}}   // 回验 N3：脏态一律不翻「已保存」（补写窗内也算）
 
@@ -2138,6 +2192,7 @@ function stSaveLabelSync(){try{if(ST.dirty)return;const el=document.getElementBy
 function stBannerHTML(){
   if(typeof S!=='undefined'&&S&&S.ui&&S.ui.schemaAhead)return '⚠ 当前数据由新版程序创建（v'+esc(S.data&&S.data.schemaVersion)+'），本程序（支持至 v'+DATA_SCHEMA_VERSION+'）仅可只读浏览，请升级程序后再编辑';
   if(ST.conflict)return '⚠ 数据文件已被其他窗口或程序改动：本窗口已暂停写入 <button class="btn sm" data-act="st-conflict">处理冲突…</button> <button class="btn sm" data-act="st-reload">重新载入</button>';
+  if(ST.bootPhase==='cached')return '⚠ 正在核对磁盘，编辑暂不可用';
   if(ST.secBroken)return '⚠ AI Key 密文解不开（可能由另一个 Windows 账号或另一台电脑加密，也可能已损坏）：请到设置页重新填写 API Key——原密文会移入回收站保留，不会被静默销毁';
   if(ST.secUnsupported)return '⚠ 本地服务版本过旧，无法加密保存 API Key：本次会话仍可使用，但<b>不会写入磁盘</b>'+(ST.setPlainKeys?'（盘上原有明文 Key 保持原样；请更新 故事工坊.exe 后再保存设置）':'（也不会退回明文存储）')+'——请更新 故事工坊.exe';
   if(ST.lastErr)return '⚠ 数据文件夹最近一次操作失败：'+esc(ST.lastErr)+' <button class="btn sm" data-act="st-retry">重试写入</button>';   // 回验 N5①：文案中性（也覆盖运行期重载失败）
@@ -2375,10 +2430,11 @@ function uiFolds(){if(!S.ui.folds||typeof S.ui.folds!=='object'||Array.isArray(S
    不折叠其他内容；与大纲页/故事板折叠各自独立（与 uiFolds 不共用键、互不读写）。 */
 function edFolds(){if(!S.ui.edFolds||typeof S.ui.edFolds!=='object'||Array.isArray(S.ui.edFolds))S.ui.edFolds={};return S.ui.edFolds}
 let roToastAt=0;
-/* 只读判定（统一三路）：F0 数据结构版本闸＋CAS 冲突未决＋未接本地服务。null=可写 */
+/* 只读判定：版本闸、CAS 冲突、缓存核对、未接本地服务各自独立。null=可写 */
 function roReason(){
   if(typeof S!=='undefined'&&S&&S.ui&&S.ui.schemaAhead)return '数据结构版本新于本程序';
   if(ST.conflict)return '数据文件被其他窗口或程序改动（未决）';
+  if(ST.bootPhase==='cached')return '正在核对磁盘';
   if(ST.mode!=='local')return '未通过 故事工坊.exe 启动';
   return null;
 }
@@ -2415,13 +2471,250 @@ function sfPerfArmVerified(){
   };
   try{if(typeof requestAnimationFrame==='function')requestAnimationFrame(fire);else setTimeout(fire,0)}catch(e){try{setTimeout(fire,0)}catch(_e){}}
 }
-/** 预留：只有缓存只读界面真正画出时才可调用。当前启动链没有缓存路径，禁止调用。 */
+/** 缓存只读界面已经画出时调用。未命中的启动不得调用。 */
 function sfPerfCacheRender(){
   sfPerfMark('sf:cache-render');
 }
-/** 启动：接本地服务、扫描、归一、写盘、渲染。耗时标记不改变其中的顺序与结果。 */
+/** 启动阶段痕迹。没有 _bootTrace 时不做任何事。
+ * @param {string} tag */
+function stBootTrace(tag){const t=/** @type {any} */(ST)._bootTrace;if(Array.isArray(t))t.push(tag)}
+/** 给测量工具留一个不含正文的标记。
+ * @param {string} key @param {string|number} val */
+function stBootFlag(key,val){try{if(typeof window!=='undefined')/** @type {any} */(window)[key]=val}catch(e){}}
+/** 提前发起已验证快照并记下耗时。失败变成 null，不抛。
+ * @returns {Promise<{dirs:Object,files:Object}|null>} */
+function stBootStartSnap(){
+  sfPerfMark('sf:snapshot-start');
+  return stSnapshot().then(r=>{
+    sfPerfMark('sf:snapshot-end');
+    sfPerfMeasure('sf:snapshot','sf:snapshot-start','sf:snapshot-end');
+    return (r&&r.dirs&&r.files)?r:null;
+  }).catch(()=>{
+    sfPerfMark('sf:snapshot-end');
+    sfPerfMeasure('sf:snapshot','sf:snapshot-start','sf:snapshot-end');
+    return null;
+  });
+}
+/** 干净的现代数据才允许先画缓存。返回拒绝原因，空串表示可以。
+ * @param {any} scan @param {any} legacy @param {?{text?:string}} setFile
+ * @returns {string} */
+function stCacheReject(scan, legacy, setFile){
+  if(!scan||!scan.doc||!scan.files)return 'shape';
+  if(scan.warns&&scan.warns.length)return 'warn';
+  if(scan.sharedRetired)return 'shared';
+  if(legacy&&(legacy.err||legacy.doc))return 'legacy';
+  if(!setFile||typeof setFile.text!=='string')return 'settings';
+  let setObj=null;
+  try{setObj=JSON.parse(setFile.text)}catch(e){return 'settings'}
+  if(!setObj||typeof setObj!=='object'||Array.isArray(setObj))return 'settings';
+  if(setHasPlainKeys(setObj))return 'plain';
+  const d=scan.doc;
+  const ver=Number(d.schemaVersion)||0;
+  if(d.novels&&Number.isInteger(d.schemaVersion)&&d.schemaVersion>DATA_SCHEMA_VERSION)return 'ahead';
+  if(ver!==DATA_SCHEMA_VERSION)return 'schema';
+  return '';
+}
+/** 归一之后启动是否还要写盘。要写就不展示缓存。
+ * @param {any} scan @returns {boolean} */
+function stCacheWriteback(scan){
+  if(!S||!S.data||!scan||!scan.files){stBootTrace('writeback:nodata');return true}
+  if(S.ui&&S.ui.schemaAhead){stBootTrace('writeback:ahead');return true}
+  if(ST.migrate||ST.sharedRetired||ST.setPlainKeys){stBootTrace('writeback:migrate');return true}
+  if(ST.setHash===''){stBootTrace('writeback:noset');return true}
+  if(ST.scanWarns&&ST.scanWarns.length){stBootTrace('writeback:warn');return true}
+  let proj;
+  try{proj=g3Proj(S.data, scan.paths||ST.paths||new Map())}catch(e){stBootTrace('writeback:proj');return true}
+  for(const [p,text] of proj){
+    const cur=scan.files.get(p);
+    if(!cur||cur.text!==text){stBootTrace('writeback:text');return true}
+  }
+  for(const [p,cur] of scan.files){
+    if(!proj.has(p)&&cur&&!cur.keep){stBootTrace('writeback:extra');return true}
+  }
+  try{
+    const secText=secTextOf(S.data.settings);
+    if(ST.secLast!=null&&secText!==ST.secLast){stBootTrace('writeback:sec');return true}
+  }catch(e){stBootTrace('writeback:sec');return true}
+  return false;
+}
+/** 投影文本，用来判断核对前后内容是否不同。不含哈希。
+ * @param {any} data @param {Map<string,string>|undefined} paths
+ * @returns {string} */
+function stBootDigest(data, paths){
+  try{
+    const proj=g3Proj(data, paths||new Map());
+    const keys=Array.from(proj.keys()).sort();
+    let out='';
+    for(const k of keys)out+=k+'\n'+proj.get(k)+'\n';
+    return out;
+  }catch(e){return '\u0000'}
+}
+/** 记下核对期间用户正在看的路由、书章场景、面板和滚动。
+ * @returns {any} */
+function stBootCaptureView(){
+  const ui=(S&&S.ui)||{};
+  const keys=['view','novelId','sceneId','chatId','settingsTab','res','resW','resNarrow','edL','edR','copilotOpen','cpW','editorTab','codexCat'];
+  /** @type {any} */
+  const out={};
+  for(const k of keys)out[k]=ui[k];
+  try{out._edScroll=ui._edScroll?JSON.parse(JSON.stringify(ui._edScroll)):null}catch(e){out._edScroll=null}
+  out.scrolls=[];
+  try{
+    const main=document.getElementById('main');
+    if(main)out.scrolls.push({id:'main',top:main.scrollTop||0,left:main.scrollLeft||0});
+    if(typeof scrollSnapshot==='function')out.panes=scrollSnapshot();
+  }catch(e){}
+  try{out.winTop=(typeof window!=='undefined'&&window.scrollY)||0}catch(e){out.winTop=0}
+  return out;
+}
+/** 把核对期间的视图放回内存。书或场景已不在新账本里则放下。
+ * @param {any} v */
+function stBootRestoreView(v){
+  if(!v||!S||!S.ui)return;
+  const keys=['view','novelId','sceneId','chatId','settingsTab','res','resW','resNarrow','edL','edR','copilotOpen','cpW','editorTab','codexCat'];
+  for(const k of keys)if(v[k]!==undefined)S.ui[k]=v[k];
+  if(v._edScroll&&typeof v._edScroll==='object')S.ui._edScroll=v._edScroll;
+  if(S.data&&Array.isArray(S.data.novels)&&v.novelId&&!S.data.novels.some((/** @type {any} */ n)=>n&&n.id===v.novelId)){S.ui.novelId=null;S.ui.sceneId=null}
+  if(S.data&&Array.isArray(S.data.scenes)&&v.sceneId&&!S.data.scenes.some((/** @type {any} */ s)=>s&&s.id===v.sceneId&&s.novelId===S.ui.novelId))S.ui.sceneId=null;
+}
+/** @param {any} v */
+function stBootRestoreScroll(v){
+  if(!v)return;
+  try{
+    for(const s of v.scrolls||[]){
+      const el=document.getElementById(s.id);
+      if(el){el.scrollTop=s.top;if(s.left)el.scrollLeft=s.left}
+    }
+    if(typeof scrollRestore==='function'&&v.panes)scrollRestore(v.panes);
+    if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,v.winTop||0);
+  }catch(e){}
+}
+/** 无内容差异时只更新横幅和只读锁，不重建主区。
+ * @returns {void} */
+function stBootReleaseReadonly(){
+  try{
+    const fb=document.getElementById('fldBanner');
+    if(fb){
+      fb.innerHTML=stBannerHTML();
+      if(fb.classList)fb.classList.toggle('on',!!fb.innerHTML);
+      if(document.body&&document.body.classList)document.body.classList.toggle('fld-ro',!!fb.innerHTML);
+    }
+    const sv=document.getElementById('saveState');
+    if(sv)sv.textContent=roReason()?'只读':stSaveLabel();
+    if(roReason()||typeof document.querySelectorAll!=='function')return;
+    document.querySelectorAll('#edContent, .inner').forEach(el=>{
+      if(el&&el.getAttribute&&el.getAttribute('contenteditable')==='false')el.setAttribute('contenteditable','true');
+    });
+    document.querySelectorAll('input,textarea,select,button').forEach(el=>{
+      if(el&&'disabled' in el)/** @type {HTMLInputElement} */(el).disabled=false;
+    });
+  }catch(e){}
+}
+/** 缓存命中且数据干净时画出只读界面，并在后台核对。否则返回 false，不画缓存。
+ * @param {Promise<{dirs:Object,files:Object}|null>} snapP
+ * @returns {Promise<boolean>} */
+async function stBootFromCache(snapP){
+  let cache=null;
+  try{cache=await stCachedSnapshot()}catch(e){
+    if(/** @type {any} */(e).code==='cache-miss')cache=null;
+    else throw e;
+  }
+  if(!cache){stBootTrace('miss');stBootFlag('__sfCacheSkip','miss');return false}
+  let set=/** @type {any} */(null),sec=/** @type {any} */(null),secErr=/** @type {any} */(null),secUnsup=false,legacy=/** @type {any} */(null);
+  if(stSecOk()){
+    try{sec=await stSecRead(SEC_NAME)}catch(e){if(/** @type {any} */(e).code==='secret-unreadable')secErr=e;else throw e}
+  }else secUnsup=true;
+  set=await stRead(DF_SET);
+  try{legacy=await g3LegacyRead()}catch(e){legacy={err:/** @type {any} */(e)}}
+  const scan=await g3ScanSnapshot(cache,{verCap:SC_VER_CAP_MAX,perfBoot:false});
+  const why=stCacheReject(scan,legacy,set);
+  if(why){stBootTrace('reject:'+why);stBootFlag('__sfCacheSkip',why);return false}
+  const applied=await stLoadApply(true,{set,scan,legacy,sec,secErr,secUnsup,skipFont:true});
+  if(applied===false)return false;
+  if(stCacheWriteback(scan)){
+    stBootTrace('reject:writeback');
+    stBootFlag('__sfCacheSkip','writeback');
+    ST.bootPhase='loading';
+    ST.ready=false;
+    return false;
+  }
+  ST.bootPhase='cached';
+  ST.ready=false;
+  stBootTrace('cached');
+  stBootNote('正在打开…');
+  try{if(typeof hoWarmAll==='function')hoWarmAll()}catch(e){}
+  try{if(typeof applyInitialHash==='function')applyInitialHash()}catch(e){}
+  let painted=false;
+  try{render();painted=true}catch(e){try{console.error('[SF] cache render',e)}catch(_e){}}
+  if(!painted){ST.bootPhase='loading';ST.ready=false;stBootFlag('__sfCacheSkip','render');return false}
+  sfPerfCacheRender();
+  if(String(stBannerHTML()).indexOf('正在核对磁盘')>=0&&ST.ready===false)stBootFlag('__sfVerifyLocked',1);
+  try{if(typeof appearAutoArm==='function')appearAutoArm()}catch(e){}
+  stBootVerify(snapP);
+  return true;
+}
+/** 后台完整扫描提交。先换成当次磁盘账本，再开写闸。缓存哈希不得成为 baseHash。
+ * @param {Promise<{dirs:Object,files:Object}|null>} snapP
+ * @returns {Promise<void>} */
+async function stBootVerify(snapP){
+  let snap=null;
+  try{snap=await snapP}catch(e){snap=null}
+  let scan=null;
+  try{scan=await g3ScanSnapshot(snap,{verCap:SC_VER_CAP_MAX,onRead:stBootScanHook(),perfBoot:false})}
+  catch(e){
+    ST.lastErr='核对磁盘失败：'+((/** @type {any} */(e).message)||e);
+    try{stBootReleaseReadonly()}catch(_e){}
+    return;
+  }
+  let set=/** @type {any} */(null),sec=/** @type {any} */(null),secErr=/** @type {any} */(null),secUnsup=false,legacy=/** @type {any} */(null);
+  try{
+    if(stSecOk()){
+      try{sec=await stSecRead(SEC_NAME)}catch(e){if(/** @type {any} */(e).code==='secret-unreadable')secErr=e;else throw e}
+    }else secUnsup=true;
+    set=await stRead(DF_SET);
+    legacy=await g3LegacyRead();
+  }catch(e){
+    ST.lastErr='核对磁盘失败：'+((/** @type {any} */(e).message)||e);
+    try{stBootReleaseReadonly()}catch(_e){}
+    return;
+  }
+  const view=stBootCaptureView();
+  const before=stBootDigest(S&&S.data, ST.paths);
+  const applied=await stLoadApply(false,{set,scan,legacy,sec,secErr,secUnsup,skipFont:true});
+  if(applied===false){ST.lastErr=ST.lastErr||'核对磁盘失败';try{stBootReleaseReadonly()}catch(_e){}return}
+  stBootRestoreView(view);
+  if(typeof handoffHashMigrate==='function'&&!(S&&S.ui&&S.ui.schemaAhead)){try{await handoffHashMigrate()}catch(e){}}
+  const after=stBootDigest(S&&S.data, ST.paths);
+  const differ=before!==after;
+  stBootTrace('files');
+  if(differ){
+    try{render()}catch(e){}
+    stBootRestoreScroll(view);
+    try{toast('核对时发现磁盘内容与缓存不一致，已按磁盘更新',8000)}catch(e){}
+    stBootTrace('diff');
+  }
+  ST.bootPhase='verified';
+  ST.ready=true;
+  stBootTrace('verified');
+  sfPerfMark('sf:write-start');
+  if(ST.migrate)await g3Migrate(stBootWriteHook);
+  else await stFlush(true,false,stBootWriteHook);
+  sfPerfMark('sf:write-end');
+  sfPerfMeasure('sf:write','sf:write-start','sf:write-end');
+  if(ST.sharedRetired&&!roReason()&&!ST.lastErr&&!ST.conflict)
+    try{toast('旧共享设定已清理：'+ST.sharedRetired+' 个旧文件已移入数据夹回收站（可回溯，不再进入任何作品）',8000)}catch(e){}
+  try{stBootReleaseReadonly()}catch(e){}
+  try{if(ST.ready)sfPerfArmVerified()}catch(e){}
+  if(typeof appearFontScan==='function'){try{appearFontScan()}catch(e){}}
+  try{if(typeof appearAutoArm==='function')appearAutoArm()}catch(e){}
+  try{if(typeof mcpEnsureConnected==='function'){const p=mcpEnsureConnected({quiet:true});if(p&&typeof p.catch==='function')p.catch(()=>{})}}catch(e){}
+  if(ST.scanWarns&&ST.scanWarns.length)setTimeout(()=>{try{toast('⚠ 打开数据文件夹时有 '+ST.scanWarns.length+' 处跳过项：'+ST.scanWarns[0],9000)}catch(e){}},600);
+}
+/** 启动：无缓存走完整核验；有干净缓存时先画只读界面，再后台核验。未命中不打缓存标记。 */
 async function stBoot(){
   ST.mode=stForm();
+  ST.bootPhase='loading';
+  ST.ready=false;
   if(ST.mode!=='local'){stGuidePage(ST.mode);return}   // file:// 等非本服务来源：只读引导页，不进应用
   const m=document.getElementById('main');
   if(m)m.innerHTML='<div class="page"><h1 class="pt" id="bootProg">正在连接本地服务…</h1><p class="pd" id="bootProgSub">正在连接本地服务…</p></div>';
@@ -2430,7 +2723,13 @@ async function stBoot(){
   try{info=await stStatus()}catch(e){stGuidePage('noservice',e);return}
   ST.info=info;ST.port=info.port||ST.port;ST.dataRoot=info.dataRoot||'';
   if(!info.configured||!info.dataOk){stGuidePage('setup');return}
+  const snapP=stBootStartSnap();
+  let shown=false;
+  try{shown=await stBootFromCache(snapP)}catch(e){stGuidePage('readfail',e);return}
+  if(shown)return;
+  stBootHeldSnap=await snapP;
   if((await stLoad(true))===false)return;
+  ST.bootPhase='verified';
   ST.ready=true;
   sfPerfMark('sf:write-start');
   if(ST.migrate)await g3Migrate(stBootWriteHook);      // G2 旧库文件（_工坊/书库.json）：一次性迁移为结构化文本后退役
@@ -5502,6 +5801,7 @@ async function mcpCallTool(name,argumentsObj){
 }
 
 async function mcpEnsureConnected(opt){
+  if(typeof stBootLocked==='function'&&stBootLocked())return {ok:false,reason:'boot-locked'};
   const quiet=!!(opt&&opt.quiet);
   const cfg=mcpSettings();
   if(!cfg.enabled)return {ok:false,reason:'disabled'};
@@ -7290,17 +7590,28 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
   out.entryImages=await g3ScanEntryImages(files,warns,dir+'/'+G3_DIR.image,n.id);
   return out;
 }
-/** 扫描数据夹重建文档。perfBoot 只给启动打快照耗时，不改变扫描结果。 */
+/** 取已验证快照再重建。快照失败时仍逐文件读取，不改扫描结果。perfBoot 只记快照耗时。
+ * @param {{verCap?:number,onRead?:Function,perfBoot?:boolean}} [opts]
+ * @returns {Promise<{doc:any,files:Map<string,{text:string,hash:string,keep:boolean}>,warns:string[],paths:Map<string,string>,books:number,sharedRetired:number}>} */
 async function g3Scan(opts){
+  const perfBoot=!!(opts&&opts.perfBoot);
+  if(perfBoot)sfPerfMark('sf:snapshot-start');
+  let snap=null;
+  try{const r=await stSnapshot(); if(r&&r.dirs&&r.files)snap=r}catch(e){snap=null}
+  if(perfBoot){sfPerfMark('sf:snapshot-end');sfPerfMeasure('sf:snapshot','sf:snapshot-start','sf:snapshot-end')}
+  return g3ScanSnapshot(snap, opts);
+}
+/** 用一份快照重建文档、文件账本、路径、警告和 schema 材料。缓存与已验证路径都走这里。
+ * @param {{dirs?:Object,files?:Object}|null} snapshot
+ * @param {{verCap?:number,onRead?:Function,perfBoot?:boolean}} [opts]
+ * @returns {Promise<{doc:any,files:Map<string,{text:string,hash:string,keep:boolean}>,warns:string[],paths:Map<string,string>,books:number,sharedRetired:number}>} */
+async function g3ScanSnapshot(snapshot, opts){
   const files=new Map(),warns=[],paths=new Map();   // paths＝id→段名（路径名稳定：改标题不搬文件）
   const onRead=opts&&typeof opts.onRead==='function'?opts.onRead:null;
   if(onRead)files.sfOnRead=onRead;   // 票06：读进度挂在本次文件表上，扫完即拆，不留给后续写盘
-  const prevSnap=g3Snap; g3Snap=null;
+  const prevSnap=g3Snap;
+  g3Snap=(snapshot&&snapshot.dirs&&snapshot.files)?snapshot:null;
   try{
-    const perfBoot=!!(opts&&opts.perfBoot);
-    if(perfBoot)sfPerfMark('sf:snapshot-start');
-    try{const r=await stSnapshot(); if(r&&r.dirs&&r.files)g3Snap=r}catch(e){g3Snap=null}
-    if(perfBoot){sfPerfMark('sf:snapshot-end');sfPerfMeasure('sf:snapshot','sf:snapshot-start','sf:snapshot-end')}
   const doc={schemaVersion:0,novels:[],acts:[],chapters:[],scenes:[],codexCategories:[],codexEntries:[],snippets:[],foreshadows:[],chats:[],chatSessions:[],tagDefs:[],recycleBin:[]};
   doc.assistants=[];
   doc.entryImages=[];
@@ -7396,6 +7707,7 @@ async function g3RetireLegacy(){   // 旧库文件移入回收站（迁移成功
 }
 /* 迁移执行（stBoot 调用）：先写结构化文本，确认零失败再退役旧库文件；任一环节失败即保留旧库文件、如实报 */
 async function g3Migrate(onProg){
+  if(stBootLocked())return;
   const kind=ST.migrate;ST.migrate=0;
   if(kind===2){                                        // 空壳旧库：直接退役
     const ok=await g3RetireLegacy();
@@ -10671,6 +10983,7 @@ function budgetLine(a){
  * @returns {Promise<Response>}
  */
 async function aiProxyFetch(path,payload,signal,meta){
+  if(typeof stBootLocked==='function'&&stBootLocked())throw new Error('正在核对磁盘，编辑暂不可用');
   if(path==='/api/ai/chat'){await devInterceptHold('ai',payload,meta,signal);devLogGate('ai',payload,meta);}
   const st=S.data.settings;
   return fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-SF-Token':SF_TOKEN},signal,
@@ -21083,6 +21396,7 @@ function reviewAiApplyPreset(id){
  * @returns {Promise<Response>}
  */
 async function reviewAiProxyFetch(absolute, payload, signal, meta){
+  if(typeof stBootLocked==='function'&&stBootLocked())throw new Error('正在核对磁盘，编辑暂不可用');
   await devInterceptHold('review',payload,meta,signal);   // 开发者模块票02：拦截与记录同一出入口（skip 沿用排除）
   devLogGate('review',payload,meta);
   const c=reviewAiCfg();
@@ -24500,6 +24814,7 @@ document.addEventListener('click',async e=>{
     if(dest==='ref'&&!plan.novelId){toast('请选择要存入的小说');break}
     try{
       const r=applyImport(dest,plan);
+      if(!r)break;
       S.ui._imp=null;closeModal();
       toast(dest==='book'?('已建书《'+title+'》：'+imp.split.counts.acts+'卷 '+imp.split.counts.chapters+'章 '+imp.split.counts.scenes+'场景'):('已存入「参考资料」：'+title));
       /* S15「导入后自动提取」跟进（ANW P2-4 AI 段）：只发出提议，不自动外发——后续还有外发确认与候选二次确认，取消任一步零提交 */
@@ -25245,6 +25560,7 @@ function openImportPreview(){
   <div class="foot"><button class="btn" data-act="imp-cancel">取消</button><button class="btn pri" data-act="imp-confirm">确认导入</button></div>`,null,{guard:{title:'放弃本次导入？',body:'已核对的内容不写入。'}});
 }
 function applyImport(dest,plan){
+  if(typeof stBootLocked==='function'&&stBootLocked()){try{roToast()}catch(e){}return null}
   if(dest==='book'){const nid=importBuildBook(plan);S.ui.novelId=nid;S.ui.sceneId=null;S.ui.res=null;S.ui.resNarrow=true;S.ui.snipQ='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui._styCal=null;S.ui._styCalDraft=null;if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}S.ui._styCalToken=(S.ui._styCalToken||0)+1;save();render();return{kind:'book',novelId:nid}}   // S21 复核 N-1：导入切入同款清校准瞬态；票21：导入建书按打开已有作品处理（窄栏、选项清空）；票38 复核 L1：导入建书同批清片段/设定查询（新书不带旧查询）
   if(dest==='ref'){const eid=importSaveMaterial(plan);save();render();return{kind:'ref',novelId:plan.novelId,entryId:eid}}
   throw new Error('未知导入目标');
@@ -27160,6 +27476,7 @@ async function exportNovelJson(nid,withSnapshot){
   return ex;
 }
 function importData(j){
+  if(typeof stBootLocked==='function'&&stBootLocked()){try{roToast()}catch(e){}return {ok:false,msg:'正在核对磁盘'}}
   if(j._format==='novel-studio-import-v1'||j.novels){
     /* 映射表一律用 Map（BG-050）：普通对象 `idMap['__proto__']` 会取到/污染 Object.prototype，畸形 id 可致 novelId/引用变对象 */
     const idMap=new Map();
