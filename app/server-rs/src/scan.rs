@@ -244,11 +244,15 @@ fn perf_enabled(raw: Option<&str>) -> bool {
 }
 
 pub fn snapshot(app: &App) -> Result<Value, Bad> {
-    Ok(build_snapshot(app, &FsRead, scan_workers(), DEFAULT_LIMITS)?.value)
+    let built = build_snapshot(app, &FsRead, scan_workers(), DEFAULT_LIMITS)?;
+    crate::startup_cache::remember_snapshot(app, &built.value);
+    Ok(built.value)
 }
 
 pub fn snapshot_parts(app: &App) -> Result<SnapshotParts, Bad> {
     let built = build_snapshot(app, &FsRead, scan_workers(), DEFAULT_LIMITS)?;
+    // 磁盘上的缓存副本放到调用方的关键路径之外；这里只换内存。
+    crate::startup_cache::remember_snapshot(app, &built.value);
     let started = Instant::now();
     let body = serde_json::to_vec(&built.value).map_err(|e| bad(500, "internal", format!("JSON: {e}")))?;
     let mut metrics = built.metrics;
@@ -311,9 +315,10 @@ fn enumerate(root: &Path, real_root: &Path, facts: &ScanFacts) -> (Map<String, V
         }
         if e.name == "_工坊" {
             let all = list_dir(root, real_root, &e.abs, e.saw, &mut dirs);
+            // 缓存目录是派生物。推进快照会自包含，目录清单和指纹都会漂。
             let kept: Vec<Node> = all
                 .into_iter()
-                .filter(|n| n.name != "机密" && n.name != "回收站")
+                .filter(|n| n.name != "机密" && n.name != "回收站" && n.name != "缓存")
                 .collect();
             if let Some(key) = rel_key(root, &e.abs) {
                 dirs.insert(key, Value::Array(kept.iter().map(entry_json).collect()));
@@ -649,6 +654,15 @@ fn rel_key(root: &Path, path: &Path) -> Option<String> {
         }
     }
     Some(parts.join("/"))
+}
+
+pub(crate) fn enumerated_dirs(root: &Path, real_root: &Path) -> Map<String, Value> {
+    let facts = ScanFacts::collect(root);
+    enumerate(root, real_root, &facts).0
+}
+
+pub(crate) fn mtime_seconds(meta: &std::fs::Metadata) -> f64 {
+    mtime_of(meta)
 }
 
 fn mtime_of(meta: &std::fs::Metadata) -> f64 {
@@ -1007,6 +1021,7 @@ mod tests {
             shell: false,
             origins: HashSet::new(),
             hosts: HashSet::new(),
+            startup_cache: crate::startup_cache::Cache::new(),
         }
     }
 

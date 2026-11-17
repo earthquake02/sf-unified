@@ -35,6 +35,8 @@ pub struct App {
     pub shell: bool,
     pub origins: HashSet<String>,
     pub hosts: HashSet<String>,
+    /// 按当前数据根隔离。换根时先尽力落盘旧副本，再丢掉内存态。
+    pub startup_cache: crate::startup_cache::Cache,
 }
 
 impl App {
@@ -50,6 +52,15 @@ impl App {
 
     pub fn install_data(&self, path: PathBuf) {
         let real = crate::gate::try_realpath(&path).unwrap_or_else(|| path.clone());
+        let switching = match self.data_snapshot() {
+            Some((_, old_real)) => !crate::lock::same_root(&old_real, &real),
+            None => false,
+        };
+        // 先把旧根的缓存写完再丢掉。新根要等下一次完整快照才重建。
+        if switching {
+            crate::startup_cache::flush_best_effort(self);
+            crate::startup_cache::invalidate(self);
+        }
         let mut guard = self.data.lock().unwrap_or_else(|e| e.into_inner());
         *guard = Some(DataRoot { path, real });
     }

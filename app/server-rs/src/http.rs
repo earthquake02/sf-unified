@@ -99,9 +99,11 @@ pub async fn dispatch(State(app): State<Arc<App>>, req: Request<Body>) -> Respon
         return finish(reply, head);
     }
 
-    // 快照读盘离开异步线程，探活才不会被整夹扫描堵住。
+    // 快照和启动缓存的目录枚举离开异步线程，探活才不会被堵住。
     let reply = if method == Method::GET && path == "/api/fs/snapshot" {
         snapshot_route(Arc::clone(&app)).await
+    } else if method == Method::GET && path == "/api/fs/startup-cache" {
+        startup_cache_route(Arc::clone(&app)).await
     } else if method == Method::GET && path == "/api/mcp/status" {
         mcp_status().await
     } else if method == Method::POST && path == "/api/mcp/probe" {
@@ -245,6 +247,13 @@ async fn snapshot_route(app: Arc<App>) -> Reply {
             reply.server_timing = Some(parts.metrics.server_timing());
             reply
         }
+        Err(e) => from_bad(e),
+    }
+}
+
+async fn startup_cache_route(app: Arc<App>) -> Reply {
+    match off_runtime(move || crate::startup_cache::load(&app)).await {
+        Ok(body) => json(200, &body, false),
         Err(e) => from_bad(e),
     }
 }
@@ -422,7 +431,7 @@ fn configure(app: &App, raw: &[u8]) -> Reply {
     }
     if let Some((old_path, old_real)) = old {
         if !crate::lock::same_root(&old_real, &new_real) {
-            crate::lock::release(app, &old_path);
+            crate::startup_cache::release_data(app, &old_path);
         }
     }
     json(200, &serde_json::json!({"ok": true, "dataRoot": path_text(&path), "created": created}), false)
@@ -1273,6 +1282,7 @@ mod tests {
             shell: false,
             origins: HashSet::new(),
             hosts: HashSet::new(),
+            startup_cache: crate::startup_cache::Cache::new(),
         }
     }
 

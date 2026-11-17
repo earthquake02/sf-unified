@@ -52,6 +52,8 @@ pub fn write_file(app: &App, raw: &[u8]) -> Result<Value, gate::Bad> {
         }
     }
     fsops::atomic_write(&target, &data).map_err(gate::io_bad)?;
+    let rel_path = parts.join("/");
+    crate::startup_cache::after_write(app, &rel_path, text);
     Ok(json!({
         "ok": true,
         "path": parts.join("/"),
@@ -79,6 +81,7 @@ pub fn mkdir(app: &App, raw: &[u8]) -> Result<Value, gate::Bad> {
     // Python 口径：建目录失败（含占用）统一 500 mkdir-failed，不说成忙。
     std::fs::create_dir_all(&target)
         .map_err(|e| gate::bad(500, "mkdir-failed", format!("建文件夹失败：{e}")))?;
+    crate::startup_cache::after_mkdir(app, &parts.join("/"));
     Ok(json!({ "ok": true, "path": parts.join("/"), "created": true }))
 }
 
@@ -101,6 +104,7 @@ pub fn delete(app: &App, raw: &[u8]) -> Result<Value, gate::Bad> {
     }
     fsops::replace_retry(&target, &dest).map_err(fail)?;
     let dir = std::fs::metadata(&dest).map(|m| m.is_dir()).unwrap_or(false);
+    crate::startup_cache::after_delete(app, &parts.join("/"));
     Ok(json!({
         "ok": true,
         "path": parts.join("/"),

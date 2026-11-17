@@ -75,7 +75,7 @@ impl OwnedServer {
             let _ = tx.send(());
         }
         if let Some((root, _)) = self.app.data_snapshot() {
-            crate::lock::release(&self.app, &root);
+            crate::startup_cache::release_data(&self.app, &root);
         }
     }
 }
@@ -226,7 +226,7 @@ fn launch(app: &tauri::AppHandle, args: &Args) -> Result<(), String> {
 
 fn release_now(app: &App) {
     if let Some((root, _)) = app.data_snapshot() {
-        crate::lock::release(app, &root);
+        crate::startup_cache::release_data(app, &root);
     }
 }
 

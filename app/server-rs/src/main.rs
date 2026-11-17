@@ -28,6 +28,7 @@ mod search;
 mod secret;
 mod shell;
 mod skillmeta;
+mod startup_cache;
 mod state;
 mod upstream;
 mod util;
@@ -65,7 +66,7 @@ struct DataLockGuard<'a>(&'a App);
 impl Drop for DataLockGuard<'_> {
     fn drop(&mut self) {
         if let Some((root, _)) = self.0.data_snapshot() {
-            lock::release(self.0, &root);
+            startup_cache::release_data(self.0, &root);
         }
     }
 }
@@ -193,6 +194,7 @@ pub(crate) fn boot_server(args: &Args, shell_mode: bool) -> Result<BootEarly, St
         shell: shell_mode,
         origins,
         hosts,
+        startup_cache: startup_cache::Cache::new(),
     });
 
     if !args.data.is_empty() {
@@ -220,7 +222,7 @@ pub(crate) fn boot_server(args: &Args, shell_mode: bool) -> Result<BootEarly, St
         Ok(listener) => listener,
         Err(e) => {
             if let Some((root, _)) = app.data_snapshot() {
-                lock::release(&app, &root);
+                startup_cache::release_data(&app, &root);
             }
             return Err(format!("监听 127.0.0.1:{port} 失败：{e}"));
         }

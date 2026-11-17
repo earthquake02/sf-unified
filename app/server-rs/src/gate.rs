@@ -791,6 +791,7 @@ mod tests {
             shell: false,
             origins: std::collections::HashSet::new(),
             hosts: std::collections::HashSet::new(),
+            startup_cache: crate::startup_cache::Cache::new(),
         }
     }
 
