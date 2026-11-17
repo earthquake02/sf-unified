@@ -14024,7 +14024,7 @@ const GUIDE_GROUPS = [
           "回写作页打开 AI，在发送前的确认态勾选本次要用的项。",
           "文风蒸馏完成后，新 Skill 会出现在同一列表（见「文风蒸馏」）。",
         ],
-        tip: "技能按作品隔离。没用的先停用，减少助手上下文噪音。",
+        tip: "我的技能跨书共享；文风 Skill 由对应作品蒸馏生成、仅随该书改写预勾关联。没用的先停用，减少助手上下文噪音。",
         related: ["ai-panel", "style-learn", "writing", "settings-page"]
       },
       {
@@ -16481,7 +16481,7 @@ let CP_SKILL_TRIG_T=0;
  * 解析 SKILL.md：头部 `---` frontmatter（`key: value` 行；`适用`/`triggers` 收 [a, b]／逗号串，`适用` 的 id 与中文标签双认）＋正文（去头后全文）。
  * 极简口径，不做完整 YAML；无 frontmatter 时整文件即正文。
  * @param {string} text
- * @returns {{name:string,desc:string,cats:string[],triggers:string[],body:string}}
+ * @returns {{name:string,desc:string,cats:string[],triggers:string[],novelId:string,body:string}}
  */
 function cpSkillParse(text){
   const t=String(text||'');
@@ -16516,6 +16516,72 @@ function cpSkillFnId(v){
   if(s==='续写'||s==='成文')return'continue';
   if(s==='整理推演'||s==='整理提取')return'organize';
   return'';
+}
+
+/**
+ * 技能编辑·文本重建（v1-5 票01）：只替换**生效**的 name／名称、description／描述 字段值与闭合 frontmatter
+ * 后的正文；其余头部行（适用、triggers、novelId、source、version 及未知字段）原样保留、顺序不变。
+ * 同名键多行时替换**最后一次**出现（cpSkillParse 的 raw 后行覆盖前行口径——改的正是解析生效的那行），
+ * 被遮蔽的前行按未知字段保留；生效键整块缺失时补写（name 补在头部最前、description 紧随其后）。
+ * 无 frontmatter 时补最小头部（name＋description＋闭合 ---）。换行随原文（CRLF／LF）。
+ * @param {string} text 原文件全文
+ * @param {string} name 新显示名称（写入原值，不做 trim）
+ * @param {string} desc 新简介
+ * @param {string} body 新正文
+ * @returns {string} 新文件全文
+ */
+function skillEditApply(text,name,desc,body){
+  const t=String(text||'');
+  const nm=String(name||''),ds=String(desc||''),bd=String(body||'');
+  const eol=t.includes('\r\n')?'\r\n':'\n';
+  const m=/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*)$/.exec(t);
+  if(!m){   // 无 frontmatter：整文件即正文，补最小头部
+    const head=['---','name: '+nm,'description: '+ds,'---'].join(eol);
+    return bd===''?head+eol:head+eol+eol+bd;
+  }
+  const lines=m[1].split(/\r?\n/);
+  /** @param {string} line @returns {{k:string,raw:string,sep:string,lead:string}|null} */
+  const kvOf=line=>{
+    const lead=(/^[\t ]*/.exec(line)||[''])[0];
+    const kv=/^([A-Za-z_\u4e00-\u9fff][\w\u4e00-\u9fff-]*)(\s*[:：]\s*)(.*)$/.exec(line.trim());
+    return kv?{k:kv[1].toLowerCase(),raw:kv[1],sep:kv[2],lead}:null;
+  };
+  /** @param {string} key @returns {number} 该键最后出现行号（无＝-1） */
+  const lastIdx=key=>{let r=-1;for(let i=0;i<lines.length;i++){const p=kvOf(lines[i]);if(p&&p.k===key)r=i}return r};
+  /** @param {number} i @param {string} val */
+  const setVal=(i,val)=>{const p=kvOf(lines[i]);if(p)lines[i]=p.lead+p.raw+p.sep+val};
+  let ni=lastIdx('name');if(ni<0)ni=lastIdx('名称');
+  let di=lastIdx('description');if(di<0)di=lastIdx('描述');
+  if(ni>=0)setVal(ni,nm);
+  else{lines.unshift('name: '+nm);if(di>=0)di++}   // 补 name 在最前：已有 description 行号随插入偏移
+  const nameAt=ni>=0?ni:0;
+  if(di>=0)setVal(di,ds);
+  else lines.splice(nameAt+1,0,'description: '+ds);
+  const rawBody=m[2];
+  const stripped=rawBody.replace(/^\r?\n+/,'');
+  const sep=stripped===rawBody?'':eol;   // 闭合 --- 后原文有空行→保留一个；紧贴→仍紧贴
+  if(bd==='')return '---'+eol+lines.join(eol)+eol+'---'+eol;
+  return '---'+eol+lines.join(eol)+eol+'---'+eol+sep+bd;
+}
+
+/**
+ * 技能编辑·保存前构建与校验（v1-5 票01）：门禁与导入口径一致——NUL 拒存、整文件 ≤64KB、
+ * 正文 ≤8000 tok（不叠加文风 Skill 的「正文至少 400 字」下限）。err 非空＝拒存。
+ * @param {string} origText 打开时的原文件全文
+ * @param {string} name 新显示名称
+ * @param {string} desc 新简介
+ * @param {string} body 新正文
+ * @returns {{newText:string,tok:number,bytes:number,err:string}}
+ */
+function skillEditBuild(origText,name,desc,body){
+  const newText=skillEditApply(origText,name,desc,body);
+  const tok=estimateTokens(cpSkillParse(newText).body);
+  const bytes=stByteLen(newText);
+  let err='';
+  if(String(name).includes('\0')||String(desc).includes('\0')||String(body).includes('\0'))err='内容含 NUL 字节，不是纯文本，未保存';   // \0＝NUL 转义（两字面字符）
+  else if(bytes>CP_SKILL_IMP_MAX_BYTES)err='保存后文件将超 64KB（约 '+(bytes/1024).toFixed(1)+'KB）：请删减或拆成多个技能';
+  else if(tok>CP_SKILL_IMP_MAX_TOK)err='正文 ≈'+tok+' tok，超过 '+CP_SKILL_IMP_MAX_TOK+' tok 上限：请删减或拆成多个技能';
+  return {newText,tok,bytes,err};
 }
 
 /** 产品／功能默认技能预勾选：不静默强制已有选择；停用列表内的跳过。 */
@@ -22112,6 +22178,7 @@ function vSkills(){
       <input type="checkbox" data-skill-dis="${esc(s.id)}" ${off?'':'checked'} ${ro?'disabled':''} title="启用/停用：停用后装载列表与触发推荐均不出现" style="width:auto;margin:3px 0 0">
       <span style="flex:1;min-width:0"><b style="font-weight:600">${esc(s.name)}</b> <span class="hint">${s.layer==='builtin'?'内置':'我的'} · ${esc(cats)} · ≈${s.tokens} tok${(typeof CP_SKILL_DEFAULT_IDS!=='undefined'&&CP_SKILL_DEFAULT_IDS.includes(s.id))?' · 默认':''}${(s.id==='builtin:deslop-wangwen')?' · 改写/文风推荐':''}</span>${s.desc?`<div class="hint" style="margin:1px 0 0">${esc(s.desc)}</div>`:''}</span>
       <button type="button" class="btn sm" data-act="skill-view" data-v="${esc(s.id)}">查看内容</button>
+      ${s.layer==='builtin'?'':`<button type="button" class="btn sm" data-act="skill-edit" data-v="${esc(s.id)}" ${ro?'disabled':''} title="编辑显示名称／简介／正文；目录名（稳定标识 user:${esc(s.dir)}）、其余头部字段与 references 不变">编辑</button>`}
       ${s.layer==='builtin'?`<button type="button" class="btn sm" data-act="skill-clone" data-v="${esc(s.dir)}" ${ro?'disabled':''} title="复制到「我的」层（_工坊/技能/${esc(s.dir)}/SKILL.md），之后可改可删">克隆</button>`:`<button type="button" class="btn sm danger" data-act="skill-del" data-v="${esc(s.dir)}" ${ro?'disabled':''} title="删除进回收站，可还原">删除</button>`}
     </div>`;
   }).join('');
@@ -22201,6 +22268,126 @@ async function skillDelete(dir){
   closeModal();
   toast('已删除（进回收站，可还原）');
   cpSkillEnsure(true).then(()=>{if(S.ui.view==='settings'&&settingsTab()==='skills')render()});
+}
+/**
+ * 技能编辑弹层（v1-5 票01）：仅「我的」层（内置只读，无编辑入口）。打开时读全文＋盘上哈希；
+ * 目录名只读展示（`user:<dir>` 稳定身份，不随显示名称变）；名称／简介／正文可编辑；
+ * 文风 Skill（任一书的 styleSkillId／style-<id> 目录／frontmatter novelId 命中）提示再次蒸馏会覆盖手改。
+ * 重名只作非阻塞提醒；保存走 skillEditSave。
+ * @param {string} id 技能 id（user:<dir>）
+ * @returns {Promise<void>}
+ */
+async function skillEditOpen(id){
+  if(roReason()){roToast();return}
+  const it=CP_SKILLS&&CP_SKILLS.items.find(s=>s.id===id);
+  if(!it||it.layer!=='user')return;
+  /** @type {{text:string,hash:string,bytes:number,mtime:number}|null} */
+  let f=null;
+  try{f=await SF_TPLS.http.read(CP_SKILL_DIR+'/'+it.dir+'/SKILL.md')}
+  catch(e){toast('读取失败：'+(e instanceof Error?e.message:String(e)));return}
+  if(!f||f.text==null){toast('技能文件不存在（可能已被删除），可先点「↻ 重扫」');return}
+  S.ui._skillEdit={id:it.id,dir:it.dir,hash:String(f.hash||''),text:String(f.text||'')};
+  openModal(skillEditHTML(),()=>{
+    /** 名称／简介／正文任一输入→就地刷新读数、重名提醒与保存钮可用态 */
+    const upd=()=>{
+      const ed=S.ui._skillEdit;if(!ed)return;
+      const nmEl=/** @type {HTMLInputElement|null} */($('#skill-ed-name'));
+      const dsEl=/** @type {HTMLInputElement|null} */($('#skill-ed-desc'));
+      const bdEl=/** @type {HTMLTextAreaElement|null} */($('#skill-ed-body'));
+      if(!nmEl||!dsEl||!bdEl)return;
+      const b=skillEditBuild(ed.text,nmEl.value,dsEl.value,bdEl.value);
+      const st=$('#skill-ed-stat'),dup=$('#skill-ed-dup'),btn=$('#skill-ed-save');
+      if(st)st.textContent='正文 ≈'+b.tok+' tok · 保存后 ≈'+(b.bytes/1024).toFixed(1)+'KB（上限 '+CP_SKILL_IMP_MAX_TOK+' tok／64KB）';
+      const nm=nmEl.value.trim();
+      const dupHit=!!nm&&!!CP_SKILLS&&CP_SKILLS.items.some(s=>s.id!==ed.id&&s.name===nm);
+      if(dup)dup.style.display=dupHit?'':'none';
+      const btnEl=/** @type {HTMLButtonElement|null} */(btn);
+      if(btnEl)btnEl.disabled=!!b.err;
+    };
+    for(const eid of ['skill-ed-name','skill-ed-desc','skill-ed-body']){
+      const el=$('#'+eid);if(el)el.addEventListener('input',upd);
+    }
+    upd();
+  });
+}
+/**
+ * 技能编辑弹层 HTML（v1-5 票01）：只读目录名＋三可编辑字段＋实时读数／重名提醒＋文风覆盖提示＋
+ * 取消／重新读取（冲突后取回盘上最新版）／保存。
+ * @returns {string}
+ */
+function skillEditHTML(){
+  const ed=S.ui._skillEdit;
+  if(!ed)return'';
+  const p=cpSkillParse(ed.text);
+  const novs=(S.data&&Array.isArray(S.data.novels))?S.data.novels:[];
+  const styleNov=novs.find((/** @type {any} */ n)=>n&&n.id&&(String(n.styleSkillId||'')===ed.id||styleDirOf(n.id)===ed.dir||String(p.novelId||'')===String(n.id)));
+  return `<h3 style="margin:0 0 8px">编辑技能 <span class="hint">我的 · <span class="mono">${esc(ed.dir)}</span></span></h3>
+  <div class="hint" style="margin:0 0 8px">目录名只读（技能稳定标识，勾选／停用／文风预勾都挂它）；保存只改名称／简介／正文，适用、触发词、来源等其余头部字段与 references 原样保留。</div>
+  ${styleNov?`<p style="color:var(--warn);margin:0 0 8px">⚠ 文风 Skill：再次对《${esc(styleNov.title||'未命名')}》运行文风蒸馏会用新结果覆盖此次手改。</p>`:''}
+  <label class="f">显示名称</label>
+  <input type="text" id="skill-ed-name" value="${esc(p.name)}" placeholder="（留空则列表显示目录名）" style="margin:4px 0 2px">
+  <p class="hint" id="skill-ed-dup" style="display:none;color:var(--warn);margin:0 0 6px">⚠ 已有同名显示名称的技能；仍可保存——目录名才是唯一标识，不影响勾选与装载。</p>
+  <label class="f" style="margin-top:6px">简介</label>
+  <input type="text" id="skill-ed-desc" value="${esc(p.desc)}" style="margin:4px 0 8px">
+  <label class="f">正文</label>
+  <textarea id="skill-ed-body" rows="14" style="margin:4px 0 6px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px">${esc(p.body)}</textarea>
+  <p class="hint" id="skill-ed-stat" style="margin:0 0 8px"></p>
+  <div class="foot"><button type="button" class="btn" data-act="skill-ed-cancel">取消</button> <button type="button" class="btn" data-act="skill-ed-reload" title="放弃表单内容，重新读取盘上最新版本（文件被其他窗口改动后用）">↻ 重新读取</button> <button type="button" class="btn pri" id="skill-ed-save" data-act="skill-ed-save">保存</button></div>`;
+}
+/**
+ * 技能编辑·保存（v1-5 票01）：以打开时哈希作 baseHash 原子写入；冲突不覆盖他方改动、表单草稿保留并
+ * 提示重新读取。成功后按勾选态处理正文缓存（勾选中＝预填新正文，下次装配即用；未勾选＝清旧缓存，
+ * 下次勾选重拉）并强制重扫目录——勾选 id／停用 id／styleSkillId 不动（目录名未变）。重名仅提醒不阻塞。
+ * @returns {Promise<void>}
+ */
+async function skillEditSave(){
+  const ed=S.ui._skillEdit;
+  if(!ed)return;
+  const nmEl=/** @type {HTMLInputElement|null} */($('#skill-ed-name'));
+  const dsEl=/** @type {HTMLInputElement|null} */($('#skill-ed-desc'));
+  const bdEl=/** @type {HTMLTextAreaElement|null} */($('#skill-ed-body'));
+  if(!nmEl||!dsEl||!bdEl)return;
+  const name=nmEl.value,desc=dsEl.value,body=bdEl.value;
+  const b=skillEditBuild(ed.text,name,desc,body);
+  if(b.err){toast(b.err);return}
+  const nm=name.trim();
+  const dup=!!nm&&!!CP_SKILLS&&CP_SKILLS.items.some(s=>s.id!==ed.id&&s.name===nm);
+  try{await SF_TPLS.http.write(CP_SKILL_DIR+'/'+ed.dir+'/SKILL.md',b.newText,ed.hash)}
+  catch(e){
+    if(stIsConflict(e)){toast('技能文件已被其他窗口或程序改动，未覆盖；你的修改仍在本窗，可点「↻ 重新读取」取最新版后再保存',5200);return}
+    toast('保存失败：'+(e instanceof Error?e.message:String(e)));return;
+  }
+  const sid=ed.id;
+  S.ui._skillEdit=null;
+  closeModal();
+  if(cpSkillSel().includes(sid))CP_SKILL_BODY.set(sid,cpSkillParse(b.newText).body);
+  else CP_SKILL_BODY.delete(sid);
+  toast(dup?'已保存（提醒：显示名称与其他技能重复，不影响使用）':'技能已保存');
+  await cpSkillEnsure(true);
+  if(S.ui.view==='settings'&&settingsTab()==='skills')render();
+}
+/**
+ * 技能编辑·重新读取（v1-5 票01，冲突后取回盘上最新版）：换新哈希并把表单三字段替换为最新文件内容
+ * （草稿被显式放弃），随后触发一次 input 让读数与保存钮可用态同步。
+ * @returns {Promise<void>}
+ */
+async function skillEditReload(){
+  const ed=S.ui._skillEdit;
+  if(!ed)return;
+  /** @type {{text:string,hash:string,bytes:number,mtime:number}|null} */
+  let f=null;
+  try{f=await SF_TPLS.http.read(CP_SKILL_DIR+'/'+ed.dir+'/SKILL.md')}
+  catch(e){toast('读取失败：'+(e instanceof Error?e.message:String(e)));return}
+  if(!f||f.text==null){toast('技能文件不存在（可能已被删除）');return}
+  ed.hash=String(f.hash||'');ed.text=String(f.text||'');
+  const p=cpSkillParse(ed.text);
+  const nmEl=/** @type {HTMLInputElement|null} */($('#skill-ed-name'));
+  const dsEl=/** @type {HTMLInputElement|null} */($('#skill-ed-desc'));
+  const bdEl=/** @type {HTMLTextAreaElement|null} */($('#skill-ed-body'));
+  if(nmEl)nmEl.value=p.name;
+  if(dsEl)dsEl.value=p.desc;
+  if(bdEl){bdEl.value=p.body;bdEl.dispatchEvent(new Event('input'))}
+  toast('已重新读取盘上最新版本（表单已更新）');
 }
 /**
  * 导入技能·读文件（设置→技能）：编码嗅探（UTF-8/GBK 等，复用 decodeDocBuffer）＋NUL 拒装＋限长门禁，
@@ -22899,7 +23086,7 @@ function openModal(html,onOpen,opt){selBarHide();const r=$('#modalRoot');r.inner
   r.onclick=e=>{if(e.target!==r||!r.classList.contains('show'))return;if(r._sfGuard)void modalAskClose();else closeModal()};
   if(typeof onOpen==='function')try{onOpen()}catch(e){}
 }
-function closeModal(){const _wasCodex=!!$('#c-name');try{codexLiveFlush(true)}catch(_e){}codexLiveClear();$('#modalRoot').classList.remove('show');$('#modalRoot').innerHTML='';S.ui.orgCandidate=null;S.ui._fixCand=null;S.ui._imp=null;S.ui._entryFig=null;S.ui._charCand=null;S.ui._charSrc=null;S.ui._charPending=null;S.ui._charPick=null;S.ui._charMode=null;S.ui._charRunAsk=null;S.ui._charTypes=null;S.ui._coverStaging='';S.ui._packImp=null;S.ui._cxPackImp=null;S.ui._styCand=null;if(S.ui._hoAbort){S.ui._hoAbort.abort();S.ui._hoAbort=null}if(S.ui._fxAbort){S.ui._fxAbort.abort();S.ui._fxAbort=null}if(S.ui._cxAbort){S.ui._cxAbort.abort();S.ui._cxAbort=null}if(S.ui._styAbort){S.ui._styAbort.abort();S.ui._styAbort=null}wxSplitFz=null;selCodexFz=null;if(_wasCodex)render()}   // 票49：关窗=弃设定包导入预检计划（取消零写入）；外观票04：关窗=弃条目配图暂存（保存才落库）；E：关窗=真放弃交接记忆生成（S10 核验 M6）；S13：关窗=放弃修订候选并中止生成；S14：关窗=放弃导入（零写入）；S15：关窗=放弃角色提取（候选与外发源一并清零，零提交）；票04：关窗清提取范围与分段档（_charPick/_charMode/_charRunAsk，不按书记忆）；S19：关窗=弃封面暂存（保存才落库）；S20：关窗=弃整包暂存（零写入）；S21：关窗=弃画像候选并中止学习（确认前零生效）；票08：关窗=弃拆分切点冻结（取消零写入）；票37：关窗=弃「建设定」冻结态（取消零写入）
+function closeModal(){const _wasCodex=!!$('#c-name');try{codexLiveFlush(true)}catch(_e){}codexLiveClear();$('#modalRoot').classList.remove('show');$('#modalRoot').innerHTML='';S.ui.orgCandidate=null;S.ui._fixCand=null;S.ui._imp=null;S.ui._skillEdit=null;S.ui._entryFig=null;S.ui._charCand=null;S.ui._charSrc=null;S.ui._charPending=null;S.ui._charPick=null;S.ui._charMode=null;S.ui._charRunAsk=null;S.ui._charTypes=null;S.ui._coverStaging='';S.ui._packImp=null;S.ui._cxPackImp=null;S.ui._styCand=null;if(S.ui._hoAbort){S.ui._hoAbort.abort();S.ui._hoAbort=null}if(S.ui._fxAbort){S.ui._fxAbort.abort();S.ui._fxAbort=null}if(S.ui._cxAbort){S.ui._cxAbort.abort();S.ui._cxAbort=null}if(S.ui._styAbort){S.ui._styAbort.abort();S.ui._styAbort=null}wxSplitFz=null;selCodexFz=null;if(_wasCodex)render()}   // 票49：关窗=弃设定包导入预检计划（取消零写入）；外观票04：关窗=弃条目配图暂存（保存才落库）；E：关窗=真放弃交接记忆生成（S10 核验 M6）；S13：关窗=放弃修订候选并中止生成；S14：关窗=放弃导入（零写入）；S15：关窗=放弃角色提取（候选与外发源一并清零，零提交）；票04：关窗清提取范围与分段档（_charPick/_charMode/_charRunAsk，不按书记忆）；S19：关窗=弃封面暂存（保存才落库）；S20：关窗=弃整包暂存（零写入）；S21：关窗=弃画像候选并中止学习（确认前零生效）；票08：关窗=弃拆分切点冻结（取消零写入）；票37：关窗=弃「建设定」冻结态（取消零写入）
 function confirmModal(title,body,actLabel,act,extra='',actClass='danger',opt){
   let html=`<h2>${esc(title)}</h2><p style="color:var(--tx2);line-height:1.7">${body}</p>
   <div class="foot"><button class="btn" onclick="closeModal()">取消</button><button class="btn ${actClass}" data-act="${act}" ${extra}>${esc(actLabel)}</button></div>`;
@@ -24771,6 +24958,11 @@ document.addEventListener('click',async e=>{
   case'skill-del-ok':{skillDelete(String(el.dataset.v||''));break}
   case'skill-imp-cancel':{S.ui._skillImp=null;closeModal();break}
   case'skill-imp-confirm':{skillImportConfirm();break}
+  /* 技能编辑（v1-5 票01，仅「我的」层）：打开读全文＋哈希；保存走 baseHash 原子写＋缓存/目录同步；重新读取＝冲突后取回最新版 */
+  case'skill-edit':{if(roReason()){roToast();break}skillEditOpen(String(el.dataset.v||''));break}
+  case'skill-ed-cancel':{S.ui._skillEdit=null;closeModal();break}
+  case'skill-ed-save':{if(roReason()){roToast();break}skillEditSave();break}
+  case'skill-ed-reload':{skillEditReload();break}
   /* 助理增强批票05：添加上下文（分类 → 大窗 → 芯片指针） */
   case'asst-at-add':asstAtOpenCat();break;
   case'asst-at-cat':{
