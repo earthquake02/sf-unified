@@ -639,7 +639,7 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap{flex:1 1 0%; min-height:0; min-width:0; width:100%; max-width:100%; align-self:stretch; overflow:scroll; border:1px solid var(--line); border-radius:10px; background:var(--bg2); position:relative; box-sizing:border-box; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab}
 .graph-wrap:active{cursor:grabbing}
 .graph-canvas{display:block; position:relative; line-height:0; flex-shrink:0; box-sizing:border-box}
-.graph-canvas svg,.graph-wrap svg{display:block; width:100%; height:100%; max-width:none; flex-shrink:0; transform-origin:0 0}
+.graph-canvas svg,.graph-wrap svg{display:block; width:100%; height:100%; max-width:none; flex-shrink:0; transform-origin:0 0; overflow:visible}
 .graph-wrap .graph-node{cursor:pointer; touch-action:none}
 .graph-wrap .graph-node.dragging{cursor:grabbing}
 .graph-tools{position:absolute; right:12px; top:12px; z-index:3; display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:5px 8px; border-radius:8px; background:color-mix(in srgb,var(--bg2) 92%,transparent); border:1px solid var(--line); font-size:11.5px; color:var(--tx2); backdrop-filter:blur(4px); pointer-events:auto}
@@ -18957,6 +18957,175 @@ function graphScaleSet(nid,s){
   if(!S.ui.graphScale||typeof S.ui.graphScale!=='object')S.ui.graphScale={};
   S.ui.graphScale[nid]=Math.min(3,Math.max(0.25,s));
 }
+/** 关系图谱／剧情图谱共用画板边距：包住节点环与标签，避免贴边被 SVG viewBox 裁切。 */
+const GRAPH_BOARD_PAD_X=96;
+const GRAPH_BOARD_PAD_Y=96;
+const GRAPH_BOARD_MIN_W=1000;
+const GRAPH_BOARD_MIN_H=560;
+const PLOT_BOARD_MIN_W=900;
+const PLOT_BOARD_MIN_H=520;
+/**
+ * 关系图谱网格下限（自动铺点用；沿用原 cols／宽高公式）。
+ * @param {number} n0
+ * @returns {{W:number,H:number,cols:number}}
+ */
+function graphGridBoardSize(n0){
+  const n=Math.max(1,n0|0);
+  const cols=Math.max(8,Math.ceil(Math.sqrt(n*1.6)));
+  return {W:Math.max(GRAPH_BOARD_MIN_W,cols*130),H:Math.max(GRAPH_BOARD_MIN_H,Math.ceil(n/cols)*160+120),cols};
+}
+/**
+ * 剧情图谱网格下限（铺点仍走 plotEnsurePositions，此处只算画板下限）。
+ * @param {number} n0
+ * @returns {{W:number,H:number,cols:number}}
+ */
+function plotGridBoardSize(n0){
+  const n=Math.max(1,n0|0);
+  const cols=Math.max(4,Math.ceil(Math.sqrt(n*1.4)));
+  return {W:Math.max(PLOT_BOARD_MIN_W,cols*180+80),H:Math.max(PLOT_BOARD_MIN_H,Math.ceil(n/cols)*120+140),cols};
+}
+/**
+ * @param {any} pos
+ * @param {string} id
+ * @returns {{x:number,y:number}|null}
+ */
+function graphPosXY(pos,id){
+  if(!pos||id==null)return null;
+  const p=typeof pos.get==='function'?pos.get(id):pos[id];
+  if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))return p;
+  return null;
+}
+/**
+ * 由可见节点已保存／当前坐标算出画板。W/H 必须包住所有点+边距，绝不按数量缩小后把旧坐标裁掉。
+ * origin 仅在内容越过 0 时为负；不把原点裁进内容簇，以免开关次要设定后视野乱跳。
+ * @param {any[]} entries
+ * @param {any} pos
+ * @param {{minW?:number,minH?:number,padX?:number,padY?:number}=} opt
+ * @returns {{originX:number,originY:number,W:number,H:number}}
+ */
+function graphBoardFromPos(entries,pos,opt){
+  const padX=(opt&&opt.padX!=null)?Number(opt.padX):GRAPH_BOARD_PAD_X;
+  const padY=(opt&&opt.padY!=null)?Number(opt.padY):GRAPH_BOARD_PAD_Y;
+  const minW=Math.max(1,(opt&&opt.minW!=null)?Number(opt.minW):GRAPH_BOARD_MIN_W);
+  const minH=Math.max(1,(opt&&opt.minH!=null)?Number(opt.minH):GRAPH_BOARD_MIN_H);
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const e of entries||[]){
+    const id=(e&&typeof e==='object'&&e.id!=null)?e.id:e;
+    const p=graphPosXY(pos,id);
+    if(!p)continue;
+    if(p.x<minX)minX=p.x;if(p.y<minY)minY=p.y;
+    if(p.x>maxX)maxX=p.x;if(p.y>maxY)maxY=p.y;
+  }
+  if(!Number.isFinite(minX))return {originX:0,originY:0,W:minW,H:minH};
+  const originX=Math.min(0,minX-padX);
+  const originY=Math.min(0,minY-padY);
+  const W=Math.max(minW,maxX+padX-originX);
+  const H=Math.max(minH,maxY+padY-originY);
+  return {originX,originY,W,H};
+}
+/**
+ * 点是否落在画板内（可选内缩边距）。
+ * @param {{originX:number,originY:number,W:number,H:number}} board
+ * @param {{x:number,y:number}} p
+ * @param {number=} pad
+ * @returns {boolean}
+ */
+function graphBoardContains(board,p,pad){
+  if(!board||!p)return false;
+  const m=pad==null?0:Number(pad)||0;
+  return p.x>=board.originX+m&&p.x<=board.originX+board.W-m&&p.y>=board.originY+m&&p.y<=board.originY+board.H-m;
+}
+/**
+ * 把画板扩展到包住点（含边距）。左／上扩展时 shift 供滚动补偿，视野不跳。
+ * @param {{originX:number,originY:number,W:number,H:number}} board
+ * @param {number} x
+ * @param {number} y
+ * @param {{padX?:number,padY?:number}=} opt
+ * @returns {{originX:number,originY:number,W:number,H:number,shiftX:number,shiftY:number,grown:boolean}}
+ */
+function graphBoardGrowTo(board,x,y,opt){
+  const padX=(opt&&opt.padX!=null)?Number(opt.padX):GRAPH_BOARD_PAD_X;
+  const padY=(opt&&opt.padY!=null)?Number(opt.padY):GRAPH_BOARD_PAD_Y;
+  let originX=board.originX,originY=board.originY,W=board.W,H=board.H;
+  let shiftX=0,shiftY=0;
+  const left=x-padX,top=y-padY,right=x+padX,bottom=y+padY;
+  if(left<originX){const add=originX-left;W+=add;originX=left;shiftX=add}
+  if(top<originY){const add=originY-top;H+=add;originY=top;shiftY=add}
+  if(right>originX+W)W=right-originX;
+  if(bottom>originY+H)H=bottom-originY;
+  const grown=originX!==board.originX||originY!==board.originY||W!==board.W||H!==board.H;
+  return {originX,originY,W,H,shiftX,shiftY,grown};
+}
+/**
+ * 平移将越出滚动边界时扩展世界。view.scrollLeft/Top 为拟设 CSS 像素滚动。
+ * @param {{originX:number,originY:number,W:number,H:number}} board
+ * @param {{scrollLeft:number,scrollTop:number,clientWidth:number,clientHeight:number,scale:number,minGrow?:number}} view
+ * @returns {{originX:number,originY:number,W:number,H:number,scrollLeft:number,scrollTop:number,shiftX:number,shiftY:number,grown:boolean}}
+ */
+function graphBoardGrowForPan(board,view){
+  const scale=Math.max(0.0001,Number(view&&view.scale)||1);
+  const minGrow=Math.max(80,Number(view&&view.minGrow)||240);
+  let originX=board.originX,originY=board.originY,W=board.W,H=board.H;
+  let sl=Number(view&&view.scrollLeft)||0,st=Number(view&&view.scrollTop)||0;
+  let shiftX=0,shiftY=0,grown=false;
+  if(sl<0){
+    const add=Math.max(minGrow,Math.ceil((-sl)/scale));
+    W+=add;originX-=add;shiftX+=add;sl+=add*scale;grown=true;
+  }
+  if(st<0){
+    const add=Math.max(minGrow,Math.ceil((-st)/scale));
+    H+=add;originY-=add;shiftY+=add;st+=add*scale;grown=true;
+  }
+  const maxL=Math.max(0,W*scale-(Number(view&&view.clientWidth)||0));
+  const maxT=Math.max(0,H*scale-(Number(view&&view.clientHeight)||0));
+  if(sl>maxL){const add=Math.max(minGrow,Math.ceil((sl-maxL)/scale));W+=add;grown=true}
+  if(st>maxT){const add=Math.max(minGrow,Math.ceil((st-maxT)/scale));H+=add;grown=true}
+  return {originX,originY,W,H,scrollLeft:sl,scrollTop:st,shiftX,shiftY,grown};
+}
+/**
+ * 让画板至少铺满当前视口（加少量余量），避免画布矩形小于外壳而露出切边。
+ * @param {{originX:number,originY:number,W:number,H:number}} board
+ * @param {number} clientWidth
+ * @param {number} clientHeight
+ * @param {number} scale
+ * @returns {{originX:number,originY:number,W:number,H:number}}
+ */
+function graphBoardFillView(board,clientWidth,clientHeight,scale){
+  const sc=Math.max(0.0001,Number(scale)||1);
+  const slack=120;
+  const vw=Math.max(0,Number(clientWidth)||0)/sc+slack;
+  const vh=Math.max(0,Number(clientHeight)||0)/sc+slack;
+  return {originX:board.originX,originY:board.originY,W:Math.max(board.W,vw),H:Math.max(board.H,vh)};
+}
+/**
+ * 把画板尺寸写到 wrap／svg／canvas（世界坐标 viewBox，CSS 尺寸＝世界×缩放）。
+ * @param {any} wrap
+ * @param {any} svg
+ * @param {any} canvas
+ * @param {{originX:number,originY:number,W:number,H:number}} board
+ * @param {number} scale
+ */
+function graphApplyBoard(wrap,svg,canvas,board,scale){
+  const W=board.W,H=board.H,ox=board.originX,oy=board.originY;
+  if(wrap&&wrap.dataset){
+    wrap.dataset.bw=String(W);
+    wrap.dataset.bh=String(H);
+    wrap.dataset.ox=String(ox);
+    wrap.dataset.oy=String(oy);
+    wrap.dataset.scale=String(scale);
+  }
+  if(svg&&svg.setAttribute){
+    svg.setAttribute('width',String(W));
+    svg.setAttribute('height',String(H));
+    svg.setAttribute('viewBox',ox+' '+oy+' '+W+' '+H);
+  }
+  const dW=Math.round(W*scale),dH=Math.round(H*scale);
+  const box=(canvas&&canvas!==svg)?canvas:svg;
+  if(box&&box.style){
+    box.style.width=dW+'px';box.style.height=dH+'px';
+    box.style.minWidth=dW+'px';box.style.minHeight=dH+'px';
+  }
+}
 function graphComputePos(entries,edges,W,H,nid){
   const saved=graphLayoutMem(nid);
   const pos=new Map();
@@ -18992,7 +19161,8 @@ function graphComputePos(entries,edges,W,H,nid){
       }
       for(const e of entries){const p=pos.get(e.id);p.x+=(W/2-p.x)*0.0025;p.y+=(H/2-p.y)*0.0025}
     }
-    for(const e of entries){const p=pos.get(e.id);p.x=Math.max(50,Math.min(W-50,p.x));p.y=Math.max(60,Math.min(H-60,p.y))}
+    const cx0=Math.min(GRAPH_BOARD_PAD_X,Math.max(30,W/2)),cy0=Math.min(GRAPH_BOARD_PAD_Y,Math.max(30,H/2));
+    for(const e of entries){const p=pos.get(e.id);p.x=Math.max(cx0,Math.min(W-cx0,p.x));p.y=Math.max(cy0,Math.min(H-cy0,p.y))}
   }
   const out=graphLayoutMem(nid);
   for(const e of entries){const p=pos.get(e.id);out[e.id]={x:p.x,y:p.y}}
@@ -19129,9 +19299,11 @@ function vGraph(){
     }
   }
   const n0=entries.length;
-  const cols=Math.max(8,Math.ceil(Math.sqrt(Math.max(1,n0)*1.6)));
-  const W=Math.max(1000,cols*130),H=Math.max(560,Math.ceil(Math.max(1,n0)/cols)*160+120);
-  const pos=graphComputePos(entries,edges,W,H,nid);
+  const grid=graphGridBoardSize(n0);
+  const pre=graphBoardFromPos(entries,graphLayoutMem(nid),{minW:grid.W,minH:grid.H});
+  const pos=graphComputePos(entries,edges,pre.W,pre.H,nid);
+  const board=graphBoardFromPos(entries,pos,{minW:grid.W,minH:grid.H});
+  const W=board.W,H=board.H,originX=board.originX,originY=board.originY;
   const scale=graphScaleOf(nid);
   const dW=Math.round(W*scale),dH=Math.round(H*scale);
   const marker=`<defs><marker id="sfHierArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ac)" opacity=".9"/></marker></defs>`;
@@ -19166,8 +19338,8 @@ function vGraph(){
   return `<div class="page" style="max-width:none"><div class="graph-head"><h1 class="pt">关系图谱 · ${esc(n.title)}</h1>
   <div class="graph-scene-pick"><select id="graphSceneSel" data-act="graph-scene" aria-label="图谱${unitLabel()}" title="选择${unitLabel()}后可显示该${unitLabel()}的同${unitLabel()}共现">${graphSceneOptionsHTML(nid,gSid||'')}</select>
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
-  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
-  ${allEntries.length?`<div class="graph-shell">${entries.length?`<div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>`:`<div class="empty">没有可显示的设定。「从不包含」不会出现在关系图谱；要查看「检测到时不包含」的设定，请勾选「显示次要设定」。</div>`}
+  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。画布按内容延伸，拖到边缘会扩展世界，不会把节点切在边上。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
+  ${allEntries.length?`<div class="graph-shell">${entries.length?`<div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>`:`<div class="empty">没有可显示的设定。「从不包含」不会出现在关系图谱；要查看「检测到时不包含」的设定，请勾选「显示次要设定」。</div>`}
   <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" name="graphShowNotes" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" name="graphShowMentions" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" name="graphShowMinor" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" name="graphShowCo" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
     <span class="hint"><span style="color:var(--ac)">→</span> 归属／下属 ${hierN} 条</span>
@@ -19270,9 +19442,12 @@ function bindGraph(){
   wrap._graphBound=true;
   const svg=wrap.querySelector('svg');
   if(!svg)return;
-  const nid=wrap.dataset.nid;
-  const BW=Number(wrap.dataset.bw)||1000;
-  const BH=Number(wrap.dataset.bh)||560;
+  const ds=(/** @type {HTMLElement} */(wrap)).dataset;
+  const nid=ds.nid;
+  let BW=Number(ds.bw)||1000;
+  let BH=Number(ds.bh)||560;
+  let originX=Number(ds.ox)||0;
+  let originY=Number(ds.oy)||0;
   let scale=graphScaleOf(nid);
   const pos=graphLayoutMem(nid);
   /* codex-graph-ux 票04＋07：搜索高亮——只切 SVG 类名（.hit/.dim/.focus），不重算布局/坐标；
@@ -19288,8 +19463,8 @@ function bindGraph(){
     if(!g)return;
     const c=hitRingCenter(g);if(!c)return;
     const mx=wrap.clientWidth/2,my=wrap.clientHeight/2;
-    wrap.scrollLeft=Math.max(0,c.x*scale-mx);
-    wrap.scrollTop=Math.max(0,c.y*scale-my);
+    wrap.scrollLeft=Math.max(0,(c.x-originX)*scale-mx);
+    wrap.scrollTop=Math.max(0,(c.y-originY)*scale-my);
   };
   const paintHits=(/** @type {Set<string>|null} */ hitIds,/** @type {string} */ focusId)=>{
     svg.querySelectorAll('.graph-node').forEach(g=>{
@@ -19355,19 +19530,21 @@ function bindGraph(){
   }
   const scaleLbl=()=>{const el=document.querySelector('.graph-tools .hint');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};
   const canvas=wrap.querySelector('.graph-canvas')||svg.parentElement;
+  /** @param {{originX:number,originY:number,W:number,H:number}} b @param {{x?:number,y?:number}=} scrollShift */
+  const adoptBoard=(b,scrollShift)=>{
+    originX=b.originX;originY=b.originY;BW=b.W;BH=b.H;
+    graphApplyBoard(wrap,svg,canvas,{originX,originY,W:BW,H:BH},scale);
+    if(scrollShift){if(scrollShift.x)wrap.scrollLeft+=scrollShift.x*scale;if(scrollShift.y)wrap.scrollTop+=scrollShift.y*scale}
+  };
+  {
+    const filled=graphBoardFillView({originX,originY,W:BW,H:BH},wrap.clientWidth,wrap.clientHeight,scale);
+    if(filled.W!==BW||filled.H!==BH)adoptBoard(filled);
+  }
   const applyScale=(s,cx,cy)=>{
     const old=scale;
     scale=Math.min(3,Math.max(0.25,s));
     graphScaleSet(nid,scale);
-    const dW=Math.round(BW*scale),dH=Math.round(BH*scale);
-    if(canvas&&canvas!==svg){
-      canvas.style.width=dW+'px';canvas.style.height=dH+'px';
-      canvas.style.minWidth=dW+'px';canvas.style.minHeight=dH+'px';
-    }else{
-      svg.style.width=dW+'px';svg.style.height=dH+'px';
-      svg.style.minWidth=dW+'px';svg.style.minHeight=dH+'px';
-    }
-    wrap.dataset.scale=String(scale);
+    graphApplyBoard(wrap,svg,canvas,{originX,originY,W:BW,H:BH},scale);
     if(cx!=null&&cy!=null){
       wrap.scrollLeft=cx*scale-(cx*old-wrap.scrollLeft);
       wrap.scrollTop=cy*scale-(cy*old-wrap.scrollTop);
@@ -19377,14 +19554,25 @@ function bindGraph(){
   const svgPt=(clientX,clientY)=>{
     const rect=wrap.getBoundingClientRect();
     return {
-      x:(clientX-rect.left+wrap.scrollLeft)/scale,
-      y:(clientY-rect.top+wrap.scrollTop)/scale
+      x:originX+(clientX-rect.left+wrap.scrollLeft)/scale,
+      y:originY+(clientY-rect.top+wrap.scrollTop)/scale
     };
+  };
+  const panBy=(/** @type {number} */ dx,/** @type {number} */ dy)=>{
+    let nl=sl0-dx,nt=st0-dy;
+    const g=graphBoardGrowForPan({originX,originY,W:BW,H:BH},{scrollLeft:nl,scrollTop:nt,clientWidth:wrap.clientWidth,clientHeight:wrap.clientHeight,scale});
+    if(g.grown){
+      const dsx=g.scrollLeft-nl,dsy=g.scrollTop-nt;
+      adoptBoard(g);
+      sl0+=dsx;st0+=dsy;nl=g.scrollLeft;nt=g.scrollTop;
+    }
+    wrap.scrollLeft=nl;wrap.scrollTop=nt;
   };
   const moveNode=(id,x,y)=>{
     const p=pos[id]||(pos[id]={x,y});
-    p.x=Math.max(30,Math.min(BW-30,x));
-    p.y=Math.max(30,Math.min(BH-30,y));
+    p.x=x;p.y=y;
+    const grown=graphBoardGrowTo({originX,originY,W:BW,H:BH},p.x,p.y);
+    if(grown.grown)adoptBoard(grown,{x:grown.shiftX,y:grown.shiftY});
     const g=svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
     if(!g)return;
     const r=Number(g.dataset.r)||14;
@@ -19505,8 +19693,7 @@ function bindGraph(){
     if(mode==='pan'){
       const dx=pe.clientX-sx,dy=pe.clientY-sy;
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)moved=true;
-      wrap.scrollLeft=sl0-dx;
-      wrap.scrollTop=st0-dy;
+      panBy(dx,dy);
     }else if(mode==='box'&&boxStart){
       if(Math.abs(pe.clientX-sx)>THRESH||Math.abs(pe.clientY-sy)>THRESH)moved=true;
       if(!moved)return;
@@ -19873,8 +20060,9 @@ function vPlotGraph(){
   const pos=plotEnsurePositions(nid,leaves);
   const scale=plotScaleOf(nid);
   const n0=Math.max(1,leaves.length);
-  const cols=Math.max(4,Math.ceil(Math.sqrt(n0*1.4)));
-  const W=Math.max(900,cols*180+80),H=Math.max(520,Math.ceil(n0/cols)*120+140);
+  const grid=plotGridBoardSize(n0);
+  const board=graphBoardFromPos(leaves,pos,{minW:grid.W,minH:grid.H});
+  const W=board.W,H=board.H,originX=board.originX,originY=board.originY;
   const dW=Math.round(W*scale),dH=Math.round(H*scale);
   const focusId=S.ui._plotFocusId?String(S.ui._plotFocusId):'';
   const uLab=typeof unitLabel==='function'?unitLabel():'小节';
@@ -19919,7 +20107,7 @@ function vPlotGraph(){
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
   <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。MVP 无图谱搜索／多选。</p>
-  ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
+  ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
   <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
   <button type="button" class="btn sm" data-act="plot-link-relate" title="进入拉相关边：依次单击两个叶节点">拉相关</button>
@@ -19938,23 +20126,30 @@ function bindPlotGraph(){
   const svg=wrap.querySelector('svg');
   if(!svg)return;
   const nid=wrap.dataset.nid||'';
-  const BW=Number(wrap.dataset.bw)||900;
-  const BH=Number(wrap.dataset.bh)||520;
+  let BW=Number(wrap.dataset.bw)||900;
+  let BH=Number(wrap.dataset.bh)||520;
+  let originX=Number(wrap.dataset.ox)||0;
+  let originY=Number(wrap.dataset.oy)||0;
   let scale=plotScaleOf(nid);
   const st=plotGraphOf(nid);
   const pos=st.positions;
   const canvas=/** @type {any} */(wrap.querySelector('.graph-canvas')||svg.parentElement);
   const scaleLbl=()=>{const el=document.querySelector('.graph-tools .hint');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};
+  /** @param {{originX:number,originY:number,W:number,H:number}} b @param {{x?:number,y?:number}=} scrollShift */
+  const adoptBoard=(b,scrollShift)=>{
+    originX=b.originX;originY=b.originY;BW=b.W;BH=b.H;
+    graphApplyBoard(wrap,svg,canvas,{originX,originY,W:BW,H:BH},scale);
+    if(scrollShift){if(scrollShift.x)wrap.scrollLeft+=scrollShift.x*scale;if(scrollShift.y)wrap.scrollTop+=scrollShift.y*scale}
+  };
+  {
+    const filled=graphBoardFillView({originX,originY,W:BW,H:BH},wrap.clientWidth,wrap.clientHeight,scale);
+    if(filled.W!==BW||filled.H!==BH)adoptBoard(filled);
+  }
   const applyScale=(/** @type {number} */ sc,/** @type {number=} */ cx,/** @type {number=} */ cy)=>{
     const old=scale;
     scale=Math.min(3,Math.max(0.25,sc));
     plotScaleSet(nid,scale);
-    const dW=Math.round(BW*scale),dH=Math.round(BH*scale);
-    if(canvas&&canvas!==svg){
-      canvas.style.width=dW+'px';canvas.style.height=dH+'px';
-      canvas.style.minWidth=dW+'px';canvas.style.minHeight=dH+'px';
-    }
-    wrap.dataset.scale=String(scale);
+    graphApplyBoard(wrap,svg,canvas,{originX,originY,W:BW,H:BH},scale);
     if(cx!=null&&cy!=null){
       wrap.scrollLeft=cx*scale-(cx*old-wrap.scrollLeft);
       wrap.scrollTop=cy*scale-(cy*old-wrap.scrollTop);
@@ -19963,13 +20158,24 @@ function bindPlotGraph(){
   };
   const svgPt=(/** @type {number} */ clientX,/** @type {number} */ clientY)=>{
     const rect=wrap.getBoundingClientRect();
-    return{x:(clientX-rect.left+wrap.scrollLeft)/scale,y:(clientY-rect.top+wrap.scrollTop)/scale};
+    return{x:originX+(clientX-rect.left+wrap.scrollLeft)/scale,y:originY+(clientY-rect.top+wrap.scrollTop)/scale};
+  };
+  const panBy=(/** @type {number} */ dx,/** @type {number} */ dy)=>{
+    let nl=sl0-dx,nt=st0-dy;
+    const g=graphBoardGrowForPan({originX,originY,W:BW,H:BH},{scrollLeft:nl,scrollTop:nt,clientWidth:wrap.clientWidth,clientHeight:wrap.clientHeight,scale});
+    if(g.grown){
+      const dsx=g.scrollLeft-nl,dsy=g.scrollTop-nt;
+      adoptBoard(g);
+      sl0+=dsx;st0+=dsy;nl=g.scrollLeft;nt=g.scrollTop;
+    }
+    wrap.scrollLeft=nl;wrap.scrollTop=nt;
   };
   const nodeOf=(/** @type {string} */ id)=>svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
   const moveNode=(/** @type {string} */ id,/** @type {number} */ x,/** @type {number} */ y)=>{
     const p=pos[id]||(pos[id]={x,y});
-    p.x=Math.max(30,Math.min(BW-30,x));
-    p.y=Math.max(30,Math.min(BH-30,y));
+    p.x=x;p.y=y;
+    const grown=graphBoardGrowTo({originX,originY,W:BW,H:BH},p.x,p.y);
+    if(grown.grown)adoptBoard(grown,{x:grown.shiftX,y:grown.shiftY});
     const g=nodeOf(id);if(!g)return;
     const r=Number(g.getAttribute('data-r'))||15;
     const c=g.querySelector('circle.graph-ring');
@@ -20103,12 +20309,12 @@ function bindPlotGraph(){
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH){
         /* 在边上按下后拖移＝改成平移，避免误选 */
         mode='pan';edgeDown=null;moved=true;
-        wrap.scrollLeft=sl0-dx;wrap.scrollTop=st0-dy;
+        panBy(dx,dy);
       }
     }else if(mode==='pan'){
       const dx=pe.clientX-sx,dy=pe.clientY-sy;
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)moved=true;
-      wrap.scrollLeft=sl0-dx;wrap.scrollTop=st0-dy;
+      panBy(dx,dy);
     }else if(mode==='node'&&nidDrag){
       const pt=svgPt(pe.clientX,pe.clientY);
       const nx=pt.x-ox,ny=pt.y-oy;
