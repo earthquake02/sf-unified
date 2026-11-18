@@ -15723,7 +15723,7 @@ function vEditor(){
         <input id="ed-fig-file" type="file" accept="image/*" ${roReason()?'disabled':''} hidden>
         <button class="tb" data-cmd="hiliteColor:${esc(appearHexNorm(appearResolve(S.data.settings&&S.data.settings.appearance).mark))}" title="高亮">${uiIc('appearance')}</button>
         <button class="tb" data-cmd="removeFormat" title="消除格式">⌫格式</button>
-        <button class="tb" data-act="ed-paiban" title="整理当前章：统一段间空行、清段首空格、删章首尾空行" ${roReason()?'disabled':''}>一键排版</button>
+        <button class="tb" data-act="ed-paiban" title="整理当前章：删空段落、清段首空格，可按小节撤销" ${roReason()?'disabled':''}>一键排版</button>
         <span class="sep"></span>
          <button class="btn sm pri" data-act="ai-summarize" title="AI 生成章节摘要">${uiIc('spark')}摘要</button>
         <button class="btn sm pri" data-act="ai-continue" title="依据节拍／指引推演剧情走向">${uiIc('spark')}推演</button>
@@ -22302,8 +22302,37 @@ function devPreviewCopy(json){
 
 /* ---------- 视图：设置 ---------- */
 function vUpdates(){
-  /* 设置→更新：V1.5 在上（2026-11-18）；V1.4（2026-10-30）完整保留于下；V1.1–V1.3 历史卡按先生 2026-10-30 指示删除 */
+  /* 设置→更新：V1.6 在上（2026-11-18）；V1.5（2026-11-18）、V1.4（2026-10-30）完整保留于下；V1.1–V1.3 历史卡按先生 2026-10-30 指示删除 */
   return `<div class="page">
+  <div class="card">
+    <h2 class="upd-title">故事工坊 V1.6</h2>
+    <p class="upd-meta">2026-11-18</p>
+    <p class="upd-intro">这一版把写作页的撤销和排版补齐了：撤销不再弄丢章标题，副驾里「采用」写入的内容也可以撤回；当前章可以一键整理空段落和段首空格；外观能调节正文段间距；工具栏去掉了「正文段落」，「消除格式」会同时清掉行内样式，并退出引用、把小标题降回正文。</p>
+
+    <details class="upd-group" open>
+      <summary><span class="upd-g-title">撤销</span><span class="upd-g-count">2 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>撤销不再丢章标题</strong>：在写作页撤回修改时，章节标题会跟着一起恢复，不会再丢掉「第X章」前缀，也不会整行消失。</li>
+        <li><strong>AI 采用可撤销</strong>：副驾里把生成结果「采用」写入后，可以用撤销撤回这次写入。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group" open>
+      <summary><span class="upd-g-title">排版与间距</span><span class="upd-g-count">2 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>一键排版</strong>：写作页工具栏新增「一键排版」，整理当前章：删掉空段落、清掉段首空格，不弹确认；每个改过的小节都可以单独撤销。</li>
+        <li><strong>段间距可调</strong>：外观里可以调节正文段落的显示间距，编辑区立即看到效果；只影响屏幕上的样子，不改写正文，也不影响导出和发给 AI 的文本。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group">
+      <summary><span class="upd-g-title">格式工具</span><span class="upd-g-count">1 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>格式按钮更简单</strong>：工具栏去掉「正文段落」。「消除格式」会清掉粗体、斜体、下划线、删除线和高亮，并把引用退出、小标题降回正文段落；折叠块和插图不会被拆掉。</li>
+      </ul></div>
+    </details>
+  </div>
+
   <div class="card">
     <h2 class="upd-title">故事工坊 V1.5</h2>
     <p class="upd-meta">2026-11-18</p>
