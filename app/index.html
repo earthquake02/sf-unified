@@ -2921,16 +2921,12 @@ function aiProtocolOf(v){
 }
 /** @param {string} base @returns {boolean} */
 function aiIsOpenCodeGo(base){
-  const raw=String(base||'').trim();
-  const m=raw.match(/^https?:\/\/([^\/?#]+)/i);
-  if(!m)return false;
-  let host=m[1];
-  host=host.split('@').pop()||host;
+  let host=aiHostPortOf(base);   // 票02：host 取段抽为 aiHostPortOf 共用（此处再剥 [IPv6] 括号与 :port）
+  if(!host)return false;
   if(host.charAt(0)==='['){host=(host.split(']')[0]||'').slice(1)}
   else if(host.indexOf(':')>=0){host=host.replace(/:\d+$/,'')}
-  host=host.toLowerCase();
   if(host!=='opencode.ai' && !host.endsWith('.opencode.ai'))return false;
-  const path=(raw.replace(/^https?:\/\/[^\/?#]+/i,'')||'/').split(/[?#]/)[0].replace(/\/+$/,'')||'/';
+  const path=(String(base||'').trim().replace(/^https?:\/\/[^\/?#]+/i,'')||'/').split(/[?#]/)[0].replace(/\/+$/,'')||'/';
   return path==='/inference' || path.startsWith('/inference/');
 }
 /** 与本地服务 detect_protocol 对齐的前端预判（最终以服务端为准）。
@@ -27257,6 +27253,31 @@ if(e.target.id==='sbDim'){if(SB_DIMS.some(x=>x.v===e.target.value)){S.ui.sbDim=e
   }
 });
 /* 设置页字段失焦保存 */
+/** 从 Base 提取 host（含端口）：scheme 剥离、userinfo@ 剥离、[IPv6] 字面量原样保留、小写归一；非 http(s)／空值返回 ''。
+    票02：Base 写穿换服务判定与 aiIsOpenCodeGo 共用此取段（协议判定单点归服务端 detect_protocol，本函数只看域名）。
+ * @param {string} base
+ * @returns {string} */
+function aiHostPortOf(base){
+  const m=String(base||'').trim().match(/^https?:\/\/([^\/?#]+)/i);
+  if(!m)return '';
+  return String(m[1].split('@').pop()||'').toLowerCase();
+}
+/** 票02：Base 写穿联动——新旧 host（含端口）变化且当前行协议非「自动识别」时，把该行协议重置回
+    「自动识别」并同步 live 字段；同 host 改路径等微调、原 Base 无 host（首次填地址）均不打扰（手选协议保留）。
+    返回是否发生了重置（调用方负责 toast 与协议下拉刷新）。
+ * @param {any} st settings 状态
+ * @param {string} oldBase 改动前 Base
+ * @param {string} newBase 改动后 Base
+ * @returns {boolean} */
+function aiSvcResetProtocolOnHostChange(st,oldBase,newBase){
+  const p=aiSvcActive(st);if(!p)return false;
+  if(!aiProtocolOf(p.protocol))return false;
+  const oh=aiHostPortOf(oldBase),nh=aiHostPortOf(newBase);
+  if(!oh||oh===nh)return false;
+  p.protocol='';
+  aiSvcSyncLive(st);   // live 字段随之归位（st.aiProtocol 回「自动识别」）
+  return true;
+}
 document.addEventListener('blur',e=>{
   {const _xb=/** @type {any} */(e.target);if(_xb&&_xb.id==='s-extra-body'){   // 附加请求体 JSON：非法对象 toast 不写；合法（含空）写穿当前服务项
     if(roReason())return;
@@ -27280,10 +27301,15 @@ document.addEventListener('blur',e=>{
     if(e.target.id==='s-silent-wait'){v=Math.floor(v);if(!(v>=30&&v<=3600))v=300}   // 审阅静默等待时间
     if(e.target.id==='s-cf-thr'){v=Number(v);if(!(v>=0.4&&v<=0.95))v=0.7;if(S.ui.view==='review')render()}
     if(e.target.id==='s-key'||e.target.id==='s-review-key')v=String(v==null?'':v).slice(0,2000);   // G4 复核 F7：与落盘帽同口径
+    const prevBase=e.target.id==='s-base'?String(S.data.settings.aiBase||''):'';   // 票02：写穿前留旧 Base，供换 host 判定
     if(S.data.settings[map[e.target.id]]===v)return;
     S.data.settings[map[e.target.id]]=v;
     const fm={'s-base':'base','s-key':'key','s-model':'model'}[e.target.id];   // Base/Key/模型写穿到当前服务项（列表项各存各的）
     if(fm){const p=aiSvcActive(S.data.settings);if(p)p[fm]=v}
+    if(e.target.id==='s-base'&&aiSvcResetProtocolOnHostChange(S.data.settings,prevBase,String(v==null?'':v))){   // 票02：换服务域名→协议回自动识别，防拿钉死协议请求别家端点
+      toast('Base 已换服务，协议切回自动识别',4200);
+      const _sp=/** @type {any} */($('#s-protocol'));if(_sp)_sp.value='';   // 下拉即时反映（不整页重渲，避免打断失焦链）
+    }
     const rfm={'s-review-base':'base','s-review-key':'key','s-review-model':'model'}[e.target.id];
     if(rfm){const p=reviewAiSvcActive(S.data.settings);if(p)p[rfm]=v}
     save();
