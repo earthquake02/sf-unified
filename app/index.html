@@ -3013,10 +3013,16 @@ function aiSvcDel(st,id){
   if(st.aiProviderId===id)aiSvcSelect(st,list[0].id);   // 删中活动项→落到第一项（live 随之切换）
   return{ok:true,msg:''};
 }
-/* 推荐导入：按 AI_RECOMMEND 补齐缺失行（名＋Base）；永不写 Key；已填 Key 的行整行跳过（不改 Base／不清 Key）。
+/* 推荐导入：按 AI_RECOMMEND 补齐缺失行（名＋Base；OpenCode Go 另带默认模型与协议）；永不写 Key；已填 Key 的行整行跳过（不改 Base／不清 Key）。
+   命中行只补空位：Base 空则补、模型空则补、协议停在「自动识别」且推荐声明协议才补（手选协议不覆盖）；
+   协议回填收紧（票01）：仅当行 Base 为空（本次补 Base）或与推荐 Base 逐字一致时才回填；名命中但 Base 指向别处的行视作用户改作他用不碰，名称永不改写。
    并标记 aiRecommendSeen（主动提示生命周期结束；手动「推荐」仍可再调）。 */
 function aiSvcMarkRecommendSeen(st){st.aiRecommendSeen=true}
 function aiSvcShouldPromptRecommend(st){return !st.aiRecommendSeen}
+/** 推荐导入（「推荐」按钮与首推卡「填入推荐」共用入口）。
+ *  filled＝补齐了任一字段（Base／模型／协议）的命中行数，全部无需补才计 skipped（票01 起含仅补协议的行）。
+ * @param {any} st settings 状态
+ * @returns {{added:number,filled:number,skipped:number,total:number}} */
 function aiSvcImportRecommend(st){
   if(!Array.isArray(st.aiProviders))aiSvcNormalize(st);
   const list=aiSvcList(st);
@@ -3028,8 +3034,21 @@ function aiSvcImportRecommend(st){
     if(hit){
       if(String(hit.key||'')){skipped++;continue}
       if(name==='自定义'){skipped++;continue}
-      if(!String(hit.base||'')&&base){hit.base=base;if(!String(hit.model||'')&&rec.model)hit.model=String(rec.model).slice(0,200);if(!aiProtocolOf(hit.protocol)&&rec.protocol)hit.protocol=aiProtocolOf(rec.protocol);filled++;continue}
-      skipped++;continue;
+      const hb=String(hit.base||'');
+      if(!hb&&base){   /* 行 Base 为空：本次补 Base，模型/协议照旧只补空位（手选协议不覆盖） */
+        hit.base=base;
+        if(!String(hit.model||'')&&rec.model)hit.model=String(rec.model).slice(0,200);
+        if(!aiProtocolOf(hit.protocol)&&rec.protocol)hit.protocol=aiProtocolOf(rec.protocol);
+        filled++;continue;
+      }
+      if(hb&&hb===base){   /* 行 Base 与推荐 Base 逐字一致（按名或按 Base 命中）：只补空位，名称不改写 */
+        let touched=false;
+        if(!String(hit.model||'')&&rec.model){hit.model=String(rec.model).slice(0,200);touched=true}
+        if(!aiProtocolOf(hit.protocol)&&rec.protocol){hit.protocol=aiProtocolOf(rec.protocol);touched=true}
+        if(touched)filled++;else skipped++;
+        continue;
+      }
+      skipped++;continue;   /* 名命中但行 Base 指向别处：用户改作他用，不碰 */
     }
     if(list.length>=AI_SVC_MAX){skipped++;continue}
     list.push({id:uid(),name,base,model:String(rec.model||'').slice(0,200),key:'',protocol:aiProtocolOf(rec.protocol),reasoningEffort:'',extraBodyJson:''});
