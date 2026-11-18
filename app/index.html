@@ -9,7 +9,7 @@
   color-scheme:dark;
   --bg:#09090b; --bg2:#18181b; --bg3:#27272a; --line:#52525b; --tx:#d6d3d1; --tx2:#a8a29e; --tx3:#71717a;
   --ac:#c9a66b; --ac2:#d8c192; --ok:#34d399; --warn:#fbbf24; --err:#f87171; --blue:#60a5fa;
-  --paper:#18181b; --ink:#d6d3d1; --mark:#f59e0b; --prose-size:16px;
+  --paper:#18181b; --ink:#d6d3d1; --mark:#f59e0b; --prose-size:16px; --para-gap:.2em;
   --ui-font:"Microsoft YaHei","微软雅黑","PingFang SC","Noto Sans SC",system-ui,sans-serif;
   --prose-font:"Noto Serif SC","Source Han Serif SC",Georgia,"Microsoft YaHei",serif;
   --bar-h:44px;
@@ -228,6 +228,8 @@ label.f{display:block; font-size:12px; color:var(--tx2); margin:10px 0 4px}
 #edArea .inner{max-width:760px; margin:0 auto; outline:none; line-height:2; font-size:var(--prose-size); min-height:300px; font-family:var(--prose-font); color:var(--ink); text-align:left; overflow-wrap:anywhere; word-break:break-word; min-width:0}
 #edArea .inner:focus{outline:none}
 #edArea .inner p{margin:0 0 .2em; text-indent:2em}
+#edArea .inner > p{margin:0 0 var(--para-gap, .2em)}
+#edArea .inner blockquote p,#edArea .inner details.sec p,#edArea .inner figure p{margin:0 0 .2em}
 #edArea .inner h2,#edArea .inner h3{margin:.8em 0 .3em; text-indent:0}
 #edArea .inner blockquote{border-left:3px solid var(--ac); padding-left:14px; color:var(--tx2); margin:.6em 0; text-indent:0}
 #edArea .inner mark{background:color-mix(in srgb, var(--mark) 40%, transparent); color:inherit}
@@ -13180,11 +13182,14 @@ function renderRes(n){
    十一项颜色可改。状态色不进方案。强调色浅档由强调色推出，不单存。
    界面字体和正文字体分开。系统字体名单只有六种。正文字体另外保留现在的衬线回退。
    正文字号七档。界面字号不动。行距是无单位的 2，写在写作区样式里。
-   票02：自存方案存在设置里，只记颜色、字体名和正文字号，不抄字体文件。
+   段间距 0–3em、步进 0.1，临时默认 0.2（对齐现行硬编码 .2em；默认值待复核）。
+   票02：自存方案存在设置里，只记颜色、字体名、正文字号和段间距，不抄字体文件。
    票03：放入的字体文件在数据夹 `_工坊/字体/`。现有读写是文本，字体字节用文本承载。
    只列举名字，只读取当前选中的那一款。文字先用回退字体画出。文件不在时落到下一种，并标明缺的名字。 */
 const APPEAR_FONTS=['微软雅黑','等线','宋体','黑体','楷体','仿宋'];
 const APPEAR_SIZES=[12,14,16,18,20,22,24];
+const APPEAR_PARA_GAP_DEFAULT=0.2; /* 临时默认，对齐现行硬编码 .2em；默认值待复核 */
+const APPEAR_PARA_GAPS=Array.from({length:31},(_,i)=>Number((i/10).toFixed(1)));
 const APPEAR_KEYS=['bg','bg2','bg3','line','tx','tx2','tx3','ac','paper','ink','mark'];
 const APPEAR_STATUS={ok:'#34d399',warn:'#fbbf24',err:'#f87171',blue:'#60a5fa'};
 const APPEAR_FONT_DIR='_工坊/字体';
@@ -13203,14 +13208,14 @@ const APPEAR_FONT_FACE={
 const APPEAR_UI_TAIL='"PingFang SC","Noto Sans SC",system-ui,sans-serif';
 const APPEAR_BODY_TAIL='"Noto Serif SC","Source Han Serif SC",Georgia,"Microsoft YaHei",serif';
 const APPEAR_FACTORY=[
-  {id:'moyan',name:'墨砚',bg:'#09090b',bg2:'#18181b',bg3:'#27272a',line:'#52525b',tx:'#d6d3d1',tx2:'#a8a29e',tx3:'#71717a',ac:'#c9a66b',paper:'#18181b',ink:'#d6d3d1',mark:'#f59e0b',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
-  {id:'xuantie',name:'玄铁',bg:'#0c0e12',bg2:'#151820',bg3:'#1e2430',line:'#3a4254',tx:'#e2e6ee',tx2:'#9aa3b5',tx3:'#6b7385',ac:'#8b9cb3',paper:'#151820',ink:'#e2e6ee',mark:'#f0b429',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
-  {id:'qingrang',name:'青壤',bg:'#0f1410',bg2:'#171d18',bg3:'#222a22',line:'#3a463a',tx:'#dce6dc',tx2:'#9aab9a',tx3:'#6e7d6e',ac:'#6b9b6e',paper:'#171d18',ink:'#dce6dc',mark:'#c9a227',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:16},
-  {id:'xiangyue',name:'向月',bg:'#141022',bg2:'#211c35',bg3:'#2e2846',line:'#554b6c',tx:'#f0eafa',tx2:'#c5b9da',tx3:'#a898c4',ac:'#e9b4df',paper:'#1b1630',ink:'#f0eafa',mark:'#e9b4df',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
-  {id:'xuanzhi',name:'宣纸',bg:'#f5f0e6',bg2:'#faf6ee',bg3:'#ebe4d4',line:'#d9d0bc',tx:'#3a3428',tx2:'#6b6354',tx3:'#8a8170',ac:'#8b5a2b',paper:'#faf6ee',ink:'#3a3428',mark:'#c9a227',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:18},
-  {id:'sujian',name:'素笺',bg:'#f7f5f0',bg2:'#fffcf7',bg3:'#eeeae2',line:'#ddd8ce',tx:'#2c2a26',tx2:'#5c5952',tx3:'#8a8680',ac:'#5a6b4e',paper:'#fffcf7',ink:'#2c2a26',mark:'#d4a017',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:18},
-  {id:'yuebai',name:'月白',bg:'#f4f6f8',bg2:'#ffffff',bg3:'#e8ecf0',line:'#d0d5dc',tx:'#2a3038',tx2:'#5a6570',tx3:'#8a93a0',ac:'#5b7c99',paper:'#ffffff',ink:'#2a3038',mark:'#d97706',uiFont:'微软雅黑',bodyFont:'',bodySize:16},
-  {id:'xiangri',name:'向日',bg:'#f4ecd9',bg2:'#fff8ee',bg3:'#f3e1cd',line:'#d3c1af',tx:'#49382f',tx2:'#725c50',tx3:'#806858',ac:'#913a62',paper:'#fffdf8',ink:'#49382f',mark:'#c292a6',uiFont:'微软雅黑',bodyFont:'',bodySize:16}
+  {id:'moyan',name:'墨砚',bg:'#09090b',bg2:'#18181b',bg3:'#27272a',line:'#52525b',tx:'#d6d3d1',tx2:'#a8a29e',tx3:'#71717a',ac:'#c9a66b',paper:'#18181b',ink:'#d6d3d1',mark:'#f59e0b',uiFont:'微软雅黑',bodyFont:'',bodySize:16,paraGap:0.2},
+  {id:'xuantie',name:'玄铁',bg:'#0c0e12',bg2:'#151820',bg3:'#1e2430',line:'#3a4254',tx:'#e2e6ee',tx2:'#9aa3b5',tx3:'#6b7385',ac:'#8b9cb3',paper:'#151820',ink:'#e2e6ee',mark:'#f0b429',uiFont:'微软雅黑',bodyFont:'',bodySize:16,paraGap:0.2},
+  {id:'qingrang',name:'青壤',bg:'#0f1410',bg2:'#171d18',bg3:'#222a22',line:'#3a463a',tx:'#dce6dc',tx2:'#9aab9a',tx3:'#6e7d6e',ac:'#6b9b6e',paper:'#171d18',ink:'#dce6dc',mark:'#c9a227',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:16,paraGap:0.2},
+  {id:'xiangyue',name:'向月',bg:'#141022',bg2:'#211c35',bg3:'#2e2846',line:'#554b6c',tx:'#f0eafa',tx2:'#c5b9da',tx3:'#a898c4',ac:'#e9b4df',paper:'#1b1630',ink:'#f0eafa',mark:'#e9b4df',uiFont:'微软雅黑',bodyFont:'',bodySize:16,paraGap:0.2},
+  {id:'xuanzhi',name:'宣纸',bg:'#f5f0e6',bg2:'#faf6ee',bg3:'#ebe4d4',line:'#d9d0bc',tx:'#3a3428',tx2:'#6b6354',tx3:'#8a8170',ac:'#8b5a2b',paper:'#faf6ee',ink:'#3a3428',mark:'#c9a227',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:18,paraGap:0.2},
+  {id:'sujian',name:'素笺',bg:'#f7f5f0',bg2:'#fffcf7',bg3:'#eeeae2',line:'#ddd8ce',tx:'#2c2a26',tx2:'#5c5952',tx3:'#8a8680',ac:'#5a6b4e',paper:'#fffcf7',ink:'#2c2a26',mark:'#d4a017',uiFont:'微软雅黑',bodyFont:'楷体',bodySize:18,paraGap:0.2},
+  {id:'yuebai',name:'月白',bg:'#f4f6f8',bg2:'#ffffff',bg3:'#e8ecf0',line:'#d0d5dc',tx:'#2a3038',tx2:'#5a6570',tx3:'#8a93a0',ac:'#5b7c99',paper:'#ffffff',ink:'#2a3038',mark:'#d97706',uiFont:'微软雅黑',bodyFont:'',bodySize:16,paraGap:0.2},
+  {id:'xiangri',name:'向日',bg:'#f4ecd9',bg2:'#fff8ee',bg3:'#f3e1cd',line:'#d3c1af',tx:'#49382f',tx2:'#725c50',tx3:'#806858',ac:'#913a62',paper:'#fffdf8',ink:'#49382f',mark:'#c292a6',uiFont:'微软雅黑',bodyFont:'',bodySize:16,paraGap:0.2}
 ];
 /* 出厂八套＝墨砚／玄铁／青壤／向月／宣纸／素笺／月白／向日；默认与回退＝墨砚。
    旧四套（夜读／灯下／竹子／雾蓝）退出厂；已落盘色若不匹配出厂则显示为自定义。 */
@@ -13288,11 +13293,25 @@ function appearAutoArm(){
 }
 
 function appearHexKeep(s){const m=/^#([0-9a-fA-F]{6})$/.exec(String(s==null?'':s).trim());return m?'#'+m[1]:''}
+/** 合法段间距：0–3em、步进 0.1；否则返回 null（调用方回默认）。
+ * @param {any} raw
+ * @returns {number|null}
+ */
+function appearParaGap(raw){
+  if(typeof raw!=='number'&&typeof raw!=='string')return null;
+  if(String(raw).trim()==='')return null;
+  const n=Number(raw);
+  if(!Number.isFinite(n))return null;
+  const k=Math.round(n*10);
+  if(k<0||k>30)return null;
+  if(Math.abs(n*10-k)>1e-8)return null;
+  return Number((k/10).toFixed(1));
+}
 function appearHexNorm(s){const h=appearHexKeep(s);return h?h.toLowerCase():''}
 function appearSame(a,b){
   if(!a||!b)return false;
   for(const k of APPEAR_KEYS)if(appearHexNorm(a[k])!==appearHexNorm(b[k]))return false;
-  return (a.uiFont||'')===(b.uiFont||'')&&(a.bodyFont||'')===(b.bodyFont||'')&&Number(a.bodySize)===Number(b.bodySize);
+  return (a.uiFont||'')===(b.uiFont||'')&&(a.bodyFont||'')===(b.bodyFont||'')&&Number(a.bodySize)===Number(b.bodySize)&&Number(a.paraGap)===Number(b.paraGap);
 }
 function appearMatchScheme(a){
   for(const f of APPEAR_FACTORY)if(appearSame(a,f))return f.id;
@@ -13300,7 +13319,8 @@ function appearMatchScheme(a){
 }
 function appearLabel(a){const id=appearMatchScheme(a);const f=appearSchemeById(id);return f?f.name:'自定义'}
 function appearCanon(a){
-  const o={bg:a.bg,bg2:a.bg2,bg3:a.bg3,line:a.line,tx:a.tx,tx2:a.tx2,tx3:a.tx3,ac:a.ac,paper:a.paper,ink:a.ink,mark:a.mark,uiFont:a.uiFont||'',bodyFont:a.bodyFont||'',bodySize:Number(a.bodySize)};
+  /** @type {any} */
+  const o={bg:a.bg,bg2:a.bg2,bg3:a.bg3,line:a.line,tx:a.tx,tx2:a.tx2,tx3:a.tx3,ac:a.ac,paper:a.paper,ink:a.ink,mark:a.mark,uiFont:a.uiFont||'',bodyFont:a.bodyFont||'',bodySize:Number(a.bodySize),paraGap:appearParaGap(a.paraGap)??APPEAR_PARA_GAP_DEFAULT};
   o.scheme=appearMatchScheme(o);
   return o;
 }
@@ -13314,6 +13334,7 @@ function appearNormalize(raw){
   if(raw.bodyFont==='')out.bodyFont='';
   else{const bodyName=appearFontToken(raw.bodyFont);if(bodyName)out.bodyFont=bodyName}
   if(APPEAR_SIZES.includes(Number(raw.bodySize)))out.bodySize=Number(raw.bodySize);
+  const gap=appearParaGap(raw.paraGap);if(gap!=null)out.paraGap=gap;
   return appearCanon(out);
 }
 function appearResolve(raw){return appearNormalize(raw)||appearFactory('moyan')}
@@ -13428,7 +13449,7 @@ function appearDress(id, ac, ac2){
 function appearCssVars(raw){
   const a=appearResolve(raw);
   const ac2=appearAccentLight(a.ac);
-  return Object.assign({'--bg':a.bg,'--bg2':a.bg2,'--bg3':a.bg3,'--line':a.line,'--tx':a.tx,'--tx2':a.tx2,'--tx3':a.tx3,'--ac':a.ac,'--ac2':ac2,'--paper':a.paper,'--ink':a.ink,'--mark':a.mark,'--prose-size':a.bodySize+'px','--ui-font':appearUiStack(a.uiFont),'--prose-font':appearBodyStack(a.bodyFont)}, appearDress(appearMatchScheme(a), a.ac, ac2));
+  return Object.assign({'--bg':a.bg,'--bg2':a.bg2,'--bg3':a.bg3,'--line':a.line,'--tx':a.tx,'--tx2':a.tx2,'--tx3':a.tx3,'--ac':a.ac,'--ac2':ac2,'--paper':a.paper,'--ink':a.ink,'--mark':a.mark,'--prose-size':a.bodySize+'px','--para-gap':a.paraGap+'em','--ui-font':appearUiStack(a.uiFont),'--prose-font':appearBodyStack(a.bodyFont)}, appearDress(appearMatchScheme(a), a.ac, ac2));
 }
 function appearPropose(settings, patch, readonly){
   const has=!!(settings&&typeof settings==='object'&&Object.prototype.hasOwnProperty.call(settings,'appearance'));
@@ -13446,6 +13467,7 @@ function appearPropose(settings, patch, readonly){
     if(Object.prototype.hasOwnProperty.call(p,'uiFont')&&appearFontChoosable(p.uiFont))next.uiFont=p.uiFont;
     if(Object.prototype.hasOwnProperty.call(p,'bodyFont')&&(p.bodyFont===''||appearFontChoosable(p.bodyFont)))next.bodyFont=p.bodyFont;
     if(Object.prototype.hasOwnProperty.call(p,'bodySize')&&APPEAR_SIZES.includes(Number(p.bodySize)))next.bodySize=Number(p.bodySize);
+    if(Object.prototype.hasOwnProperty.call(p,'paraGap')){const g=appearParaGap(p.paraGap);if(g!=null)next.paraGap=g}
     next=appearCanon(next);
   }
   if(has&&appearSame(before,next))return {ok:true,wrote:false,appearance:before,stored:prev};
@@ -13491,6 +13513,7 @@ function appearSyncControls(){
   const ui=$('#appear-ui-font');if(ui)ui.value=a.uiFont;
   const body=$('#appear-body-font');if(body)body.value=a.bodyFont;
   const sz=$('#appear-body-size');if(sz)sz.value=String(a.bodySize);
+  const gap=$('#appear-para-gap');if(gap)gap.value=String(a.paraGap);
   const miss=$('#appear-missing');
   if(miss){
     const text=appearMissingText(appearMissingOf(a));
@@ -13500,7 +13523,7 @@ function appearSyncControls(){
   appearSyncLabel();
 }
 /* 票02：自存方案。另存、改名、删除只动设置里的名单，不改出厂方案。
-   一条方案只记名字、十一项颜色、界面字体名、正文字体名、正文字号。不抄字体文件。
+   一条方案只记名字、十一项颜色、界面字体名、正文字体名、正文字号和段间距。不抄字体文件。
    正在用的那一套被删掉后，当前外观回到墨砚。 */
 function appearSchemeNewId(list){
   const used=new Set((list||[]).map(x=>x&&x.id));
@@ -13520,9 +13543,11 @@ function appearSchemeNorm(raw){
   const bodyName=raw.bodyFont===''?'':appearFontToken(raw.bodyFont);
   if(raw.bodyFont!==''&&!bodyName)return null;
   if(!APPEAR_SIZES.includes(Number(raw.bodySize)))return null;
+  /** @type {any} */
   const o={id,name};
   for(const k of APPEAR_KEYS)o[k]=appearHexKeep(raw[k]);
   o.uiFont=uiName;o.bodyFont=bodyName;o.bodySize=Number(raw.bodySize);
+  o.paraGap=appearParaGap(raw.paraGap)??APPEAR_PARA_GAP_DEFAULT;
   return o;
 }
 function appearSchemeList(settings){
@@ -13537,9 +13562,11 @@ function appearSchemeList(settings){
   return out;
 }
 function appearSchemeRow(id,name,look){
+  /** @type {any} */
   const o={id,name};
   for(const k of APPEAR_KEYS)o[k]=look[k];
   o.uiFont=look.uiFont||'';o.bodyFont=look.bodyFont||'';o.bodySize=Number(look.bodySize);
+  o.paraGap=appearParaGap(look.paraGap)??APPEAR_PARA_GAP_DEFAULT;
   return o;
 }
 function appearActivePick(settings){
@@ -13729,7 +13756,7 @@ function vAppear(){
   const saved=list.map(s=>`<div class="row" style="margin-top:8px"><button class="btn ${pick===s.id?'pri':''}" data-act="appear-scheme-pick" data-id="${esc(s.id)}" ${dis}>${esc(s.name)}</button><button class="btn sm" data-act="appear-scheme-rename" data-id="${esc(s.id)}" ${dis}>改名</button><button class="btn sm" data-act="appear-scheme-delete" data-id="${esc(s.id)}" ${dis}>删除</button></div>`).join('');
   const miss=appearMissingOf(a);
   const missText=appearMissingText(miss);
-  return `<div class="page" id="appear-panel"><p class="pd">调整界面与正文区的配色、字体和字号（全局生效，所有作品共用）。</p>
+  return `<div class="page" id="appear-panel"><p class="pd">调整界面与正文区的配色、字体、字号和段间距（全局生效，所有作品共用）。</p>
   <div class="card" style="margin-bottom:16px">
     <h3 style="margin-bottom:8px;font-size:14px">当前外观：<span id="appear-name">${esc(appearLabelOf(st))}</span></h3>
     <div class="row" style="flex-wrap:wrap;gap:8px">${APPEAR_FACTORY.map(f=>`<button class="btn ${!pick&&appearMatchScheme(a)===f.id?'pri':''}" data-act="appear-scheme" data-v="${f.id}" ${dis}>${esc(f.name)}</button>`).join('')}</div>
@@ -13760,11 +13787,12 @@ function vAppear(){
 
   </div>
   <div class="card">
-    <h3 style="margin-bottom:10px;font-size:14px">字体与正文字号</h3>
+    <h3 style="margin-bottom:10px;font-size:14px">字体、正文字号与段间距</h3>
     <div class="row">
       <div style="flex:1"><label class="f" title="界面字体与正文字体分开设置；正文字体不可用时回退到系统默认衬线。">界面字体</label><select id="appear-ui-font" ${dis}>${appearFontSelect('ui',a.uiFont)}</select></div>
       <div style="flex:1"><label class="f" title="界面字体与正文字体分开设置；正文字体不可用时回退到系统默认衬线。">正文字体</label><select id="appear-body-font" ${dis}>${appearFontSelect('body',a.bodyFont)}</select></div>
       <div><label class="f">正文字号</label><select id="appear-body-size" style="width:90px" ${dis}>${APPEAR_SIZES.map(n=>`<option value="${n}" ${a.bodySize===n?'selected':''}>${n}</option>`).join('')}</select></div>
+      <div><label class="f" title="仅影响编辑区正文段落的显示间距，不影响导出与发给 AI 的文本。单位为 em，随正文字号缩放。">段间距</label><select id="appear-para-gap" style="width:110px" ${dis}>${APPEAR_PARA_GAPS.map(n=>`<option value="${n}" ${a.paraGap===n?'selected':''}>${Number(n).toFixed(1)} em</option>`).join('')}</select></div>
     </div>
     <div class="row" style="margin-top:8px"><label class="f" style="margin:0" title="选择 ttf、otf、woff 或 woff2。文件写进这份数据夹的 _工坊/字体/，换机时连同数据夹一起走。然后在上面的名单里选它。只加载当前选中的那一款。文件还没到时，文字先用回退字体。文件不在时颜色和字号仍在，并标明缺的名字。方案只记字体名。">导入字体文件</label><input id="appear-font-file" type="file" accept=".ttf,.otf,.woff,.woff2" ${dis} title="选择 ttf、otf、woff 或 woff2。文件写进这份数据夹的 _工坊/字体/，换机时连同数据夹一起走。然后在上面的名单里选它。只加载当前选中的那一款。文件还没到时，文字先用回退字体。文件不在时颜色和字号仍在，并标明缺的名字。方案只记字体名。"></div>
     <p id="appear-missing" class="hint" style="color:var(--warn)${missText?'':';display:none'}">${esc(missText)}</p>
@@ -25564,11 +25592,13 @@ document.addEventListener('change',async e=>{
     if(!appearCommitLive({[k]:want}))e.target.value=appearHexNorm(appearResolve(S.data.settings&&S.data.settings.appearance)[k]);
     return;
   }
-  if(e.target.id==='appear-ui-font'||e.target.id==='appear-body-font'||e.target.id==='appear-body-size'){
-    if(e.target.id==='appear-ui-font')appearCommitLive({uiFont:e.target.value});
-    else if(e.target.id==='appear-body-font')appearCommitLive({bodyFont:e.target.value});
-    else appearCommitLive({bodySize:Number(e.target.value)});
-    appearFontKick();
+  const appearSel=/** @type {HTMLSelectElement} */(e.target);
+  if(appearSel.id==='appear-ui-font'||appearSel.id==='appear-body-font'||appearSel.id==='appear-body-size'||appearSel.id==='appear-para-gap'){
+    if(appearSel.id==='appear-ui-font')appearCommitLive({uiFont:appearSel.value});
+    else if(appearSel.id==='appear-body-font')appearCommitLive({bodyFont:appearSel.value});
+    else if(appearSel.id==='appear-para-gap')appearCommitLive({paraGap:Number(appearSel.value)});
+    else appearCommitLive({bodySize:Number(appearSel.value)});
+    if(appearSel.id!=='appear-para-gap')appearFontKick();
     return;
   }
   if(e.target.id==='appear-font-file'){
