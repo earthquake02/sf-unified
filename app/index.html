@@ -671,7 +671,7 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-scene-pick select{min-width:160px;max-width:min(360px,52vw);height:30px;font-size:12.5px}
 .graph-scene-pick .btn:disabled{opacity:.45;cursor:not-allowed}
 .graph-tools .co-hint{font-size:10.5px;color:var(--tx3);margin-left:2px}
-.graph-note{font-size:10px; fill:var(--tx3); pointer-events:none}
+.graph-note{fill:var(--tx3); pointer-events:none}
 .graph-note.is-parked{visibility:hidden}
 .graph-edge-g{cursor:pointer}
 .graph-edge-g:hover .graph-note.is-parked,
@@ -19883,6 +19883,7 @@ function graphNotesSync(svg,pos,scale){
     }
     const place=graphNotePlace(pa,pb,rA,rB,typ,scale,obstacles,aid,bid);
     tx.setAttribute('font-size',String(place.font));
+    tx.style.fontSize=place.font+'px';
     tx.setAttribute('transform',place.tf);
     tx.removeAttribute('x');tx.removeAttribute('y');tx.removeAttribute('dy');
     if(tx.classList)tx.classList.toggle('is-parked',!place.visible);
@@ -19917,7 +19918,7 @@ function graphEdgeSVG(ed,pos,showNotes,noteEnv){
         if(o&&o.id===ed.b.id)rB=o.r;
       }
       const place=graphNotePlace(a,b,rA,rB,typ,env.scale!=null?Number(env.scale):1,obs,ed.a.id,ed.b.id);
-      noteTxt=`<text class="graph-note${place.visible?'':' is-parked'}" data-a="${ed.a.id}" data-b="${ed.b.id}" data-label="${esc(typ)}" text-anchor="middle" dominant-baseline="middle" font-size="${place.font}" transform="${place.tf}">${esc(typ)}</text>`;
+      noteTxt=`<text class="graph-note${place.visible?'':' is-parked'}" data-a="${ed.a.id}" data-b="${ed.b.id}" data-label="${esc(typ)}" text-anchor="middle" dominant-baseline="middle" font-size="${place.font}" style="font-size:${place.font}px" transform="${place.tf}">${esc(typ)}</text>`;
     }
     return `<g class="graph-edge-g" ${ids} data-etype="link">${title}<line class="graph-edge-link" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac2)" stroke-width="1.6" opacity=".75" stroke-dasharray="5 4"/><line class="graph-edge-hit" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="16" fill="none"/>${noteTxt}</g>`;
   }
