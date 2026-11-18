@@ -445,6 +445,38 @@ label.f{display:block; font-size:12px; color:var(--tx2); margin:10px 0 4px}
 .cdx-funnel-sort-opts button.on{box-shadow:inset 0 0 0 1px var(--ac);background:var(--bg3);color:var(--ac)}
 .cdx-funnel-sep{height:1px;margin:6px 0;background:var(--line);border:0}
 .cdx-funnel-clear{color:var(--tx2)}
+.cdx-funnel-track{position:relative}
+.cdx-funnel-track-frac{margin-left:auto;padding-left:8px;color:var(--tx3);font-size:12px;font-variant-numeric:tabular-nums}
+.cdx-funnel-track-menu{display:none;position:fixed;z-index:330;padding:4px 0;background:var(--bg2);color:var(--tx);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.28);width:max-content;min-width:0;max-width:min(200px,92vw)}
+.cdx-funnel-track-menu.open{display:block}
+.cdx-funnel-track-menu .cdx-funnel-row{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:13px;line-height:1.3;margin:0;cursor:pointer;user-select:none;white-space:nowrap;color:var(--tx)}
+.cdx-funnel-track-menu .cdx-funnel-row:hover{background:var(--bg3)}
+.cdx-funnel-track-menu .cdx-funnel-row:has(input:checked){background:color-mix(in srgb,var(--ac) 10%,transparent)}
+/* 整行光点：开关键跟当前外观强调色 --ac，不用原生方框 */
+input[type=checkbox]{
+  appearance:none;-webkit-appearance:none;
+  width:13px;height:13px;min-width:13px;min-height:13px;
+  margin:0;padding:0;flex:none;
+  box-sizing:border-box;vertical-align:middle;
+  border:1.5px solid color-mix(in srgb,var(--tx) 38%,transparent);
+  border-radius:50%;
+  background:transparent;
+  cursor:pointer;
+  box-shadow:none;
+  accent-color:var(--ac);
+  transition:background .12s ease,border-color .12s ease,box-shadow .12s ease;
+}
+input[type=checkbox]:checked{
+  border-color:var(--ac);
+  background:radial-gradient(circle at 50% 50%,var(--ac) 0 37%,color-mix(in srgb,var(--ac) 28%,transparent) 40%,transparent 56%),color-mix(in srgb,var(--ac) 14%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 20%,transparent);
+}
+input[type=checkbox]:disabled{opacity:.42;cursor:not-allowed}
+input[type=checkbox]:focus-visible{outline:2px solid var(--ac2);outline-offset:2px}
+label:has(> input[type=checkbox]){cursor:pointer;user-select:none}
+.graph-tools label{white-space:nowrap;flex:0 0 auto}
+.sb-mx-tagcell input[type=checkbox]:checked,
+.sb-mx-plancell input[type=checkbox]:checked{box-shadow:0 0 0 2px color-mix(in srgb,var(--ac) 20%,transparent)}
 .cpan{display:none}
 .cpan.on{display:block}
 .codexHit{display:flex; align-items:center; gap:8px; padding:6px 2px; border-bottom:1px solid var(--line); font-size:12.5px}
@@ -610,9 +642,10 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-canvas svg,.graph-wrap svg{display:block; width:100%; height:100%; max-width:none; flex-shrink:0; transform-origin:0 0}
 .graph-wrap .graph-node{cursor:pointer; touch-action:none}
 .graph-wrap .graph-node.dragging{cursor:grabbing}
-.graph-tools{position:absolute; right:12px; top:12px; z-index:3; display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:6px 10px; border-radius:8px; background:color-mix(in srgb,var(--bg2) 92%,transparent); border:1px solid var(--line); font-size:11.5px; color:var(--tx2); backdrop-filter:blur(4px); pointer-events:auto}
+.graph-tools{position:absolute; right:12px; top:12px; z-index:3; display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:5px 8px; border-radius:8px; background:color-mix(in srgb,var(--bg2) 92%,transparent); border:1px solid var(--line); font-size:11.5px; color:var(--tx2); backdrop-filter:blur(4px); pointer-events:auto}
 .graph-tools label{display:inline-flex; align-items:center; gap:5px; cursor:pointer; user-select:none}
 .graph-tools input{width:auto; margin:0}
+.graph-tools input[type=checkbox]{width:13px;height:13px}
 .graph-search{width:170px; padding:4px 9px; font:inherit; font-size:12px; border:1px solid var(--line); border-radius:6px; background:var(--bg2); color:var(--tx)}   /* codex-graph-ux票04/07：图谱搜索（名称/别名/标签）——命中 .hit、焦点 .focus、非命中 .dim */
 .graph-search:focus{outline:2px solid var(--ac2); outline-offset:-1px}
 .graph-wrap .graph-node, .graph-edges line{transition:opacity .15s}
@@ -690,7 +723,7 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .sf-review-nudge .acts>.btn{width:auto!important;max-width:none;flex:0 0 auto;white-space:nowrap}
 .sf-review-nudge .later-wrap{display:flex;flex-direction:column;align-items:stretch;gap:4px;flex:0 0 auto}
 .sf-review-nudge .later-wrap label{display:inline-flex!important;align-items:center;gap:5px;margin:0!important;width:auto!important;font-size:11.5px;color:var(--tx3);cursor:pointer;user-select:none;white-space:nowrap}
-.sf-review-nudge .later-wrap input[type=checkbox]{width:14px!important;height:14px!important;min-width:14px!important;flex:none!important;padding:0!important;margin:0!important}
+.sf-review-nudge .later-wrap input[type=checkbox]{width:13px!important;height:13px!important;min-width:13px!important;flex:none!important;padding:0!important;margin:0!important}
 .sf-review-nudge .later-wrap>.btn{width:auto!important;max-width:none;white-space:nowrap}
 .sf-cf-sec{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
 .sf-cf-hd{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:13px;font-weight:600;color:var(--tx);flex-wrap:wrap}
@@ -12033,18 +12066,49 @@ function cdxFoldSyncBtn(g,folded){   // 组头折叠钮开合态随可见性同�
   btn.textContent=folded?'▸':'▾';
 }
 
-/* 设定集大表漏斗：排序 + 三态筛选（仅 vCodex；会话瞬态 S.ui.cdxFilter；排序仍走 cdxSort／UI_KEY） */
-const CDX_FILTER_KEYS=['hasRel','hasNotes','hasDesc','hasImg','hasTags','isAlways','hasAlias','hasProg','inScene'];
-const CDX_FILTER_LABELS={hasRel:'有关联',hasNotes:'有注释',hasDesc:'有描述',hasImg:'有附图',hasTags:'有标签',isAlways:'全局',hasAlias:'有别名',hasProg:'有设定演进',inScene:'在当前小节'};
+/* 设定集大表漏斗：排序 + 三态筛选 + 追踪类别多选（仅 vCodex；会话瞬态 S.ui.cdxFilter；排序仍走 cdxSort／UI_KEY）
+   「显示追踪类别」替换旧三态「全局」(isAlways)；四个追踪类型默认全选，未全选即筛选生效。 */
+const CDX_FILTER_KEYS=['hasRel','hasNotes','hasDesc','hasImg','hasTags','hasAlias','hasProg','inScene'];
+/** @type {Record<string,string>} */
+const CDX_FILTER_LABELS={hasRel:'有关联',hasNotes:'有注释',hasDesc:'有描述',hasImg:'有附图',hasTags:'有标签',hasAlias:'有别名',hasProg:'有设定演进',inScene:'在当前小节'};
+/** @type {string[]} */
+const CDX_TRACK_KEYS=['always','onDetect','onDetectOff','never'];
+/** @type {Record<string,string>} */
+const CDX_TRACK_LABELS={always:'始终注入',onDetect:'检测到时包含',onDetectOff:'检测到时不包含',never:'从不包含'};
 function cdxFilterState(){
   if(!S.ui.cdxFilter||typeof S.ui.cdxFilter!=='object'||Array.isArray(S.ui.cdxFilter))S.ui.cdxFilter={};
   const st=S.ui.cdxFilter;
   for(const k of CDX_FILTER_KEYS){if(st[k]!=='yes'&&st[k]!=='no')st[k]=''}
+  cdxTrackState();
   return st;
 }
+/**
+ * 追踪类别勾选（默认四类全开）。顺带清掉旧三态 isAlways，并把「只要全局 / 不要全局」迁到四类开关。
+ * @returns {Record<string,boolean>}
+ */
+function cdxTrackState(){
+  const st=(!S.ui.cdxFilter||typeof S.ui.cdxFilter!=='object'||Array.isArray(S.ui.cdxFilter))?(S.ui.cdxFilter={}):S.ui.cdxFilter;
+  let t=st.track;
+  if(!t||typeof t!=='object'||Array.isArray(t))t={};
+  if(st.isAlways==='yes'||st.isAlways==='no'){
+    if(!('always' in t||'onDetect' in t||'onDetectOff' in t||'never' in t)){
+      t={always:true,onDetect:true,onDetectOff:true,never:true};
+      if(st.isAlways==='yes'){t.onDetect=false;t.onDetectOff=false;t.never=false}
+      else t.always=false;
+    }
+  }
+  if('isAlways' in st)delete st.isAlways;
+  for(const k of CDX_TRACK_KEYS)t[k]=t[k]!==false;
+  st.track=t;
+  return t;
+}
+/** @returns {number} */
+function cdxTrackOnCount(){return CDX_TRACK_KEYS.filter(k=>cdxTrackState()[k]).length}
+/** @returns {boolean} */
+function cdxTrackAllOn(){return cdxTrackOnCount()===CDX_TRACK_KEYS.length}
 function cdxFilterActive(){
   const st=cdxFilterState();
-  return CDX_FILTER_KEYS.some(k=>st[k]==='yes'||st[k]==='no');
+  return !cdxTrackAllOn()||CDX_FILTER_KEYS.some(k=>st[k]==='yes'||st[k]==='no');
 }
 /* 有当前书下的场景选中即可筛「在当前场景」（设定集页保留写作留下的 sceneId）；无场景则灰 */
 function cdxFilterSceneAvail(){
@@ -12059,7 +12123,6 @@ function cdxFilterPred(e,key,sceneMenSet){
     case'hasDesc':return !!String(e.description||'').trim();
     case'hasImg':return /^[A-Za-z0-9_-]{1,60}$/.test(String(e.image||''));
     case'hasTags':return (Array.isArray(e.tags)?e.tags:[]).some(t=>String(t||'').trim());
-    case'isAlways':return codexAiIncludeOf(e)==='always';
     case'hasAlias':{
       const hasA=(Array.isArray(e.aliases)?e.aliases:[]).some(a=>String(a||'').trim());
       return hasA&&e.trackAlias!==false;
@@ -12076,7 +12139,7 @@ function cdxFilterPred(e,key,sceneMenSet){
  */
 function cdxFilterContext(){
   const st=cdxFilterState();
-  const active=CDX_FILTER_KEYS.some(k=>st[k]==='yes'||st[k]==='no');
+  const active=cdxFilterActive();
   const wantsScene=st.inScene==='yes'||st.inScene==='no';
   const sceneOk=active&&wantsScene?cdxFilterSceneAvail():false;
   return {st,active,sceneOk,sceneFilter:sceneOk};
@@ -12094,6 +12157,7 @@ function cdxFilterMatch(e,sceneMenSet,ctx){
     if(want==='yes'&&!hit)return false;
     if(want==='no'&&hit)return false;
   }
+  if(!cdxTrackState()[codexAiIncludeOf(e)])return false;
   return true;
 }
 function cdxFilterCycle(key){
@@ -12106,22 +12170,43 @@ function cdxFilterCycle(key){
 function cdxFilterClear(){
   const st=cdxFilterState();
   for(const k of CDX_FILTER_KEYS)st[k]='';
+  const t=cdxTrackState();
+  for(const k of CDX_TRACK_KEYS)t[k]=true;
+}
+/** @param {string} key */
+function cdxTrackToggle(key){
+  if(!CDX_TRACK_KEYS.includes(key))return;
+  const t=cdxTrackState();
+  t[key]=!t[key];
 }
 function cdxFilterMark(v){return v==='yes'?'✓':(v==='no'?'−':'')}
 function cdxFunnelIconSVG(){
   return '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" /> </svg>';
+}
+function cdxTrackMenuHTML(){
+  const t=cdxTrackState();
+  const open=!!(S.ui&&S.ui.cdxTrackMenuOpen);
+  const rows=CDX_TRACK_KEYS.map(k=>{
+    const on=!!t[k];
+    return `<label class="cdx-funnel-row${on?' on':''}" data-k="${k}"><input type="checkbox" data-act="cdx-track-toggle" data-k="${k}" ${on?'checked':''}><span>${CDX_TRACK_LABELS[k]}</span></label>`;
+  }).join('');
+  return `<div class="cdx-funnel-track-menu${open?' open':''}" id="cdxTrackMenu" role="menu">${rows}</div>`;
 }
 function cdxFunnelPanelHTML(open){
   const st=cdxFilterState();
   const mode=cdxSortMode();
   const sceneOk=cdxFilterSceneAvail();
   const active=cdxFilterActive();
+  const trackN=cdxTrackOnCount();
   let rows='';
   for(const k of CDX_FILTER_KEYS){
     const dis=k==='inScene'&&!sceneOk;
     const mk=dis?'':cdxFilterMark(st[k]);
     const tt=dis?' title="无当前小节，不可筛选（请先在写作页选中小节）"':'';
     rows+=`<div class="cdx-funnel-row${dis?' disabled':''}" data-act="cdx-filter-cycle" data-k="${k}" role="menuitem"${dis?' aria-disabled="true"':''}${tt}><span class="mk" aria-hidden="true">${mk}</span><span>${CDX_FILTER_LABELS[k]}</span></div>`;
+    if(k==='hasTags'){
+      rows+=`<div class="cdx-funnel-row cdx-funnel-track" data-act="cdx-track-open" role="menuitem" aria-haspopup="true" aria-expanded="${S.ui&&S.ui.cdxTrackMenuOpen?'true':'false'}"><span class="mk" aria-hidden="true"></span><span>显示追踪类别</span><span class="cdx-funnel-track-frac">${trackN}/${CDX_TRACK_KEYS.length}</span></div>`;
+    }
   }
   return `<div class="cdx-funnel-wrap">
     <button type="button" class="cdx-funnel-btn${open?' on':''}${active?' has-f':''}" data-act="cdx-funnel-toggle" aria-label="排序与筛选" aria-expanded="${open?'true':'false'}" title="排序与筛选">${cdxFunnelIconSVG()}</button>
@@ -12136,10 +12221,62 @@ function cdxFunnelPanelHTML(open){
       <hr class="cdx-funnel-sep">
       <div class="cdx-funnel-row cdx-funnel-clear" data-act="cdx-filter-clear" role="menuitem"><span class="mk"></span><span>取消筛选</span></div>
     </div>
+    ${cdxTrackMenuHTML()}
   </div>`;
+}
+/** @type {ReturnType<typeof setTimeout>|null} */
+let _cdxTrackOpenT=null;
+/** @type {ReturnType<typeof setTimeout>|null} */
+let _cdxTrackCloseT=null;
+function cdxTrackMenuClearTimers(){
+  if(_cdxTrackOpenT){clearTimeout(_cdxTrackOpenT);_cdxTrackOpenT=null}
+  if(_cdxTrackCloseT){clearTimeout(_cdxTrackCloseT);_cdxTrackCloseT=null}
+}
+/** 打开「显示追踪类别」二级菜单。immediate 时跳过悬停等待。
+ * @param {boolean} [immediate] */
+function cdxTrackMenuOpen(immediate){
+  cdxTrackMenuClearTimers();
+  if(S.ui)S.ui.cdxTrackMenuOpen=true;
+  const menu=$('#cdxTrackMenu'),row=document.querySelector('.cdx-funnel-track');
+  if(menu){menu.classList.add('open');cdxTrackMenuPlace()}
+  if(row)row.setAttribute('aria-expanded','true');
+  void immediate;
+}
+function cdxTrackMenuClose(){
+  cdxTrackMenuClearTimers();
+  if(S.ui)S.ui.cdxTrackMenuOpen=false;
+  const menu=$('#cdxTrackMenu'),row=document.querySelector('.cdx-funnel-track');
+  if(menu)menu.classList.remove('open');
+  if(row)row.setAttribute('aria-expanded','false');
+}
+function cdxTrackMenuPlace(){
+  const menu=$('#cdxTrackMenu'),row=document.querySelector('.cdx-funnel-track');
+  if(!menu||!row||!(S.ui&&S.ui.cdxTrackMenuOpen))return;
+  menu.classList.add('open');
+  const r=row.getBoundingClientRect();
+  const mw=Math.max(menu.offsetWidth||0,140),mh=Math.max(menu.offsetHeight||0,40);
+  let left=r.right+4;
+  if(left+mw>innerWidth-8)left=r.left-mw-4;
+  left=Math.max(8,Math.min(left,innerWidth-mw-8));
+  let top=r.top;
+  if(top+mh>innerHeight-8)top=Math.max(8,innerHeight-mh-8);
+  top=Math.max(8,top);
+  menu.style.left=left+'px';
+  menu.style.top=top+'px';
+}
+function cdxTrackMenuArmOpen(){
+  if(!(S.ui&&S.ui.cdxFunnelOpen))return;
+  cdxTrackMenuClearTimers();
+  if(S.ui.cdxTrackMenuOpen)return;
+  _cdxTrackOpenT=setTimeout(()=>cdxTrackMenuOpen(false),300);
+}
+function cdxTrackMenuArmClose(){
+  cdxTrackMenuClearTimers();
+  _cdxTrackCloseT=setTimeout(()=>cdxTrackMenuClose(),180);
 }
 function cdxFunnelClose(){
   if(S.ui)S.ui.cdxFunnelOpen=false;
+  cdxTrackMenuClose();
   const p=$('#cdxFunnelPanel'),b=document.querySelector('.cdx-funnel-btn');
   if(p)p.classList.remove('open');
   if(b){b.classList.remove('on');b.setAttribute('aria-expanded','false')}
@@ -12155,6 +12292,7 @@ function cdxFunnelPlace(){
   top=Math.max(8,Math.min(top,innerHeight-ph-8));
   p.style.left=left+'px';
   p.style.top=top+'px';
+  if(S.ui&&S.ui.cdxTrackMenuOpen)cdxTrackMenuPlace();
 }
 if(typeof document!=='undefined'&&!document._cdxFunnelBound){
   document._cdxFunnelBound=true;
@@ -12175,6 +12313,21 @@ if(typeof document!=='undefined'&&!document._cdxFunnelBound){
   const _funnelRepo=()=>{if(S.ui&&S.ui.cdxFunnelOpen)cdxFunnelPlace()};
   window.addEventListener('resize',_funnelRepo);
   window.addEventListener('scroll',_funnelRepo,true);
+  /** @param {EventTarget|null|undefined} t @returns {Element|null} */
+  const _trackZone=t=>{
+    if(!t||!(/** @type {any} */(t).closest))return null;
+    const el=/** @type {Element} */(t);
+    return el.closest('.cdx-funnel-track')||el.closest('#cdxTrackMenu');
+  };
+  document.addEventListener('mouseover',ev=>{
+    if(!_trackZone(ev.target))return;
+    if(_cdxTrackCloseT){clearTimeout(_cdxTrackCloseT);_cdxTrackCloseT=null}
+    if(!(S.ui&&S.ui.cdxTrackMenuOpen))cdxTrackMenuArmOpen();
+  });
+  document.addEventListener('mouseout',ev=>{
+    if(!_trackZone(ev.target)||_trackZone(ev.relatedTarget))return;
+    cdxTrackMenuArmClose();
+  });
 }
 
 function cdxSortMode(){   // 设定集优化票02：列表排序；缺省/坏值 → mentions（ADR 0015）
@@ -14455,7 +14608,7 @@ ivBindDrag();
   if(S.ui.view==='graph')bindGraph();
   if(S.ui.view==='plot-graph')bindPlotGraph();
   try{const _m=$('#main');if(_m){_m.classList.toggle('view-graph',S.ui.view==='graph'||S.ui.view==='plot-graph');_m.classList.toggle('view-plot-graph',S.ui.view==='plot-graph')}}catch(_e){}
-  if(S.ui&&S.ui.cdxFunnelOpen){try{cdxFunnelPlace()}catch(_e){}}
+  if(S.ui&&S.ui.cdxFunnelOpen){try{cdxFunnelPlace();if(S.ui.cdxTrackMenuOpen)cdxTrackMenuPlace()}catch(_e){}}
   const fb=$('#fldBanner');if(fb){fb.innerHTML=stBannerHTML();fb.classList.toggle('on',!!fb.innerHTML);document.body.classList.toggle('fld-ro',!!fb.innerHTML)}   // G2：只读（版本闸/冲突）与写入失败常驻横幅
   scrollRestore(_ss);
   edScrollApply();   // 票26：双栏滚动按同书/同景续位（身份不符时不动，交给下方定位逻辑）
@@ -18869,10 +19022,27 @@ function graphCoPairsForScene(nid,sceneId,entries,seenHier,seenLink){
   _graphCoCache={nid,gen,sceneId,pairs:top.map(p=>({a:p.a,b:p.b,w:p.w}))};
   return top;
 }
+/**
+ * 关系图谱可见条目：「从不包含」永不入图；「检测到时不包含」仅当显示次要设定。
+ * @param {any[]} entries
+ * @param {boolean} showMinor
+ * @returns {any[]}
+ */
+function graphEntriesVisible(entries,showMinor){
+  return (entries||[]).filter(e=>{
+    const a=codexAiIncludeOf(e);
+    if(a==='never')return false;
+    if(a==='onDetectOff')return !!showMinor;
+    return true;
+  });
+}
 function vGraph(){
   const n=curNovel();if(!n)return needNovel();
   const nid=n.id;
-  const entries=entriesOf(nid);
+  const allEntries=entriesOf(nid);
+  if(S.ui.graphShowMinor==null)S.ui.graphShowMinor=false;
+  const showMinor=!!S.ui.graphShowMinor;
+  const entries=graphEntriesVisible(allEntries,showMinor);
   const men=mentionScan(nid);
   if(S.ui.graphShowNotes==null)S.ui.graphShowNotes=true;
   if(S.ui.graphShowMentions==null)S.ui.graphShowMentions=true;
@@ -18948,8 +19118,8 @@ function vGraph(){
   <div class="graph-scene-pick"><select id="graphSceneSel" data-act="graph-scene" aria-label="图谱${unitLabel()}" title="选择${unitLabel()}后可显示该${unitLabel()}的同${unitLabel()}共现">${graphSceneOptionsHTML(nid,gSid||'')}</select>
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
   <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
-  ${entries.length?`<div class="graph-shell"><div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
-  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
+  ${allEntries.length?`<div class="graph-shell">${entries.length?`<div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>`:`<div class="empty">没有可显示的设定。「从不包含」不会出现在关系图谱；要查看「检测到时不包含」的设定，请勾选「显示次要设定」。</div>`}
+  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
     <span class="hint"><span style="color:var(--ac)">→</span> 归属／下属 ${hierN} 条</span>
     <span class="hint"><span style="color:var(--ac2)">┆</span> 平级关联 ${linkN} 条</span>
@@ -22307,7 +22477,7 @@ function vUpdates(){
   <div class="card">
     <h2 class="upd-title">故事工坊 V1.6</h2>
     <p class="upd-meta">2026-11-18</p>
-    <p class="upd-intro">这一版把写作页的撤销和排版补齐了：撤销不再弄丢章标题，副驾里「采用」写入的内容也可以撤回；当前章可以一键整理空段落和段首空格；外观能调节正文段间距；工具栏去掉了「正文段落」，「消除格式」会同时清掉行内样式，并退出引用、把小标题降回正文。</p>
+    <p class="upd-intro">这一版把写作页的撤销和排版补齐了：撤销不再弄丢章标题，副驾里「采用」写入的内容也可以撤回；当前章可以一键整理空段落和段首空格；外观能调节正文段间距；工具栏去掉了「正文段落」，「消除格式」会同时清掉行内样式，并退出引用、把小标题降回正文。设定集漏斗可按追踪类别筛选，关系图谱不再画出「从不包含」的设定，勾选也改成了跟外观走的整行光点。</p>
 
     <details class="upd-group" open>
       <summary><span class="upd-g-title">撤销</span><span class="upd-g-count">2 项</span></summary>
@@ -22329,6 +22499,15 @@ function vUpdates(){
       <summary><span class="upd-g-title">格式工具</span><span class="upd-g-count">1 项</span></summary>
       <div class="upd-body"><ul>
         <li><strong>格式按钮更简单</strong>：工具栏去掉「正文段落」。「消除格式」会清掉粗体、斜体、下划线、删除线和高亮，并把引用退出、小标题降回正文段落；折叠块和插图不会被拆掉。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group" open>
+      <summary><span class="upd-g-title">设定集与图谱</span><span class="upd-g-count">3 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>图谱按追踪显示</strong>：关系图谱不再画出「从不包含」的设定；「检测到时不包含」默认隐藏，勾选工具栏「显示次要设定」后才出现。</li>
+        <li><strong>筛选追踪类别</strong>：设定漏斗里的「全局」换成「显示追踪类别」。停在这一行约 0.3 秒，或直接点击，会从侧面弹出四个追踪类型开关；取消筛选会把四类重新全选。</li>
+        <li><strong>整行光点勾选</strong>：开关键改成整行可点的光点，颜色跟当前外观方案的强调色走。</li>
       </ul></div>
     </details>
   </div>
@@ -24992,7 +25171,22 @@ document.addEventListener('click',async e=>{
   case'cdx-filter-clear':{
     e.stopPropagation();
     cdxFilterClear();
-    S.ui.cdxFunnelOpen=true;render();break}
+    S.ui.cdxFunnelOpen=true;S.ui.cdxTrackMenuOpen=false;render();break}
+  case'cdx-track-open':{
+    e.stopPropagation();
+    e.preventDefault();
+    if(S.ui)S.ui.cdxFunnelOpen=true;
+    cdxTrackMenuOpen(true);
+    break}
+  case'cdx-track-toggle':{
+    e.stopPropagation();
+    const key=el.dataset.k;
+    const box=el.matches&&el.matches('input[type=checkbox]')?el:el.querySelector&&el.querySelector('input[type=checkbox]');
+    if(!CDX_TRACK_KEYS.includes(key))break;
+    const t=cdxTrackState();
+    t[key]=box?!!box.checked:!t[key];
+    if(S.ui){S.ui.cdxFunnelOpen=true;S.ui.cdxTrackMenuOpen=true}
+    render();break}
 
   case'codex-rel-add':{
     e.stopPropagation();
@@ -25084,6 +25278,10 @@ document.addEventListener('click',async e=>{
     break}
   case'graph-toggle-co':{
     S.ui.graphShowCo=!!el.checked;
+    render();
+    break}
+  case'graph-toggle-minor':{
+    S.ui.graphShowMinor=!!el.checked;
     render();
     break}
   case'graph-scene-jump':{
