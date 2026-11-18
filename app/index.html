@@ -15717,13 +15717,12 @@ function vEditor(){
         <span class="sep"></span>
         <button class="tb" data-cmd="formatBlock:h2" title="小标题">H2</button>
         <button class="tb" data-cmd="formatBlock:h3" title="三级标题">H3</button>
-        <button class="tb" data-cmd="formatBlock:p" title="正文段落">¶</button>
         <button class="tb" data-cmd="formatBlock:blockquote" title="引用">❝</button>
         <button class="tb" data-cmd="insertHorizontalRule" title="分隔线">—</button>
         <button class="tb" data-act="ed-fig" title="插入正文插图" ${roReason()?'disabled':''}>${uiIc('image')}</button>
         <input id="ed-fig-file" type="file" accept="image/*" ${roReason()?'disabled':''} hidden>
         <button class="tb" data-cmd="hiliteColor:${esc(appearHexNorm(appearResolve(S.data.settings&&S.data.settings.appearance).mark))}" title="高亮">${uiIc('appearance')}</button>
-        <button class="tb" data-cmd="removeFormat" title="清除格式">⌫格式</button>
+        <button class="tb" data-cmd="removeFormat" title="消除格式">⌫格式</button>
         <button class="tb" data-act="ed-paiban" title="整理当前章：统一段间空行、清段首空格、删章首尾空行" ${roReason()?'disabled':''}>一键排版</button>
         <span class="sep"></span>
          <button class="btn sm pri" data-act="ai-summarize" title="AI 生成章节摘要">${uiIc('spark')}摘要</button>
@@ -18579,10 +18578,91 @@ function insertProseAtCaret(text){
   const sc=curScene();if(sc){sceneFigCommit(sc,ed.innerHTML);save();edDirty=false}
   return true;
 }
+/** 选区是否落在该块上（折叠光标＝块包含光标）。
+ * @param {Range} range
+ * @param {Element} el
+ * @returns {boolean} */
+function clearFormatTouches(range,el){
+  if(range.collapsed)return el===range.startContainer||el.contains(range.startContainer);
+  try{return range.intersectsNode(el)}catch(e){return false}
+}
+/** 折叠块／插图是内容结构：从外侧跨选时不进内部改块级格式；选区整体在折叠块内则允许处理块内格式。
+ * @param {Element} el
+ * @param {Range} range
+ * @param {Element} ed
+ * @returns {boolean} */
+function clearFormatBlockProtected(el,range,ed){
+  if(el.closest('figure'))return true;
+  const det=el.closest('details');
+  if(!det||!(ed===det||ed.contains(det)))return false;
+  const anc=range.commonAncestorContainer;
+  if(det===anc||det.contains(anc))return false;
+  return true;
+}
+/** @param {Element} el @returns {number} */
+function clearFormatDepth(el){
+  let d=0;for(let n=/** @type {Element|null} */(el);n;n=n.parentElement)d++;return d;
+}
+/** 引用解开为内部块；空壳或纯行内则换成正文段。h2/h3 换成 p，内文原样搬迁。
+ * @param {Element} el
+ * @returns {void} */
+function clearFormatToPara(el){
+  const parent=el.parentNode;if(!parent)return;
+  if(el.tagName==='BLOCKQUOTE'){
+    const hasBlock=[...el.childNodes].some(n=>n.nodeType===1&&/^(P|H[1-6]|BLOCKQUOTE|PRE|UL|OL|LI|DETAILS|HR|DIV|TABLE|FIGURE)$/.test((/** @type {Element} */(n)).tagName));
+    if(hasBlock){while(el.firstChild)parent.insertBefore(el.firstChild,el);parent.removeChild(el);return}
+  }
+  const p=document.createElement('p');
+  while(el.firstChild)p.appendChild(el.firstChild);
+  if(!p.childNodes.length)p.appendChild(document.createElement('br'));
+  parent.replaceChild(p,el);
+}
+/** 外侧跨选时冻结折叠块／插图，避免 removeFormat 改到结构内部或把折叠块展开。
+ * @param {Element} ed
+ * @param {Range} range
+ * @returns {{el:Element,inner:string,open:boolean|null}[]} */
+function clearFormatFreezeStructures(ed,range){
+  const out=[];
+  for(const el of ed.querySelectorAll('details,figure')){
+    const anc=range.commonAncestorContainer;
+    if(el===anc||el.contains(anc))continue;
+    out.push({el,inner:el.innerHTML,open:el.tagName==='DETAILS'?(/** @type {HTMLDetailsElement} */(el)).open:null});
+  }
+  return out;
+}
+/** @param {{el:Element,inner:string,open:boolean|null}[]} frozen
+ * @returns {void} */
+function clearFormatRestoreStructures(frozen){
+  for(const f of frozen){
+    if(!f.el.isConnected)continue;
+    if(f.el.innerHTML!==f.inner)f.el.innerHTML=f.inner;
+    if(f.el.tagName==='DETAILS'&&f.open!=null){const d=/** @type {HTMLDetailsElement} */(f.el);if(d.open!==f.open)d.open=f.open}
+  }
+}
+/** 消除格式：先清行内（原 removeFormat 范围），再把选区涉及的引用／h2／h3 转回正文段。
+ * @returns {void} */
+function execClearFormat(){
+  const ed=$('#edContent');if(!ed)return;
+  const sel=window.getSelection();
+  if(!(sel&&sel.rangeCount))return;
+  const range=sel.getRangeAt(0);
+  if(!(ed===range.commonAncestorContainer||ed.contains(range.commonAncestorContainer)))return;
+  const frozen=clearFormatFreezeStructures(ed,range);
+  const blocks=[];
+  for(const el of ed.querySelectorAll('h2,h3,blockquote')){
+    if(clearFormatBlockProtected(el,range,ed))continue;
+    if(clearFormatTouches(range,el))blocks.push(el);
+  }
+  document.execCommand('removeFormat',false,undefined);
+  blocks.sort((a,b)=>clearFormatDepth(b)-clearFormatDepth(a));
+  for(const el of blocks){if(el.isConnected)clearFormatToPara(el)}
+  clearFormatRestoreStructures(frozen);
+}
 function execFmt(spec){
   edPushHist(edSnap());
   const[cmd,arg]=spec.split(':');
-  document.execCommand(cmd,false,arg||null);
+  if(cmd==='removeFormat')execClearFormat();
+  else document.execCommand(cmd,false,arg||null);
   const sc=curScene();if(sc&&$('#edContent')){sceneFigCommit(sc,$('#edContent').innerHTML);save();edDirty=false}
 }
 
