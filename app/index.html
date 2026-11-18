@@ -23601,7 +23601,7 @@ function vUpdates(){
     <details class="upd-group" open>
       <summary><span class="upd-g-title">AI 服务</span><span class="upd-g-count">1 项</span></summary>
       <div class="upd-body"><ul>
-        <li><strong>三条协议</strong>：AI 服务可选 OpenAI（Chat Completions）、Anthropic（Messages）或 Google（Gemini），也可自动识别。OpenCode Go 填 <code>https://opencode.ai/inference/go</code>，模型填 <code>gemini-4-argon</code>，不必手拼上游路径。推荐名单可一键导入（不写 Key）。</li>
+        <li><strong>三条协议</strong>：AI 服务可选 OpenAI（Chat Completions）、Anthropic（Messages）或 Google（Gemini），也可自动识别。OpenCode Go 填 <code>https://opencode.ai/inference/go</code>，模型填 <code>gemini-4-argon</code>，不必手拼上游路径。推荐名单可一键导入 Base／模型／协议（不写 Key）。</li>
       </ul></div>
     </details>
 
@@ -24172,16 +24172,16 @@ function vSettings(){
     <div class="row" style="margin-top:6px">
       <select id="s-preset" style="flex:1" ${ro?'disabled':''}>${aiSvcList(st).map(p=>`<option value="${esc(p.id)}" ${p.id===st.aiProviderId?'selected':''}>${esc(p.name)}</option>`).join('')||'<option value="" selected>（列表为空，点「＋新增」）</option>'}</select>
       <button class="btn" data-act="svc-add" ${ro?'disabled':''}>＋ 新增</button>
-      <button class="btn" data-act="svc-rec" title="按定稿名单补齐显示名与 Base（DeepSeek／百炼／MiniMax／GLM／OpenRouter／Llama／Lemonade／OpenCode Go／空白自定义）；不写 Key；已有 Key 的行不动" ${ro?'disabled':''}>推荐</button>
+      <button class="btn" data-act="svc-rec" title="按定稿名单补齐显示名与 Base／模型／协议（DeepSeek／百炼／MiniMax／GLM／OpenRouter／Llama／Lemonade／OpenCode Go／空白自定义）；不写 Key；已有 Key 的行不动" ${ro?'disabled':''}>推荐</button>
       <button class="btn" data-act="svc-ren" ${ro?'disabled':''}>✎ 改名</button>
       <button class="btn danger" data-act="svc-del" ${ro?'disabled':''}>✕ 删除</button>
     </div>
     ${(!ro&&aiSvcShouldPromptRecommend(st))?`<div class="card" style="margin-top:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--line)">
-      <p style="margin:0 0 8px;font-size:13px;color:var(--tx2)" title="同一数据夹只主动提示一次；之后仍可点「推荐」手动导入">可一键填入推荐服务的 Base（不含 Key）。本地主推 Llama；Lemonade 建议 AMD。</p>
+      <p style="margin:0 0 8px;font-size:13px;color:var(--tx2)" title="同一数据夹只主动提示一次；之后仍可点「推荐」手动导入">可一键填入推荐服务的 Base／模型／协议（不含 Key）。本地主推 Llama；Lemonade 建议 AMD。</p>
       <div class="row"><button class="btn" data-act="svc-rec">填入推荐</button>
       <button class="btn" data-act="svc-rec-skip" title="关掉本条提示；仍可随时点「推荐」">不再提示</button></div>
     </div>`:''}
-    <p class="hint" style="margin-top:6px" title="可添加多条服务连接；切换即可更换当前接口、密钥与模型。点「推荐」可补齐定稿名单的 Base。">切换服务即可切换当前使用的接口地址、密钥与模型。</p>
+    <p class="hint" style="margin-top:6px" title="可添加多条服务连接；切换即可更换当前接口、密钥与模型。点「推荐」可补齐定稿名单的 Base／模型／协议。">切换服务即可切换当前使用的接口地址、密钥与模型。</p>
     <div class="row" style="margin-top:10px"><div style="flex:1"><label class="f">API Base</label><input type="text" id="s-base" value="${esc(st.aiBase)}" ${ro?'disabled':''}></div>
     <div style="flex:1"><label class="f" title="Key 以你的 Windows 账号加密存放在数据文件夹 _工坊/机密/（DPAPI 密文，手工打开不可读）——settings.json 与一切导出包里都不含 Key 明文；换电脑/换 Windows 账号后 Key 解不开，在这里重新填写即可（旧密文会移入回收站保留，不静默销毁）。">API Key</label><input type="password" id="s-key" value="${esc(st.aiKey)}" placeholder="sk-…" maxlength="2000" ${ro?'disabled':''}></div></div>
     <p class="hint" style="margin-top:6px" title="Key 以你的 Windows 账号加密存放在数据文件夹 _工坊/机密/（DPAPI 密文，手工打开不可读）——settings.json 与一切导出包里都不含 Key 明文；换电脑/换 Windows 账号后 Key 解不开，在这里重新填写即可（旧密文会移入回收站保留，不静默销毁）。">${uiIc('key')}API Key 已使用当前 Windows 账号加密保存在本机${ST.secBroken?'<br><b style="color:var(--warn)">⚠ AI Key 密文解不开（可能由另一个 Windows 账号或另一台电脑加密，也可能已损坏）：请重新填写 API Key。</b>':''}${ST.secUnsupported?'<br><b style="color:var(--warn)">⚠ 当前本地服务不支持机密端点：Key 本次会话可用，但不会写入磁盘'+(ST.setPlainKeys?'（盘上原有的明文 Key 保持原样，本会话的设置改动暂不落盘）':'')+'。</b>':''}</p>
@@ -26842,7 +26842,7 @@ document.addEventListener('click',async e=>{
   case'svc-add':{const p=aiSvcAdd(S.data.settings);if(!p){toast('AI 服务最多 '+AI_SVC_MAX+' 条',3200);break}
     save();render();toast('已新增「'+p.name+'」：请在下方填写 API Base / Key / 模型');break}
   case'svc-rec':{const r=aiSvcImportRecommend(S.data.settings);save();render();
-    toast(r.added||r.filled?('已导入推荐：新增 '+r.added+(r.filled?'，补齐 Base '+r.filled:'')+'（未写 Key）'):'推荐名单已齐（未改已有 Key 行）',4200);break}
+    toast(r.added||r.filled?('已导入推荐：新增 '+r.added+(r.filled?'，补齐 Base／模型／协议 '+r.filled:'')+'（未写 Key）'):'推荐名单已齐（未改已有 Key 行）',4200);break}
   case'sys-batch-ondetect':{codexBatchSetDetect('onDetect');break}
   case'sys-batch-ondetect-off':{codexBatchSetDetect('onDetectOff');break}
   case'sys-hk-set':{   // 快速记录快捷键：进入/退出捕获态（票04；捕获在全局 keydown）
