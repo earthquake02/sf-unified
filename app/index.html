@@ -15763,7 +15763,9 @@ function catColor(cat,nid){const c=catsOf(nid).find(x=>x.name===cat);return c?c.
 function entryIconColor(e,nid){const raw=e&&String(e.iconColor||'').trim();if(/^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(raw))return raw;return catColor(e&&e.category,nid|| (e&&e.novelId)||S.ui.novelId)}
 function entryIconColorNorm(v){const raw=String(v==null?'':v).trim();return /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/.test(raw)?raw:''}
 let edSaveTimer=null;
-let edDirty=false,edUndoStack=[],edRedoStack=[],edHistScene=null;
+let edDirty=false,edUndoStack=[],edRedoStack=[];
+/** @type {string|null} */
+let edHistScene=null;
 const edHistMap=Object.create(null);   // 票08（U04）：撤销/重做栈按景独立——切景停写旧景栈、换用新景自己的栈（互不串用）；结构操作不入栈（ADR 0005）
 function edHistSwap(id){               // 切景：把活动栈交还旧景、取用新景的栈（同一景重复调用无副作用）
   if(edHistScene&&edHistScene!==id)edHistMap[edHistScene]={undo:edUndoStack,redo:edRedoStack};
@@ -15774,9 +15776,38 @@ function edHistDrop(id){               // 该景正文被结构操作改写（�
   edHistMap[id]={undo:[],redo:[]};
   if(edHistScene===id){edUndoStack=edHistMap[id].undo;edRedoStack=edHistMap[id].redo}
 }
-function edSnap(){const ed=$('#edContent'),t=$('#edTitle');if(!ed)return null;const html=sceneFigCanon(ed.innerHTML);return {html,title:t?t.value:'',figs:edSnapFigs(html)}}
+/** 与标题输入框同口径：两级＝章号＋章题完整串，三级＝小节题（不用裸 sc.title，防无前缀串入栈）。
+ * @param {any} sc
+ * @returns {string} */
+function edSnapTitleOf(sc){
+  return (typeof outlineUnitTitle==='function'?outlineUnitTitle(sc):((sc&&sc.title)||''))||'';
+}
+function edSnap(){const ed=$('#edContent'),t=$('#edTitle');if(!ed)return null;const html=sceneFigCanon(ed.innerHTML);return {html,title:t?t.value:edSnapTitleOf(curScene()),figs:edSnapFigs(html)}}
+/** 受影响景快照（当前编辑景读 live DOM，其余读已落库数据）；标题口径同 edSnapTitleOf。
+ * @param {any} sc
+ * @returns {{html:string,title:string,figs:any}|null} */
+function edSnapOfScene(sc){
+  if(!sc)return null;
+  const ed=typeof $==='function'?$('#edContent'):null;
+  if(ed&&ed.dataset.scene===sc.id){
+    const html=sceneFigCanon(ed.innerHTML),t=typeof $==='function'?$('#edTitle'):null;
+    return {html,title:t?t.value:edSnapTitleOf(sc),figs:edSnapFigs(html)};
+  }
+  const html=sceneFigCanon(sc.content||'');
+  return {html,title:edSnapTitleOf(sc),figs:edSnapFigs(html)};
+}
 function edPushHist(s){if(!s)return;edUndoStack.push(s);if(edUndoStack.length>100)edUndoStack.shift();edRedoStack=[]}
-function edMarkDirty(){if(edDirty)return;const sc=curScene();edPushHist({html:sc?(sc.content||''):'',title:sc?(sc.title||''):'',figs:edSnapFigs(sc?sc.content:'')});edDirty=true}
+/** 按景入栈（采用目标可能不是当前编辑景）；与 edPushHist 同上限、清 redo。
+ * @param {string} id
+ * @param {any} s
+ * @returns {void} */
+function edPushHistForScene(id,s){
+  if(!s||!id)return;
+  if(edHistScene===id){edPushHist(s);return}
+  const rec=edHistMap[id]||(edHistMap[id]={undo:[],redo:[]});
+  rec.undo.push(s);if(rec.undo.length>100)rec.undo.shift();rec.redo=[];
+}
+function edMarkDirty(){if(edDirty)return;const sc=curScene();edPushHist({html:sc?(sc.content||''):'',title:edSnapTitleOf(sc),figs:edSnapFigs(sc?sc.content:'')});edDirty=true}
 function edFlushLive(sc){
   /* AI/摘要发送前把本场编辑器 DOM 刷进 sc.content（input/blur 通常已写；此处兜底） */
   if(!sc)return;
@@ -17721,6 +17752,8 @@ async function cpAdoptApply(sid,attId){
     const oldVers=Array.isArray(sc.versions)?sc.versions.slice():null;
     const oldData=adapter.snapOf(sc);
     const old={updHad:Object.hasOwn(sc,'updatedAt'),upd:sc.updatedAt};
+    if(typeof edFlushLive==='function')edFlushLive(sc);   // 采用前把目标景 live 正文刷进 sc，撤销快照与存档所见一致
+    const adoptSnap=typeof edSnapOfScene==='function'?edSnapOfScene(sc):null;
     await scPushVersion(sc,'采用前存档');
     adapter.apply(sc,parsed,sess);
     let ok=false,msg='',conflict=false,excl=false;
@@ -17760,6 +17793,7 @@ async function cpAdoptApply(sid,attId){
       toast(conflict?('⚠ 文件有冲突，未采用——请先处理顶部冲突提示后重试采用'):('采用写入失败：'+msg+'（未采用，内存已回退）'),6000);
       return;
     }
+    if(adoptSnap&&typeof edPushHistForScene==='function')edPushHistForScene(sc.id,adoptSnap);   // 写入成功才入撤销栈（失败不污染 redo）；Ctrl+Z 整体回退本次采用
     written='已写入「'+(sc.title||unitEmptyTitle())+'」'+adapter.countOfParsed(parsed)+' '+adapter.unit+(msg?'（'+msg+'）':'');   // 盘上已落定（票56 复核中危②）：此后收尾出错只如实报「已写入＋出错」，绝不谎报「未写入」
     att.adoptedAt=now();   // 采用记录（不锁再次采用）＋基线刷新（程序自己的写入不自锁，同一会话可重复采用）
     sess.adoptBase=adapter.canonOf(sc);
