@@ -671,7 +671,14 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-scene-pick select{min-width:160px;max-width:min(360px,52vw);height:30px;font-size:12.5px}
 .graph-scene-pick .btn:disabled{opacity:.45;cursor:not-allowed}
 .graph-tools .co-hint{font-size:10.5px;color:var(--tx3);margin-left:2px}
-.graph-note{font-size:9px; fill:var(--tx3); pointer-events:none}
+.graph-note{font-size:10px; fill:var(--tx3); pointer-events:none}
+.graph-note.is-parked{visibility:hidden}
+.graph-edge-g{cursor:pointer}
+.graph-edge-g:hover .graph-note.is-parked,
+.graph-edge-g.sel .graph-note.is-parked{visibility:visible}
+.graph-edge-g.sel .graph-edge-link{stroke-width:2.4; opacity:1}
+.graph-edge-hit{pointer-events:stroke; fill:none}
+.graph-edges .graph-edge-g.dim{opacity:.12}
 /* plot-graph-mvp：剧情图谱（复用 .graph-shell／.graph-wrap 壳；独立数据与入口） */
 .graph-wrap .graph-node.plot-focus .graph-ring{stroke:var(--ac); stroke-width:3.6}
 .graph-wrap .graph-node.plot-focus .graph-label{fill:var(--ac); font-weight:700}
@@ -19660,24 +19667,261 @@ function graphComputePos(entries,edges,W,H,nid){
   }
   return pos;
 }
-function graphNoteTransform(a,b){
-  const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-  let deg=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
-  if(deg>90||deg<-90)deg+=180;
-  return {mx,my,deg,tf:`translate(${mx} ${my}) rotate(${deg.toFixed(2)})`};
+/** 关系线标签相对两端圆周及第三者的空隙（与节点碰撞缝同量级）。 */
+const GRAPH_NOTE_PAD=6;
+/** 关系线标签目标屏上字号（世界字号＝此值/scale，使 10%–400% 下屏上大致固定）。 */
+const GRAPH_NOTE_SCREEN_PX=10;
+/** 屏上字号下限（缩得很小也还能认）。 */
+const GRAPH_NOTE_SCREEN_MIN=8;
+/** 屏上字号上限（放大到 400% 时不特别胀大）。 */
+const GRAPH_NOTE_SCREEN_MAX=12;
+/**
+ * @param {number} scale
+ * @returns {number} 世界坐标字号
+ */
+function graphNoteFontWorld(scale){
+  const s=Number(scale);
+  const sc=(Number.isFinite(s)&&s>0)?s:1;
+  const screen=Math.min(GRAPH_NOTE_SCREEN_MAX,Math.max(GRAPH_NOTE_SCREEN_MIN,GRAPH_NOTE_SCREEN_PX));
+  return screen/sc;
 }
-function graphEdgeSVG(ed,pos,showNotes){
+/**
+ * 两端圆周之外再留缝的外露线段。ok=false 表示两圆过近，外露长 ≤0。
+ * @param {{x:number,y:number}} a
+ * @param {{x:number,y:number}} b
+ * @param {number} rA
+ * @param {number} rB
+ * @param {number=} pad
+ * @returns {{ok:boolean,len:number,dist:number,ux:number,uy:number,x1:number,y1:number,x2:number,y2:number,mx:number,my:number}}
+ */
+function graphNoteExposedSegment(a,b,rA,rB,pad){
+  const px=(pad==null||!Number.isFinite(Number(pad)))?GRAPH_NOTE_PAD:Number(pad);
+  const ra=(Number.isFinite(Number(rA))?Number(rA):GRAPH_NODE_R_MIN)+px;
+  const rb=(Number.isFinite(Number(rB))?Number(rB):GRAPH_NODE_R_MIN)+px;
+  const dx=(b&&b.x||0)-(a&&a.x||0),dy=(b&&b.y||0)-(a&&a.y||0);
+  const dist=Math.hypot(dx,dy);
+  if(!(dist>ra+rb)){
+    const ux=dist>1e-6?dx/dist:1,uy=dist>1e-6?dy/dist:0;
+    const mx=((a&&a.x||0)+(b&&b.x||0))/2,my=((a&&a.y||0)+(b&&b.y||0))/2;
+    return {ok:false,len:Math.max(0,dist-ra-rb),dist,ux,uy,x1:mx,y1:my,x2:mx,y2:my,mx,my};
+  }
+  const ux=dx/dist,uy=dy/dist;
+  const x1=a.x+ux*ra,y1=a.y+uy*ra;
+  const x2=b.x-ux*rb,y2=b.y-uy*rb;
+  return {ok:true,len:dist-ra-rb,dist,ux,uy,x1,y1,x2,y2,mx:(x1+x2)/2,my:(y1+y2)/2};
+}
+/**
+ * @param {string} s
+ * @returns {string}
+ */
+function graphNoteEscRe(s){
+  return String(s||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+}
+/**
+ * 线上默认文案：只保留关系类型，去掉「甲→乙」这类两端名。
+ * @param {string=} note
+ * @param {string=} nameA
+ * @param {string=} nameB
+ * @returns {string}
+ */
+function graphNoteTypeLabel(note,nameA,nameB){
+  const raw=String(note==null?'':note).trim();
+  if(!raw)return '';
+  const a=String(nameA==null?'':nameA).trim();
+  const b=String(nameB==null?'':nameB).trim();
+  const arrow='\\s*(?:→|->|⇒|➡|➝)\\s*';
+  if(a&&b){
+    const re=new RegExp('^(?:'+graphNoteEscRe(a)+arrow+graphNoteEscRe(b)+'|'+graphNoteEscRe(b)+arrow+graphNoteEscRe(a)+')\\s*[:：\\-—–]?\\s*(.*)$');
+    const m=raw.match(re);
+    if(m)return String(m[1]||'').trim();
+  }
+  const g=raw.match(/^.+?(?:→|->|⇒|➡|➝)\s*.+?\s+[:：\-—–]?\s*(\S.*)$/);
+  if(g)return String(g[1]||'').trim();
+  return raw;
+}
+/**
+ * 悬停完整文案：「甲→乙 类型」。
+ * @param {string=} nameA
+ * @param {string=} nameB
+ * @param {string=} note
+ * @returns {string}
+ */
+function graphNoteFullTitle(nameA,nameB,note){
+  const a=String(nameA==null?'':nameA).trim()||'未命名';
+  const b=String(nameB==null?'':nameB).trim()||'未命名';
+  const typ=graphNoteTypeLabel(note,nameA,nameB);
+  if(typ)return a+'→'+b+' '+typ;
+  const raw=String(note==null?'':note).trim();
+  return raw||(a+'→'+b);
+}
+/**
+ * 估算标签在世界坐标下的宽（中日韩按全角，其余按 0.62em）。
+ * @param {string} text
+ * @param {number} font
+ * @returns {number}
+ */
+function graphNoteTextWidth(text,font){
+  const fs=(Number.isFinite(Number(font))&&Number(font)>0)?Number(font):GRAPH_NOTE_SCREEN_PX;
+  let w=0;
+  const s=String(text||'');
+  for(let i=0;i<s.length;i++){
+    const c=s.charCodeAt(i);
+    const wide=c>=0x1100&&(c<=0x115F||c===0x2329||c===0x232A||(c>=0x2E80&&c<=0xA4CF)||(c>=0xA960&&c<=0xA97F)||(c>=0xAC00&&c<=0xD7A3)||(c>=0xF900&&c<=0xFAFF)||(c>=0xFE10&&c<=0xFE19)||(c>=0xFE30&&c<=0xFE6F)||(c>=0xFF00&&c<=0xFF60)||(c>=0xFFE0&&c<=0xFFE6));
+    w+=wide?fs:fs*0.62;
+  }
+  return w;
+}
+/**
+ * 旋转矩形（中心 mx,my，长轴沿 ux,uy）是否侵入圆（半径已含缝）。
+ * @param {number} mx
+ * @param {number} my
+ * @param {number} ux
+ * @param {number} uy
+ * @param {number} halfW
+ * @param {number} halfH
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} radius
+ * @returns {boolean}
+ */
+function graphNoteRectHitsCircle(mx,my,ux,uy,halfW,halfH,cx,cy,radius){
+  const dx=cx-mx,dy=cy-my;
+  const lx=dx*ux+dy*uy;
+  const ly=-dx*uy+dy*ux;
+  const qx=Math.max(-halfW,Math.min(halfW,lx));
+  const qy=Math.max(-halfH,Math.min(halfH,ly));
+  const ex=lx-qx,ey=ly-qy;
+  const r=Math.max(0,Number(radius)||0);
+  return ex*ex+ey*ey<r*r-1e-9;
+}
+/**
+ * 标签只锚在外露段中点，沿法线两侧微移避让；仍放不下则 visible=false（悬停/选中再显示）。
+ * @param {{x:number,y:number}} a
+ * @param {{x:number,y:number}} b
+ * @param {number} rA
+ * @param {number} rB
+ * @param {string} text
+ * @param {number} scale
+ * @param {{id?:string,x:number,y:number,r:number}[]} obstacles
+ * @param {string=} idA
+ * @param {string=} idB
+ * @returns {{visible:boolean,mx:number,my:number,deg:number,font:number,tf:string}}
+ */
+function graphNotePlace(a,b,rA,rB,text,scale,obstacles,idA,idB){
+  const font=graphNoteFontWorld(scale);
+  const seg=graphNoteExposedSegment(a,b,rA,rB,GRAPH_NOTE_PAD);
+  let deg=Math.atan2((b&&b.y||0)-(a&&a.y||0),(b&&b.x||0)-(a&&a.x||0))*180/Math.PI;
+  if(deg>90||deg<-90)deg+=180;
+  const tfOf=(/** @type {number} */ mx,/** @type {number} */ my)=>'translate('+mx+' '+my+') rotate('+deg.toFixed(2)+')';
+  const label=String(text||'');
+  const baseOff=font*0.9;
+  const parked={visible:false,mx:seg.mx,my:seg.my-baseOff,deg,font,tf:tfOf(seg.mx,seg.my-baseOff)};
+  if(!label||!a||!b)return parked;
+  const tw=graphNoteTextWidth(label,font);
+  const halfW=tw/2+1;
+  const halfH=font*0.6;
+  const ux=seg.ux,uy=seg.uy;
+  const nx=-uy,ny=ux;
+  const obs=Array.isArray(obstacles)?obstacles:[];
+  const clearAt=(/** @type {number} */ mx,/** @type {number} */ my)=>{
+    for(let i=0;i<obs.length;i++){
+      const o=obs[i];
+      if(!o)continue;
+      const rad=(Number.isFinite(Number(o.r))?Number(o.r):GRAPH_NODE_R_MIN)+GRAPH_NOTE_PAD;
+      if(graphNoteRectHitsCircle(mx,my,ux,uy,halfW,halfH,o.x,o.y,rad))return false;
+    }
+    return true;
+  };
+  if(!seg.ok||seg.len<=0)return parked;
+  /* 外露段不够写：法线微移也拉不长线段，默认隐藏（悬停/选中再显示）。 */
+  if(tw+2>seg.len)return {visible:false,mx:seg.mx+nx*baseOff,my:seg.my+ny*baseOff,deg,font,tf:tfOf(seg.mx+nx*baseOff,seg.my+ny*baseOff)};
+  const offs=[baseOff,-baseOff,baseOff*1.8,-baseOff*1.8,baseOff*2.8,-baseOff*2.8];
+  for(let i=0;i<offs.length;i++){
+    const off=offs[i];
+    const mx=seg.mx+nx*off,my=seg.my+ny*off;
+    if(clearAt(mx,my))return {visible:true,mx,my,deg,font,tf:tfOf(mx,my)};
+  }
+  return {visible:false,mx:seg.mx+nx*baseOff,my:seg.my+ny*baseOff,deg,font,tf:tfOf(seg.mx+nx*baseOff,seg.my+ny*baseOff)};
+}
+/**
+ * @param {Element} svg
+ * @returns {{id:string,x:number,y:number,r:number}[]}
+ */
+function graphNotesObstacles(svg){
+  /** @type {{id:string,x:number,y:number,r:number}[]} */
+  const out=[];
+  if(!svg||!svg.querySelectorAll)return out;
+  svg.querySelectorAll('.graph-node').forEach(g=>{
+    const id=g.getAttribute('data-id')||'';
+    const c=g.querySelector('circle.graph-ring')||g.querySelector('circle');
+    if(!c)return;
+    const r=Number(g.getAttribute('data-r'));
+    out.push({id,x:Number(c.getAttribute('cx'))||0,y:Number(c.getAttribute('cy'))||0,r:(Number.isFinite(r)&&r>0)?r:GRAPH_NODE_R_MIN});
+  });
+  return out;
+}
+/**
+ * 拖点、缩放后同步所有关系线标签位置与字号。
+ * @param {Element} svg
+ * @param {any} pos
+ * @param {number} scale
+ */
+function graphNotesSync(svg,pos,scale){
+  if(!svg||!svg.querySelectorAll)return;
+  const obstacles=graphNotesObstacles(svg);
+  svg.querySelectorAll('.graph-edges .graph-note').forEach(tx=>{
+    const aid=tx.getAttribute('data-a')||'';
+    const bid=tx.getAttribute('data-b')||'';
+    const pa=graphPosXY(pos,aid),pb=graphPosXY(pos,bid);
+    if(!pa||!pb)return;
+    const typ=tx.getAttribute('data-label')||tx.textContent||'';
+    let rA=GRAPH_NODE_R_MIN,rB=GRAPH_NODE_R_MIN;
+    for(let i=0;i<obstacles.length;i++){
+      const o=obstacles[i];
+      if(o.id===aid)rA=o.r;
+      if(o.id===bid)rB=o.r;
+    }
+    const place=graphNotePlace(pa,pb,rA,rB,typ,scale,obstacles,aid,bid);
+    tx.setAttribute('font-size',String(place.font));
+    tx.setAttribute('transform',place.tf);
+    tx.removeAttribute('x');tx.removeAttribute('y');tx.removeAttribute('dy');
+    if(tx.classList)tx.classList.toggle('is-parked',!place.visible);
+  });
+}
+/**
+ * @param {{a:any,b:any,type:string,w?:number,note?:string}} ed
+ * @param {Map<string,{x:number,y:number}>} pos
+ * @param {boolean} showNotes
+ * @param {{scale?:number,obstacles?:{id?:string,x:number,y:number,r:number}[]}=} noteEnv
+ */
+function graphEdgeSVG(ed,pos,showNotes,noteEnv){
   const a=pos.get(ed.a.id),b=pos.get(ed.b.id);
   if(!a||!b)return '';
   const ids=`data-a="${ed.a.id}" data-b="${ed.b.id}"`;
   if(ed.type==='hier')
     return `<line ${ids} data-etype="hier" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac)" stroke-width="1.9" opacity=".85" marker-end="url(#sfHierArrow)"/>`;
   if(ed.type==='link'){
-    const nt=graphNoteTransform(a,b);
-    const noteTxt=showNotes&&ed.note?`<text class="graph-note" data-a="${ed.a.id}" data-b="${ed.b.id}" text-anchor="middle" dy="-0.7em" transform="${nt.tf}">${esc(String(ed.note).slice(0,18))}</text>`:'';
-    return `<line ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac2)" stroke-width="1.6" opacity=".75" stroke-dasharray="5 4"/>${noteTxt}`;
+    const nameA=String((ed.a&&ed.a.name)||'未命名');
+    const nameB=String((ed.b&&ed.b.name)||'未命名');
+    const typ=graphNoteTypeLabel(ed.note,nameA,nameB);
+    const full=graphNoteFullTitle(nameA,nameB,ed.note);
+    const title=full?`<title>${esc(full)}</title>`:'';
+    let noteTxt='';
+    if(showNotes&&typ){
+      const env=noteEnv||{};
+      const obs=Array.isArray(env.obstacles)?env.obstacles:[];
+      let rA=GRAPH_NODE_R_MIN,rB=GRAPH_NODE_R_MIN;
+      for(let i=0;i<obs.length;i++){
+        const o=obs[i];
+        if(o&&o.id===ed.a.id)rA=o.r;
+        if(o&&o.id===ed.b.id)rB=o.r;
+      }
+      const place=graphNotePlace(a,b,rA,rB,typ,env.scale!=null?Number(env.scale):1,obs,ed.a.id,ed.b.id);
+      noteTxt=`<text class="graph-note${place.visible?'':' is-parked'}" data-a="${ed.a.id}" data-b="${ed.b.id}" data-label="${esc(typ)}" text-anchor="middle" dominant-baseline="middle" font-size="${place.font}" transform="${place.tf}">${esc(typ)}</text>`;
+    }
+    return `<g class="graph-edge-g" ${ids} data-etype="link">${title}<line class="graph-edge-link" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac2)" stroke-width="1.6" opacity=".75" stroke-dasharray="5 4"/><line class="graph-edge-hit" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="16" fill="none"/>${noteTxt}</g>`;
   }
-  return `<line ${ids} data-etype="co" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--tx3)" stroke-width="${Math.min(2.5,.8+ed.w*.25)}" stroke-dasharray="4 4" opacity=".5"/>`;
+  return `<line ${ids} data-etype="co" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--tx3)" stroke-width="${Math.min(2.5,.8+(Number(ed.w)||0)*.25)}" stroke-dasharray="4 4" opacity=".5"/>`;
 }
 let _graphCoCache=null;   // {nid,gen,sceneId,pairs:[{a,b,w}]}
 function setWriteSceneId(sid){
@@ -19806,7 +20050,14 @@ function vGraph(){
   const scale=graphScaleOf(nid);
   const dW=Math.round(W*scale),dH=Math.round(H*scale);
   const marker=`<defs><marker id="sfHierArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ac)" opacity=".9"/></marker></defs>`;
-  const svgEdges=edges.map(ed=>graphEdgeSVG(ed,pos,showNotes)).join('');
+  /** @type {{id:string,x:number,y:number,r:number}[]} */
+  const noteObstacles=[];
+  for(const e of boardEntries){
+    const p=pos.get(e.id);if(!p)continue;
+    const mh=men.get(e.id);
+    noteObstacles.push({id:e.id,x:p.x,y:p.y,r:graphNodeRadius(mh?mh.total:0)});
+  }
+  const svgEdges=edges.map(ed=>graphEdgeSVG(ed,pos,showNotes,{scale,obstacles:noteObstacles})).join('');
   const svgGhosts=ghosts.map(e=>{
     const p=pos.get(e.id);if(!p)return '';
     const mh=men.get(e.id);
@@ -19983,7 +20234,11 @@ function bindGraph(){
       g.classList.toggle('dim',!!(hitIds&&!hitIds.has(gid)));
       g.classList.toggle('focus',!!(focusId&&gid===focusId));
     });
-    svg.querySelectorAll('.graph-edges line[data-a]').forEach(ln=>{
+    svg.querySelectorAll('.graph-edges .graph-edge-g').forEach(g=>{
+      const lit=!hitIds||hitIds.has(g.getAttribute('data-a')||'')||hitIds.has(g.getAttribute('data-b')||'');
+      g.classList.toggle('dim',!lit);
+    });
+    svg.querySelectorAll('.graph-edges > line[data-a]').forEach(ln=>{
       const lit=!hitIds||hitIds.has(ln.getAttribute('data-a')||'')||hitIds.has(ln.getAttribute('data-b')||'');
       ln.classList.toggle('dim',!lit);
     });
@@ -20059,6 +20314,7 @@ function bindGraph(){
       wrap.scrollTop=cy*scale-(cy*old-wrap.scrollTop);
     }
     scaleLbl();
+    graphNotesSync(svg,pos,scale);
   };
   const svgPt=(clientX,clientY)=>{
     const rect=wrap.getBoundingClientRect();
@@ -20110,15 +20366,7 @@ function bindGraph(){
       ln.setAttribute('x1',pa.x);ln.setAttribute('y1',pa.y);
       ln.setAttribute('x2',pb.x);ln.setAttribute('y2',pb.y);
     });
-    svg.querySelectorAll('.graph-edges .graph-note[data-a="'+id+'"],.graph-edges .graph-note[data-b="'+id+'"]').forEach(tx=>{
-      const a=tx.getAttribute('data-a'),b=tx.getAttribute('data-b');
-      const pa=pos[a],pb=pos[b];
-      if(!pa||!pb)return;
-      const nt=graphNoteTransform(pa,pb);
-      tx.removeAttribute('x');tx.removeAttribute('y');
-      tx.setAttribute('dy','-0.7em');
-      tx.setAttribute('transform',nt.tf);
-    });
+    graphNotesSync(svg,pos,scale);
   };
   wrap.addEventListener('wheel',e=>{
     e.preventDefault();
@@ -20147,7 +20395,15 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
   const isGhostNode=(/** @type {Element|null} */ g)=>!!(g&&g.classList&&g.classList.contains('ghost'));
   const selSync=()=>{svg.querySelectorAll('.graph-node').forEach(g=>{if(isGhostNode(g)){g.classList.remove('sel');return}g.classList.toggle('sel',gSel.has(g.getAttribute('data-id')||''))})};
   /** @returns {boolean} 票08：供全局 Esc 清空多选；有选中则清并返回 true */
-  (/** @type {any} */(wrap))._gSelClear=()=>{if(!gSel.size)return false;gSel.clear();selSync();return true};
+  const edgeSelClear=()=>{let had=false;svg.querySelectorAll('.graph-edge-g.sel').forEach(g=>{g.classList.remove('sel');had=true});return had};
+  /** @type {Element|null} */
+  let edgeDown=null;
+  const edgeSelSet=(/** @type {Element|null} */ el)=>{
+    const already=!!(el&&el.classList.contains('sel'));
+    edgeSelClear();
+    if(el&&!already)el.classList.add('sel');
+  };
+  (/** @type {any} */(wrap))._gSelClear=()=>{const edge=edgeSelClear();if(!gSel.size)return edge;gSel.clear();selSync();return true};
   /** @type {{ids:Set<string>,start:Record<string,{x:number,y:number}>,allStart:Record<string,{x:number,y:number}>,pushedUndo:boolean,lastGood:Record<string,{x:number,y:number}>|null,changed:boolean,pushedCount:number}|null} */
   let dragState=null;
   const nodeRadius=(/** @type {string} */ id)=>{
@@ -20184,6 +20440,7 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
         st.changed=true;
         st.pushedCount=pushed;
       }
+      graphNotesSync(svg,pos,scale);
       return;
     }
     const tryPlace=(/** @type {number} */ tdx,/** @type {number} */ tdy)=>{
@@ -20216,6 +20473,7 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     for(const id of ids){const p=positions[id];if(p)moveNode(id,p.x,p.y)}
     st.lastGood=positions;
     if(any)st.changed=true;
+    graphNotesSync(svg,pos,scale);
   };
 
   wrap.addEventListener('selectstart',e=>e.preventDefault());
@@ -20228,7 +20486,12 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     try{const sel=window.getSelection();if(sel&&sel.removeAllRanges)sel.removeAllRanges()}catch(_e){}
     let node=button===2?null:(e.target.closest&&e.target.closest('.graph-node'));
     if(node&&isGhostNode(node))node=null;   // 浅影不参与选择／拖拽／打开
-    moved=false;grpStart=null;boxStart=null;dragState=null;
+    moved=false;grpStart=null;boxStart=null;dragState=null;edgeDown=null;
+    if(!node){
+      const t=/** @type {any} */(e.target);
+      const eg=(t&&t.closest)?t.closest('.graph-edge-g'):null;
+      if(eg)edgeDown=/** @type {Element} */(eg);
+    }
     if(node&&button===0&&pe.shiftKey){
       const sid=node.getAttribute('data-id')||'';   // Shift+点＝切换选中；不进入拖拽、不打开编辑
       if(sid){if(gSel.has(sid))gSel.delete(sid);else gSel.add(sid);selSync()}
@@ -20331,6 +20594,8 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     if(was==='pan'&&!did&&panClear){
       panClear=false;
       gSel.clear();selSync();
+      edgeSelSet(edgeDown);
+      edgeDown=null;
       return;
     }
     panClear=false;
