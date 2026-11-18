@@ -12188,7 +12188,7 @@ function cdxTrackMenuHTML(){
   const open=!!(S.ui&&S.ui.cdxTrackMenuOpen);
   const rows=CDX_TRACK_KEYS.map(k=>{
     const on=!!t[k];
-    return `<label class="cdx-funnel-row${on?' on':''}" data-k="${k}"><input type="checkbox" data-act="cdx-track-toggle" data-k="${k}" ${on?'checked':''}><span>${CDX_TRACK_LABELS[k]}</span></label>`;
+    return `<label class="cdx-funnel-row${on?' on':''}" data-k="${k}"><input type="checkbox" name="cdxTrack-${k}" data-act="cdx-track-toggle" data-k="${k}" ${on?'checked':''}><span>${CDX_TRACK_LABELS[k]}</span></label>`;
   }).join('');
   return `<div class="cdx-funnel-track-menu${open?' open':''}" id="cdxTrackMenu" role="menu">${rows}</div>`;
 }
@@ -18938,7 +18938,8 @@ function graphComputePos(entries,edges,W,H,nid){
         a.x-=dx*f;a.y-=dy*f;b.x+=dx*f;b.y+=dy*f;
       }
       for(const ed of edges){
-        const a=pos.get(ed.a.id),b=pos.get(ed.b.id);
+        const a=pos.get(ed&&ed.a&&ed.a.id),b=pos.get(ed&&ed.b&&ed.b.id);
+        if(!a||!b)continue;
         let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1;
         const f=(d-165)*0.02;dx/=d;dy/=d;
         a.x+=dx*f;a.y+=dy*f;b.x-=dx*f;b.y-=dy*f;
@@ -19001,14 +19002,16 @@ function graphSceneOptionsHTML(nid,selected){
 }
 function graphCoPairsForScene(nid,sceneId,entries,seenHier,seenLink){
   if(!nid||!sceneId)return [];
+  const byId=new Map((entries||[]).filter(e=>e&&e.id).map(e=>[e.id,e]));
+  const vis=p=>!!(p&&p.a&&p.b&&byId.has(p.a.id)&&byId.has(p.b.id));
   const gen=(typeof ST!=='undefined'&&ST)?(ST.gen|0):0;
   if(_graphCoCache&&_graphCoCache.nid===nid&&_graphCoCache.gen===gen&&_graphCoCache.sceneId===sceneId)
     return _graphCoCache.pairs.filter(p=>{
+      if(!vis(p))return false;
       const key=[p.a.id,p.b.id].sort().join('|');
       return !seenHier.has(p.a.id+'>'+p.b.id)&&!seenHier.has(p.b.id+'>'+p.a.id)&&!seenLink.has(key);
     });
   const present=sceneMentions(nid,sceneId);
-  const byId=new Map(entries.map(e=>[e.id,e]));
   const list=present.map(e=>byId.get(e.id)).filter(Boolean);
   const pairs=[];
   for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
@@ -19119,7 +19122,7 @@ function vGraph(){
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
   <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
   ${allEntries.length?`<div class="graph-shell">${entries.length?`<div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>`:`<div class="empty">没有可显示的设定。「从不包含」不会出现在关系图谱；要查看「检测到时不包含」的设定，请勾选「显示次要设定」。</div>`}
-  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
+  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" name="graphShowNotes" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" name="graphShowMentions" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" name="graphShowMinor" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" name="graphShowCo" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
     <span class="hint"><span style="color:var(--ac)">→</span> 归属／下属 ${hierN} 条</span>
     <span class="hint"><span style="color:var(--ac2)">┆</span> 平级关联 ${linkN} 条</span>
@@ -25268,20 +25271,17 @@ document.addEventListener('click',async e=>{
     try{codexLiveFlush(true)}catch(_e){}
     closeModal(); nav('graph');
     break}
-  case'graph-toggle-notes':{
-    S.ui.graphShowNotes=!!el.checked;
-    render();
-    break}
-  case'graph-toggle-mentions':{
-    S.ui.graphShowMentions=!!el.checked;
-    render();
-    break}
-  case'graph-toggle-co':{
-    S.ui.graphShowCo=!!el.checked;
-    render();
-    break}
+  case'graph-toggle-notes':
+  case'graph-toggle-mentions':
+  case'graph-toggle-co':
   case'graph-toggle-minor':{
-    S.ui.graphShowMinor=!!el.checked;
+    e.stopPropagation();
+    const box=el.matches&&el.matches('input[type=checkbox]')?el:el.querySelector&&el.querySelector('input[type=checkbox]');
+    const on=!!(box||el).checked;
+    if(act==='graph-toggle-notes')S.ui.graphShowNotes=on;
+    else if(act==='graph-toggle-mentions')S.ui.graphShowMentions=on;
+    else if(act==='graph-toggle-co')S.ui.graphShowCo=on;
+    else S.ui.graphShowMinor=on;
     render();
     break}
   case'graph-scene-jump':{
