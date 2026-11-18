@@ -2811,8 +2811,8 @@ async function stBoot(){
 const AI_PRESETS=[
   {name:'OpenAI 兼容',base:'',model:''},
 ];
-/* 首次推荐导入（ADR 0016 §B／设置外观与入门票02）：只填显示名＋Base，永不写 Key。
-   名单定稿；不含 Ollama／OpenAI／Moonshot。Lemonade 文案含「建议AMD」。
+/* 首次推荐导入（ADR 0016 §B／设置外观与入门票02）：只填显示名＋Base（OpenCode Go 另带默认模型与协议），永不写 Key。
+   名单定稿；不含 Ollama／官方 OpenAI／Moonshot。Lemonade 文案含「建议AMD」。
    「只主动提示一次」靠 settings.aiRecommendSeen（数据夹生命周期）；手动「推荐」钮仍可再导入。 */
 const AI_RECOMMEND=[
   {name:'DeepSeek',base:'https://api.deepseek.com/v1'},
@@ -2822,6 +2822,7 @@ const AI_RECOMMEND=[
   {name:'OpenRouter',base:'https://openrouter.ai/api/v1'},
   {name:'Llama（llama.cpp Desktop）',base:'http://127.0.0.1:9931/v1'},
   {name:'Lemonade（建议AMD）',base:'http://127.0.0.1:13305/api/v1'},
+  {name:'OpenCode Go',base:'https://opencode.ai/inference/go',model:'gemini-4-argon',protocol:'google'},
   {name:'自定义',base:''},
 ];
 /* 2026-10-04：出厂不代选厂商。这份只用于一次性清掉仍是出厂原样的旧行（Base＋模型未改、Key 为空）。
@@ -2862,7 +2863,7 @@ function aiSvcRetireFactory(st){
   const before=st.aiProviders.length;
   const kept=st.aiProviders.filter(p=>!aiSvcIsFactoryRow(p));
   if(!kept.length&&before>0){
-    const p={id:uid(),name:'OpenAI 兼容',base:'',model:'',key:'',reasoningEffort:'',extraBodyJson:''};
+    const p={id:uid(),name:'OpenAI 兼容',base:'',model:'',key:'',protocol:'',reasoningEffort:'',extraBodyJson:''};
     st.aiProviders=[p];st.aiProviderId=p.id;
   }else{
     st.aiProviders=kept;
@@ -2892,18 +2893,62 @@ function aiExtraBodyObject(raw){
   }catch(e){return null}
 }
 function aiSvcActive(st){return aiSvcList(st).find(p=>p&&p.id===st.aiProviderId)||null}
-function aiSvcSyncLive(st){const p=aiSvcActive(st);st.aiBase=p?String(p.base||''):'';st.aiModel=p?String(p.model||''):'';st.aiKey=p?String(p.key||''):''}
+/** 协议字段归一：空＝自动识别。
+ * @param {*} v
+ * @returns {''|'openai'|'anthropic'|'google'}
+ */
+function aiProtocolOf(v){
+  const s=String(v==null?'':v).trim().toLowerCase();
+  if(s==='openai'||s==='chat'||s==='chat-completions'||s==='completions')return 'openai';
+  if(s==='anthropic'||s==='claude'||s==='messages')return 'anthropic';
+  if(s==='google'||s==='gemini'||s==='generate-content'||s==='generatecontent')return 'google';
+  return '';
+}
+/** @param {string} base @returns {boolean} */
+function aiIsOpenCodeGo(base){
+  const raw=String(base||'').trim();
+  const m=raw.match(/^https?:\/\/([^\/?#]+)/i);
+  if(!m)return false;
+  let host=m[1];
+  host=host.split('@').pop()||host;
+  if(host.charAt(0)==='['){host=(host.split(']')[0]||'').slice(1)}
+  else if(host.indexOf(':')>=0){host=host.replace(/:\d+$/,'')}
+  host=host.toLowerCase();
+  if(host!=='opencode.ai' && !host.endsWith('.opencode.ai'))return false;
+  const path=(raw.replace(/^https?:\/\/[^\/?#]+/i,'')||'/').split(/[?#]/)[0].replace(/\/+$/,'')||'/';
+  return path==='/inference' || path.startsWith('/inference/');
+}
+/** 与本地服务 detect_protocol 对齐的前端预判（最终以服务端为准）。
+ * @param {string} base
+ * @param {string} model
+ * @param {string} [explicit]
+ * @returns {'openai'|'anthropic'|'google'}
+ */
+function aiDetectProtocol(base,model,explicit){
+  const ex=aiProtocolOf(explicit);
+  if(ex)return ex;
+  const b=String(base||'').toLowerCase();
+  const m=String(model||'').trim().toLowerCase();
+  if(b.indexOf('generativelanguage.googleapis.com')>=0 || b.indexOf('/google/v1beta')>=0)return 'google';
+  if(b.indexOf('api.anthropic.com')>=0 || b.indexOf('/anthropic/')>=0)return 'anthropic';
+  if(aiIsOpenCodeGo(base)){
+    if(m.indexOf('gemini')===0)return 'google';
+    if(m.indexOf('claude')===0 || m.indexOf('qwen')===0)return 'anthropic';
+  }
+  return 'openai';
+}
+function aiSvcSyncLive(st){const p=aiSvcActive(st);st.aiBase=p?String(p.base||''):'';st.aiModel=p?String(p.model||''):'';st.aiKey=p?String(p.key||''):'';st.aiProtocol=p?aiProtocolOf(p.protocol):''}
 function aiSvcSelect(st,id){const p=aiSvcList(st).find(x=>x&&x.id===id)||null;const next=p?p.id:'';if(String(st.aiProviderId||'')!==String(next))st.aiModelList=[];st.aiProviderId=next;aiSvcSyncLive(st);return p}   // BG-002：换连接清空全局模型候选（最小可用）
 function aiSvcNormalize(st){
   if(!Array.isArray(st.aiProviders)){
     /* 首次迁移（含全新安装）：按出厂种子建一条空的「OpenAI 兼容」。
        已有 live Base/模型/Key 且对不上这条空 Base → 另开「自定义(迁移)」持有并选中，不另造厂商行。
        全空＝没配过，就留在这条空连接上。旧 aiPreset 索引只删除、不拿来定位。 */
-    const list=AI_PRESETS.map(p=>({id:uid(),name:String(p.name),base:String(p.base||''),model:String(p.model||''),key:'',reasoningEffort:'',extraBodyJson:''}));
+    const list=AI_PRESETS.map(p=>({id:uid(),name:String(p.name),base:String(p.base||''),model:String(p.model||''),key:'',protocol:'',reasoningEffort:'',extraBodyJson:''}));
     const base=String(st.aiBase||''),model=String(st.aiModel||''),key=String(st.aiKey||'');
     let p=list.find(x=>x.base===base);
     if(p){p.model=model.slice(0,200);p.key=key.slice(0,2000)}
-    else if(base||model||key){p={id:uid(),name:'自定义(迁移)',base:base.slice(0,2000),model:model.slice(0,200),key:key.slice(0,2000),reasoningEffort:'',extraBodyJson:''};list.push(p)}
+    else if(base||model||key){p={id:uid(),name:'自定义(迁移)',base:base.slice(0,2000),model:model.slice(0,200),key:key.slice(0,2000),protocol:'',reasoningEffort:'',extraBodyJson:''};list.push(p)}
     else p=list[0];
     st.aiProviders=list;st.aiProviderId=p.id;
     st.aiDefaultsRetired=true;   // 这条列表由新种子生成，不是待清的历史出厂名单
@@ -2918,6 +2963,7 @@ function aiSvcNormalize(st){
         base:String(x.base==null?'':x.base).slice(0,2000),
         model:String(x.model==null?'':x.model).slice(0,200),
         key:String(x.key==null?'':x.key).slice(0,2000),
+        protocol:aiProtocolOf(x.protocol),
         reasoningEffort:aiReasoningEffortOf(x.reasoningEffort),
         extraBodyJson:String(x.extraBodyJson==null?'':x.extraBodyJson).slice(0,AI_EXTRA_BODY_JSON_MAX)};
       seen.add(p.id);out.push(p);
@@ -2935,7 +2981,7 @@ function aiSvcAdd(st){
   const list=aiSvcList(st);if(list.length>=AI_SVC_MAX)return null;
   const names=new Set(list.map(p=>String(p&&p.name||'')));
   let name='自定义';for(let i=2;names.has(name);i++)name='自定义 '+i;
-  const p={id:uid(),name,base:'',model:'',key:'',reasoningEffort:'',extraBodyJson:''};
+  const p={id:uid(),name,base:'',model:'',key:'',protocol:'',reasoningEffort:'',extraBodyJson:''};
   list.push(p);st.aiProviders=list;st.aiProviderId=p.id;aiSvcSyncLive(st);
   return p;
 }
@@ -2967,11 +3013,11 @@ function aiSvcImportRecommend(st){
     if(hit){
       if(String(hit.key||'')){skipped++;continue}
       if(name==='自定义'){skipped++;continue}
-      if(!String(hit.base||'')&&base){hit.base=base;filled++;continue}
+      if(!String(hit.base||'')&&base){hit.base=base;if(!String(hit.model||'')&&rec.model)hit.model=String(rec.model).slice(0,200);if(!aiProtocolOf(hit.protocol)&&rec.protocol)hit.protocol=aiProtocolOf(rec.protocol);filled++;continue}
       skipped++;continue;
     }
     if(list.length>=AI_SVC_MAX){skipped++;continue}
-    list.push({id:uid(),name,base,model:'',key:'',reasoningEffort:'',extraBodyJson:''});
+    list.push({id:uid(),name,base,model:String(rec.model||'').slice(0,200),key:'',protocol:aiProtocolOf(rec.protocol),reasoningEffort:'',extraBodyJson:''});
     added++;
   }
   st.aiProviders=list;
@@ -11160,7 +11206,7 @@ function budgetLine(a){
   return s;
 }
 
-/* ---------- AI 客户端（OpenAI 兼容 / 流式；一律经本地服务 /api/ai/* 中转） ---------- */
+/* ---------- AI 客户端（前端仍发 OpenAI 形请求 / 流式；一律经本地服务 /api/ai/* 中转，上游协议由服务端翻译） ---------- */
 /* 浏览器直连 AI 端点必发 CORS 预检（恒带 Authorization 头），无 CORS 面的本地/内网端点直连必败；
    改走同源代理：Key 只进请求体、由本机服务转发到自配 Base（不写日志不落盘），请求头不再带 Authorization。 */
 /**
@@ -11177,7 +11223,7 @@ async function aiProxyFetch(path,payload,signal,meta){
   if(path==='/api/ai/chat'){await devInterceptHold('ai',payload,meta,signal);devLogGate('ai',payload,meta);}
   const st=S.data.settings;
   return fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-SF-Token':SF_TOKEN},signal,
-    body:JSON.stringify({base:String(st.aiBase||''),key:String(st.aiKey||''),payload})});
+    body:JSON.stringify({base:String(st.aiBase||''),key:String(st.aiKey||''),protocol:aiProtocolOf(st.aiProtocol),payload})});
 }
 /* 代理层错误翻译：ai-upstream/ai-timeout/bad-base 是本地服务自己的错，译成人话；
    其余＝上游透传（状态码是上游的；400/422 重试与「AI请求失败」文案都靠它）。 */
@@ -19003,7 +19049,7 @@ function graphSceneOptionsHTML(nid,selected){
 function graphCoPairsForScene(nid,sceneId,entries,seenHier,seenLink){
   if(!nid||!sceneId)return [];
   const byId=new Map((entries||[]).filter(e=>e&&e.id).map(e=>[e.id,e]));
-  const vis=p=>!!(p&&p.a&&p.b&&byId.has(p.a.id)&&byId.has(p.b.id));
+  const vis=/** @type {(p:any)=>boolean} */(p=>!!(p&&p.a&&p.b&&byId.has(p.a.id)&&byId.has(p.b.id)));
   const gen=(typeof ST!=='undefined'&&ST)?(ST.gen|0):0;
   if(_graphCoCache&&_graphCoCache.nid===nid&&_graphCoCache.gen===gen&&_graphCoCache.sceneId===sceneId)
     return _graphCoCache.pairs.filter(p=>{
@@ -22480,7 +22526,7 @@ function vUpdates(){
   <div class="card">
     <h2 class="upd-title">故事工坊 V1.6</h2>
     <p class="upd-meta">2026-11-18</p>
-    <p class="upd-intro">这一版把写作页的撤销和排版补齐了：撤销不再弄丢章标题，副驾里「采用」写入的内容也可以撤回；当前章可以一键整理空段落和段首空格；外观能调节正文段间距；工具栏去掉了「正文段落」，「消除格式」会同时清掉行内样式，并退出引用、把小标题降回正文。设定集漏斗可按追踪类别筛选，关系图谱不再画出「从不包含」的设定，勾选也改成了跟外观走的整行光点。</p>
+    <p class="upd-intro">这一版把写作页的撤销和排版补齐了：撤销不再弄丢章标题，副驾里「采用」写入的内容也可以撤回；当前章可以一键整理空段落和段首空格；外观能调节正文段间距；工具栏去掉了「正文段落」，「消除格式」会同时清掉行内样式，并退出引用、把小标题降回正文。设定集漏斗可按追踪类别筛选，关系图谱不再画出「从不包含」的设定，勾选也改成了跟外观走的整行光点。AI 服务从单项 OpenAI 兼容扩展到 OpenAI、Anthropic、Google 三条协议，OpenCode Go 的 Gemini 4 Argon 可直接填 Base 与模型名。</p>
 
     <details class="upd-group" open>
       <summary><span class="upd-g-title">撤销</span><span class="upd-g-count">2 项</span></summary>
@@ -22502,6 +22548,13 @@ function vUpdates(){
       <summary><span class="upd-g-title">格式工具</span><span class="upd-g-count">1 项</span></summary>
       <div class="upd-body"><ul>
         <li><strong>格式按钮更简单</strong>：工具栏去掉「正文段落」。「消除格式」会清掉粗体、斜体、下划线、删除线和高亮，并把引用退出、小标题降回正文段落；折叠块和插图不会被拆掉。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group" open>
+      <summary><span class="upd-g-title">AI 服务</span><span class="upd-g-count">1 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>三条协议</strong>：AI 服务可选 OpenAI（Chat Completions）、Anthropic（Messages）或 Google（Gemini），也可自动识别。OpenCode Go 填 <code>https://opencode.ai/inference/go</code>，模型填 <code>gemini-4-argon</code>，不必手拼上游路径。推荐名单可一键导入（不写 Key）。</li>
       </ul></div>
     </details>
 
@@ -23072,7 +23125,7 @@ function vSettings(){
     <div class="row" style="margin-top:6px">
       <select id="s-preset" style="flex:1" ${ro?'disabled':''}>${aiSvcList(st).map(p=>`<option value="${esc(p.id)}" ${p.id===st.aiProviderId?'selected':''}>${esc(p.name)}</option>`).join('')||'<option value="" selected>（列表为空，点「＋新增」）</option>'}</select>
       <button class="btn" data-act="svc-add" ${ro?'disabled':''}>＋ 新增</button>
-      <button class="btn" data-act="svc-rec" title="按定稿名单补齐显示名与 Base（DeepSeek／百炼／MiniMax／GLM／OpenRouter／Llama／Lemonade／空白自定义）；不写 Key；已有 Key 的行不动" ${ro?'disabled':''}>推荐</button>
+      <button class="btn" data-act="svc-rec" title="按定稿名单补齐显示名与 Base（DeepSeek／百炼／MiniMax／GLM／OpenRouter／Llama／Lemonade／OpenCode Go／空白自定义）；不写 Key；已有 Key 的行不动" ${ro?'disabled':''}>推荐</button>
       <button class="btn" data-act="svc-ren" ${ro?'disabled':''}>✎ 改名</button>
       <button class="btn danger" data-act="svc-del" ${ro?'disabled':''}>✕ 删除</button>
     </div>
@@ -23082,13 +23135,18 @@ function vSettings(){
       <button class="btn" data-act="svc-rec-skip" title="关掉本条提示；仍可随时点「推荐」">不再提示</button></div>
     </div>`:''}
     <p class="hint" style="margin-top:6px" title="可添加多条服务连接；切换即可更换当前接口、密钥与模型。点「推荐」可补齐定稿名单的 Base。">切换服务即可切换当前使用的接口地址、密钥与模型。</p>
-    <div class="row" style="margin-top:10px"><div style="flex:1"><label class="f">API Base（OpenAI 兼容）</label><input type="text" id="s-base" value="${esc(st.aiBase)}" ${ro?'disabled':''}></div>
+    <div class="row" style="margin-top:10px"><div style="flex:1"><label class="f">API Base</label><input type="text" id="s-base" value="${esc(st.aiBase)}" ${ro?'disabled':''}></div>
     <div style="flex:1"><label class="f" title="Key 以你的 Windows 账号加密存放在数据文件夹 _工坊/机密/（DPAPI 密文，手工打开不可读）——settings.json 与一切导出包里都不含 Key 明文；换电脑/换 Windows 账号后 Key 解不开，在这里重新填写即可（旧密文会移入回收站保留，不静默销毁）。">API Key</label><input type="password" id="s-key" value="${esc(st.aiKey)}" placeholder="sk-…" maxlength="2000" ${ro?'disabled':''}></div></div>
     <p class="hint" style="margin-top:6px" title="Key 以你的 Windows 账号加密存放在数据文件夹 _工坊/机密/（DPAPI 密文，手工打开不可读）——settings.json 与一切导出包里都不含 Key 明文；换电脑/换 Windows 账号后 Key 解不开，在这里重新填写即可（旧密文会移入回收站保留，不静默销毁）。">${uiIc('key')}API Key 已使用当前 Windows 账号加密保存在本机${ST.secBroken?'<br><b style="color:var(--warn)">⚠ AI Key 密文解不开（可能由另一个 Windows 账号或另一台电脑加密，也可能已损坏）：请重新填写 API Key。</b>':''}${ST.secUnsupported?'<br><b style="color:var(--warn)">⚠ 当前本地服务不支持机密端点：Key 本次会话可用，但不会写入磁盘'+(ST.setPlainKeys?'（盘上原有的明文 Key 保持原样，本会话的设置改动暂不落盘）':'')+'。</b>':''}</p>
     <div class="row" style="margin-top:10px"><div style="flex:2"><label class="f">默认模型</label><input type="text" id="s-model" value="${esc(st.aiModel)}" list="modelList" ${ro?'disabled':''}><datalist id="modelList">${(Array.isArray(st.aiModelList)?st.aiModelList:[]).map(m=>`<option value="${esc(m)}">`).join('')}</datalist></div>
     <div><label class="f">温度</label><input type="number" id="s-temp" value="${st.aiTemp}" step="0.1" min="0" max="2" style="width:90px" ${ro?'disabled':''}></div>
     <div><label class="f">最大 tokens</label><input type="number" id="s-max" value="${st.aiMaxTokens}" style="width:110px" ${ro?'disabled':''}></div>
     <div><label class="f">上下文窗口</label><input type="number" id="s-ctxwin" value="${st.ctxWindow||0}" min="0" step="1024" style="width:110px" ${ro?'disabled':''} title="模型上下文窗口（tokens）。0=自动估计，无法识别时按 8K。大窗口模型建议手填实际值。"></div></div>
+    ${(()=>{const ap0=aiSvcActive(st);const proto=aiProtocolOf(ap0&&ap0.protocol);const protoOpts=[['','自动识别'],['openai','OpenAI（Chat Completions）'],['anthropic','Anthropic（Messages）'],['google','Google（Gemini）']];
+      const protoHtml=protoOpts.map(function(/** @type {any} */pair){const v=pair[0],l=pair[1];return '<option value="'+v+'"'+(proto===v?' selected':'')+'>'+l+'</option>'}).join('');
+      return '<div class="row" style="margin-top:10px"><div style="flex:1;min-width:220px"><label class="f" title="按本条 AI 服务配置。自动识别时由本地服务根据 Base 与模型名选择协议，并自动拼接路径">协议</label><select id="s-protocol" '+(ro?'disabled':'')+'>'+protoHtml+'</select></div></div>'
+        +'<p class="hint" style="margin-top:6px">OpenAI、Anthropic、Google 三条协议由本地服务自动拼路径并翻译请求。OpenCode Go 填 <code>https://opencode.ai/inference/go</code>，模型填 <code>gemini-4-argon</code>，协议选「自动识别」或「Google」即可，不必手拼 <code>/google/v1beta/models/...:generateContent</code>。</p>';
+    })()}
     ${(()=>{
   const ap=aiSvcActive(st);const ef=aiReasoningEffortOf(ap&&ap.reasoningEffort);const xb=ap?String(ap.extraBodyJson||''):'';
   const opts=[['','默认不发送'],['none','关闭'],['low','低'],['medium','中'],['high','高']];
@@ -26003,7 +26061,13 @@ document.addEventListener('change',async e=>{
     const v=aiReasoningEffortOf(_re.value);
     const p=aiSvcActive(S.data.settings);if(!p)return;
     if(aiReasoningEffortOf(p.reasoningEffort)===v)return;
-    p.reasoningEffort=v;save();stFlush();return}}
+    p.reasoningEffort=v;save();stFlush();return}
+  if(_re&&_re.id==='s-protocol'){   // 协议写穿当前 AI 服务项（空＝自动识别）
+    if(roReason()){render();return}
+    const v=aiProtocolOf(_re.value);
+    const p=aiSvcActive(S.data.settings);if(!p)return;
+    if(aiProtocolOf(p.protocol)===v)return;
+    p.protocol=v;S.data.settings.aiProtocol=v;save();stFlush();return}}
   if(e.target.id==='s-review-svc'){reviewAiSvcSelect(S.data.settings,e.target.value);save();render()}   // 审阅方案切换=载入该项 Base/Key/模型
   if(e.target.id==='aiOp'){syncAiTextOpUi();return}
     if(e.target.id==='graphSceneSel'||(e.target.dataset&&e.target.dataset.act==='graph-scene')){

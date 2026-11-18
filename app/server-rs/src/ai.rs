@@ -11,6 +11,7 @@ use axum::body::{Body, Bytes};
 use axum::http::{header, HeaderMap, HeaderValue, Response, StatusCode};
 use serde_json::{Number, Value};
 
+use crate::ai_protocol::{self, Protocol};
 use crate::http;
 use crate::state::VER;
 
@@ -71,8 +72,9 @@ async fn models_inner(client: &reqwest::Client, body: &OrdJson) -> Response<Body
         Ok(base) => base,
         Err(msg) => return http::finish(http::err(400, "bad-base", msg, false), false),
     };
-    let url = format!("{base}/models");
-    let headers = match ai_headers(&ord_key(body), &hostname_of(&url), false) {
+    let protocol = ai_protocol::detect_protocol(&base, "", &ord_string(body, "protocol"));
+    let url = ai_protocol::models_url(&base, protocol);
+    let headers = match ai_headers_ex(&ord_key(body), &hostname_of(&url), false, protocol) {
         Ok(headers) => headers,
         Err(msg) => return upstream_msg(502, "ai-upstream", &msg),
     };
@@ -80,7 +82,32 @@ async fn models_inner(client: &reqwest::Client, body: &OrdJson) -> Response<Body
         Ok(resp) => resp,
         Err(e) => return map_pre_response(e),
     };
-    buffered_upstream(resp, "application/json").await
+    let status = resp.status().as_u16();
+    if !(200..300).contains(&status) {
+        return buffered_upstream(resp, "application/json").await;
+    }
+    let mut resp = resp;
+    if intercepted_redirect(status, resp.headers()) {
+        return http::finish(http::err(502, "ai-upstream", REDIRECT_MSG, false), false);
+    }
+    match read_limited(&mut resp, AI_MAX_BYTES).await {
+        Ok(buf) => {
+            if let Ok(val) = serde_json::from_slice::<Value>(&buf) {
+                let needs = val.get("models").and_then(Value::as_array).is_some()
+                    || val.get("items").and_then(Value::as_array).is_some();
+                if needs {
+                    let norm = ai_protocol::normalize_models_list(&val);
+                    let body = serde_json::to_vec(&norm).unwrap_or(buf);
+                    passthrough(status, "application/json", body)
+                } else {
+                    passthrough(status, "application/json", buf)
+                }
+            } else {
+                passthrough(status, "application/json", buf)
+            }
+        }
+        Err(e) => map_pre_response(e),
+    }
 }
 
 async fn chat_inner(client: &reqwest::Client, body: &OrdJson) -> Response<Body> {
@@ -91,13 +118,27 @@ async fn chat_inner(client: &reqwest::Client, body: &OrdJson) -> Response<Body> 
     let Some(payload) = obj_get(body, "payload").filter(|v| matches!(v, OrdJson::Object(_))) else {
         return http::finish(http::err(400, "bad-json", "payload 必须是 JSON 对象", false), false);
     };
-    let raw = dump_ord(payload).into_bytes();
-    let url = if obj_get(body, "absolute").is_some_and(ord_truthy) {
+    let absolute = obj_get(body, "absolute").is_some_and(ord_truthy);
+    let payload_val: Value = serde_json::from_str(&dump_ord(payload)).unwrap_or(Value::Null);
+    let model = ai_protocol::payload_model(&payload_val);
+    let client_stream = ai_protocol::wants_stream(&payload_val);
+    let protocol = if absolute {
+        Protocol::OpenAi
+    } else {
+        ai_protocol::detect_protocol(&base, &model, &ord_string(body, "protocol"))
+    };
+    let upstream_stream = protocol == Protocol::OpenAi && client_stream;
+    let raw = if absolute || protocol == Protocol::OpenAi {
+        dump_ord(payload).into_bytes()
+    } else {
+        serde_json::to_vec(&ai_protocol::translate_request(protocol, &payload_val)).unwrap_or_else(|_| b"{}".to_vec())
+    };
+    let url = if absolute {
         base
     } else {
-        format!("{base}/chat/completions")
+        ai_protocol::chat_url(&base, &model, protocol, upstream_stream)
     };
-    let headers = match ai_headers(&ord_key(body), &hostname_of(&url), true) {
+    let headers = match ai_headers_ex(&ord_key(body), &hostname_of(&url), true, protocol) {
         Ok(headers) => headers,
         Err(msg) => return upstream_msg(502, "ai-upstream", &msg),
     };
@@ -105,6 +146,9 @@ async fn chat_inner(client: &reqwest::Client, body: &OrdJson) -> Response<Body> 
         Ok(resp) => resp,
         Err(e) => return map_pre_response(e),
     };
+    if protocol != Protocol::OpenAi && !absolute {
+        return chat_translated(resp, protocol, &model, client_stream).await;
+    }
     let status = resp.status().as_u16();
     if intercepted_redirect(status, resp.headers()) {
         return http::finish(http::err(502, "ai-upstream", REDIRECT_MSG, false), false);
@@ -372,7 +416,40 @@ fn py_container_str(v: &Value) -> String {
     }
 }
 
+async fn chat_translated(
+    mut resp: reqwest::Response,
+    protocol: Protocol,
+    model: &str,
+    client_stream: bool,
+) -> Response<Body> {
+    let status = resp.status().as_u16();
+    if intercepted_redirect(status, resp.headers()) {
+        return http::finish(http::err(502, "ai-upstream", REDIRECT_MSG, false), false);
+    }
+    if !(200..300).contains(&status) {
+        return buffered_upstream(resp, "application/json").await;
+    }
+    let buf = match read_limited(&mut resp, AI_MAX_BYTES).await {
+        Ok(buf) => buf,
+        Err(e) => return map_pre_response(e),
+    };
+    let raw: Value = match serde_json::from_slice(&buf) {
+        Ok(v) => v,
+        Err(_) => return passthrough(status, "application/json", buf),
+    };
+    let done = ai_protocol::translate_response(protocol, &raw, model);
+    if client_stream {
+        return passthrough(status, "text/event-stream", ai_protocol::openai_as_sse(&done));
+    }
+    let body = serde_json::to_vec(&done).unwrap_or(buf);
+    passthrough(status, "application/json", body)
+}
+
 fn ai_headers(key: &str, host: &str, json_body: bool) -> Result<HeaderMap, String> {
+    ai_headers_ex(key, host, json_body, Protocol::OpenAi)
+}
+
+fn ai_headers_ex(key: &str, host: &str, json_body: bool, protocol: Protocol) -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
     let opencode = host.contains("opencode.ai");
     if json_body {
@@ -386,6 +463,19 @@ fn ai_headers(key: &str, host: &str, json_body: bool) -> Result<HeaderMap, Strin
     headers.insert(header::USER_AGENT, HeaderValue::from_static(ua));
     if opencode {
         headers.insert("x-opencode-session", HeaderValue::from_static("storyforge"));
+    }
+    if protocol == Protocol::Anthropic {
+        headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+        if !opencode {
+            let api_key = HeaderValue::from_str(key)
+                .map_err(|_| "HeaderError: 钥匙含无法放入请求头的字符".to_string())?;
+            headers.insert("x-api-key", api_key);
+        }
+    }
+    if protocol == Protocol::Google && !opencode {
+        let api_key = HeaderValue::from_str(key)
+            .map_err(|_| "HeaderError: 钥匙含无法放入请求头的字符".to_string())?;
+        headers.insert("x-goog-api-key", api_key);
     }
     Ok(headers)
 }
@@ -470,6 +560,13 @@ fn obj_get<'a>(root: &'a OrdJson, key: &str) -> Option<&'a OrdJson> {
     match root {
         OrdJson::Object(items) => items.iter().find(|(k, _)| k == key).map(|(_, v)| v),
         _ => None,
+    }
+}
+
+fn ord_string(root: &OrdJson, key: &str) -> String {
+    match obj_get(root, key) {
+        Some(OrdJson::String(s)) => s.clone(),
+        _ => String::new(),
     }
 }
 
@@ -1361,5 +1458,123 @@ mod tests {
         assert!(head.contains("text/event-stream"), "{head}");
         assert!(head.contains("SFServer/1.2 "), "{head}");
         assert_eq!(body, "AAABBB", "{text}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn google_protocol_translates_and_wraps_sse() {
+        let mock = spawn_mock(|mut sock| {
+            let (head, body) = read_req(&mut sock);
+            assert!(
+                head.contains("POST /v1beta/models/gemini-4-argon:generateContent "),
+                "{head}"
+            );
+            assert!(!head.contains("streamGenerateContent"), "{head}");
+            let body_s = String::from_utf8_lossy(&body);
+            assert!(body_s.contains("contents"), "{body_s}");
+            assert!(!body_s.contains("messages"), "{body_s}");
+            use std::io::Write;
+            let up = r#"{"candidates":[{"content":{"parts":[{"text":"pong"}]},"finishReason":"STOP"}]}"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{up}",
+                up.len()
+            );
+            let _ = sock.write_all(resp.as_bytes());
+        });
+        let raw = format!(
+            r#"{{"base":"http://{}/v1beta","key":"k","protocol":"google","payload":{{"model":"gemini-4-argon","stream":true,"messages":[{{"role":"user","content":"ping"}}]}}}}"#,
+            mock.addr
+        );
+        let resp = handle_with(&client(2), "/api/ai/chat", raw.as_bytes()).await;
+        assert_eq!(resp.status(), 200);
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(ct.contains("text/event-stream"), "{ct}");
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("data: "), "{text}");
+        assert!(text.contains("pong"), "{text}");
+        assert!(text.contains("data: [DONE]"), "{text}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn anthropic_protocol_translates_json() {
+        let mock = spawn_mock(|mut sock| {
+            let (head, body) = read_req(&mut sock);
+            assert!(head.contains("POST /v1/messages "), "{head}");
+            assert!(head.to_ascii_lowercase().contains("anthropic-version"), "{head}");
+            let body_s = String::from_utf8_lossy(&body);
+            assert!(body_s.contains("messages"), "{body_s}");
+            assert!(body_s.contains("max_tokens"), "{body_s}");
+            use std::io::Write;
+            let up = r#"{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"pong"}],"stop_reason":"end_turn"}"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{up}",
+                up.len()
+            );
+            let _ = sock.write_all(resp.as_bytes());
+        });
+        let raw = format!(
+            r#"{{"base":"http://{}","key":"k","protocol":"anthropic","payload":{{"model":"claude-haiku-5-5","messages":[{{"role":"user","content":"ping"}}]}}}}"#,
+            mock.addr
+        );
+        let (status, value, _) = take_json(handle_with(&client(2), "/api/ai/chat", raw.as_bytes()).await).await;
+        assert_eq!(status, 200);
+        assert_eq!(value["choices"][0]["message"]["content"], "pong");
+    }
+
+    fn live_key() -> String {
+        std::env::var("OPENCODE_API_KEY").unwrap_or_default()
+    }
+
+    fn content_of(value: &Value) -> String {
+        value["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    }
+
+    async fn live_chat(protocol: &str, model: &str, max_tokens: u32) -> (u16, Value) {
+        let raw = serde_json::json!({
+            "base": "https://opencode.ai/inference/go",
+            "key": live_key(),
+            "protocol": protocol,
+            "payload": {
+                "model": model,
+                "temperature": 0,
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": "Reply with exactly: pong"}]
+            }
+        })
+        .to_string();
+        let (status, value, _) = take_json(handle_with(&client(60), "/api/ai/chat", raw.as_bytes()).await).await;
+        (status, value)
+    }
+
+    /// 真网探测：不入库钥匙。运行：OPENCODE_API_KEY=… cargo test -- --ignored live_opencode_go_three_families --nocapture
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "live OpenCode Go; set OPENCODE_API_KEY"]
+    async fn live_opencode_go_three_families() {
+        assert!(!live_key().is_empty(), "OPENCODE_API_KEY 为空");
+        let (g_status, g_val) = live_chat("google", "gemini-4-argon", 16).await;
+        let g_text = content_of(&g_val);
+        eprintln!("google gemini-4-argon status={g_status} text={g_text:?}");
+        assert_eq!(g_status, 200, "google: {g_val}");
+        assert!(!g_text.is_empty(), "google empty: {g_val}");
+
+        let (o_status, o_val) = live_chat("openai", "kimi-k3.1-pro", 64).await;
+        let o_text = content_of(&o_val);
+        eprintln!("openai kimi-k3.1-pro status={o_status} text={o_text:?}");
+        assert_eq!(o_status, 200, "openai: {o_val}");
+        assert!(!o_text.is_empty(), "openai empty: {o_val}");
+
+        let (a_status, a_val) = live_chat("anthropic", "claude-haiku-5-5", 32).await;
+        let a_text = content_of(&a_val);
+        eprintln!("anthropic claude-haiku-5-5 status={a_status} text={a_text:?}");
+        assert_eq!(a_status, 200, "anthropic: {a_val}");
+        assert!(!a_text.is_empty(), "anthropic empty: {a_val}");
     }
 }

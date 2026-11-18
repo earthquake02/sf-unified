@@ -86,8 +86,12 @@ _Avoid_: 引文串（模型原样输出、未回填原文）
 ## AI
 
 **BYOK**:
-自带密钥直连任意 OpenAI 兼容端点，无平台付费。
-_Avoid_: API 代理（本应用不中转付费）
+自带密钥直连用户配置的端点，无平台付费。前端仍发 OpenAI 形请求；本地服务按协议分支转成 OpenAI Chat Completions、Anthropic Messages 或 Google Gemini generateContent，并把响应译回。OpenCode Go 填官方 Base 与模型名即可，不必手拼上游路径。
+_Avoid_: API 代理（本应用不中转付费）、把协议下拉当成思考强度字段
+
+**协议分支**:
+AI 服务条目上的协议选择（自动识别／OpenAI／Anthropic／Google）。自动识别看 Base 与模型名：OpenCode Go 上 gemini* 走 Google，claude*／qwen* 走 Anthropic，其余走 OpenAI。
+_Avoid_: 协议下拉冒充思考强度、逼用户手拼 /google/v1beta/models/...:generateContent
 
 **思考强度**:
 按 AI 服务条目配置的产品档位（默认不发送／关闭／低／中／高）；默认不发 reasoning 相关字段；OpenRouter Base 启发式走 `reasoning.effort`，其它兼容端走 `reasoning_effort`；冷门字段用附加请求 JSON。

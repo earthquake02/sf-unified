@@ -15,6 +15,7 @@ macro_rules! outln {
 }
 
 mod ai;
+mod ai_protocol;
 mod dpapi;
 mod fsapi;
 mod fsops;
