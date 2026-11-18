@@ -2919,35 +2919,9 @@ function aiProtocolOf(v){
   if(s==='google'||s==='gemini'||s==='generate-content'||s==='generatecontent')return 'google';
   return '';
 }
-/** @param {string} base @returns {boolean} */
-function aiIsOpenCodeGo(base){
-  let host=aiHostPortOf(base);   // 票02：host 取段抽为 aiHostPortOf 共用（此处再剥 [IPv6] 括号与 :port）
-  if(!host)return false;
-  if(host.charAt(0)==='['){host=(host.split(']')[0]||'').slice(1)}
-  else if(host.indexOf(':')>=0){host=host.replace(/:\d+$/,'')}
-  if(host!=='opencode.ai' && !host.endsWith('.opencode.ai'))return false;
-  const path=(String(base||'').trim().replace(/^https?:\/\/[^\/?#]+/i,'')||'/').split(/[?#]/)[0].replace(/\/+$/,'')||'/';
-  return path==='/inference' || path.startsWith('/inference/');
-}
-/** 与本地服务 detect_protocol 对齐的前端预判（最终以服务端为准）。
- * @param {string} base
- * @param {string} model
- * @param {string} [explicit]
- * @returns {'openai'|'anthropic'|'google'}
- */
-function aiDetectProtocol(base,model,explicit){
-  const ex=aiProtocolOf(explicit);
-  if(ex)return ex;
-  const b=String(base||'').toLowerCase();
-  const m=String(model||'').trim().toLowerCase();
-  if(b.indexOf('generativelanguage.googleapis.com')>=0 || b.indexOf('/google/v1beta')>=0)return 'google';
-  if(b.indexOf('api.anthropic.com')>=0 || b.indexOf('/anthropic/')>=0)return 'anthropic';
-  if(aiIsOpenCodeGo(base)){
-    if(m.indexOf('gemini')===0)return 'google';
-    if(m.indexOf('claude')===0 || m.indexOf('qwen')===0)return 'anthropic';
-  }
-  return 'openai';
-}
+/* 协议判定唯一真身＝本地服务 detect_protocol（server-rs/src/ai_protocol.rs）：
+   行内协议为「自动识别」时由服务端按 Base 与模型名判定并拼路径，前端不保留平行预判副本
+   （票04 删除零调用的前端预判与 OpenCode 判定死代码；host 取段已归 aiHostPortOf 供写穿联动）。 */
 function aiSvcSyncLive(st){const p=aiSvcActive(st);st.aiBase=p?String(p.base||''):'';st.aiModel=p?String(p.model||''):'';st.aiKey=p?String(p.key||''):'';st.aiProtocol=p?aiProtocolOf(p.protocol):''}
 function aiSvcSelect(st,id){const p=aiSvcList(st).find(x=>x&&x.id===id)||null;const next=p?p.id:'';if(String(st.aiProviderId||'')!==String(next))st.aiModelList=[];st.aiProviderId=next;aiSvcSyncLive(st);return p}   // BG-002：换连接清空全局模型候选（最小可用）
 function aiSvcNormalize(st){
@@ -27254,7 +27228,7 @@ if(e.target.id==='sbDim'){if(SB_DIMS.some(x=>x.v===e.target.value)){S.ui.sbDim=e
 });
 /* 设置页字段失焦保存 */
 /** 从 Base 提取 host（含端口）：scheme 剥离、userinfo@ 剥离、[IPv6] 字面量原样保留、小写归一；非 http(s)／空值返回 ''。
-    票02：Base 写穿换服务判定与 aiIsOpenCodeGo 共用此取段（协议判定单点归服务端 detect_protocol，本函数只看域名）。
+    票02：供 Base 写穿换服务判定用（协议判定单点归服务端 detect_protocol，本函数只看域名）。
  * @param {string} base
  * @returns {string} */
 function aiHostPortOf(base){
