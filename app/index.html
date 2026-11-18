@@ -15696,6 +15696,7 @@ function vEditor(){
         <input id="ed-fig-file" type="file" accept="image/*" ${roReason()?'disabled':''} hidden>
         <button class="tb" data-cmd="hiliteColor:${esc(appearHexNorm(appearResolve(S.data.settings&&S.data.settings.appearance).mark))}" title="高亮">${uiIc('appearance')}</button>
         <button class="tb" data-cmd="removeFormat" title="清除格式">⌫格式</button>
+        <button class="tb" data-act="ed-paiban" title="整理当前章：统一段间空行、清段首空格、删章首尾空行" ${roReason()?'disabled':''}>一键排版</button>
         <span class="sep"></span>
          <button class="btn sm pri" data-act="ai-summarize" title="AI 生成章节摘要">${uiIc('spark')}摘要</button>
         <button class="btn sm pri" data-act="ai-continue" title="依据节拍／指引推演剧情走向">${uiIc('spark')}推演</button>
@@ -15819,6 +15820,157 @@ function edFlushLive(sc){
   if(!ed)return;
   const canon=sceneFigCanon(ed.innerHTML);
   if(String(sc.content||'')!==canon){sceneFigCommit(sc,canon);if(typeof save==='function')save()}
+}
+
+/* 一键排版（editor-format-undo 票02 / ADR 0006）：空段落是非规范数据。
+   删全部空段落（无文本、无插图占位、仅含 br/nbsp/空白的 p，含正文段、引用内段落、折叠块内段落），
+   并清块级文本（p/h2/h3）段首半角/全角空格与制表；h2/h3 只清段首、本身不删。
+   不改文字内容（除上述空白）、插图与占位、块级结构嵌套、边车字段。空文档保留单个 <p><br></p> 壳。 */
+const ED_PAIBAN_LEAD=/^[\u0020\u00a0\u3000\t]+/;
+/**
+ * 节点是否含「真内容」（文字／插图占位／hr 等）。仅 br、nbsp、空白不算。
+ * @param {any} node
+ * @returns {boolean} */
+function edPaibanHasContent(node){
+  if(!node)return false;
+  if(node.nodeType===3)return !!String(node.nodeValue||'').replace(/[\u0020\u00a0\u3000\t\r\n]/g,'').length;
+  if(node.nodeType!==1)return false;
+  const t=node.tagName;
+  if(t==='BR')return false;
+  if(t==='HR'||t==='IMG'||t==='FIGURE'||t==='VIDEO'||t==='AUDIO'||t==='DETAILS'||t==='BLOCKQUOTE'||t==='TABLE'||t==='UL'||t==='OL'||t==='PRE'||t==='H1'||t==='H2'||t==='H3')return true;
+  if(node.getAttribute&&node.getAttribute('data-sf-img'))return true;
+  for(const ch of node.childNodes||[])if(edPaibanHasContent(ch))return true;
+  return false;
+}
+/**
+ * 块级元素段首是否有半角/全角空格或制表。
+ * @param {any} el
+ * @returns {boolean} */
+function edPaibanHasLead(el){
+  if(!el)return false;
+  /** @param {any} node @returns {boolean|null} */
+  const walk=node=>{
+    if(node.nodeType===3){
+      const v=String(node.nodeValue||'');
+      if(!v.replace(/[\r\n]/g,'').length)return false;
+      return ED_PAIBAN_LEAD.test(v)?true:null;
+    }
+    if(node.nodeType===1){
+      if(node.tagName==='BR')return false;
+      if(node.tagName==='FIGURE'||node.tagName==='IMG'||node.tagName==='HR')return null;
+      for(const ch of node.childNodes||[]){
+        /** @type {boolean|null} */
+        const r=walk(ch);
+        if(r!==false)return r;
+      }
+    }
+    return false;
+  };
+  return walk(el)===true;
+}
+/**
+ * 清块级元素段首半角/全角空格与制表（深入行内包裹，不进入插图）。
+ * @param {any} el
+ * @returns {void} */
+function edPaibanStripLead(el){
+  if(!el)return;
+  /** @param {any} node @returns {boolean} */
+  const walk=node=>{
+    if(node.nodeType===3){
+      const v=String(node.nodeValue||'');
+      if(!v.replace(/[\r\n]/g,'').length)return false;
+      const next=v.replace(ED_PAIBAN_LEAD,'');
+      if(next!==v)node.nodeValue=next;
+      return true;
+    }
+    if(node.nodeType===1){
+      if(node.tagName==='BR')return false;
+      if(node.tagName==='FIGURE'||node.tagName==='IMG'||node.tagName==='HR')return true;
+      for(const ch of [...(node.childNodes||[])])if(walk(ch))return true;
+    }
+    return false;
+  };
+  walk(el);
+}
+/**
+ * 判断 HTML 是否含可清理项（空段落或段首空白）。figure 内段落不参与。
+ * @param {any} root
+ * @returns {boolean} */
+function edPaibanNeeded(root){
+  if(!root)return false;
+  for(const el of root.querySelectorAll('p,h2,h3')){
+    if(el.closest('figure'))continue;
+    if(edPaibanHasLead(el))return true;
+    if(el.tagName==='P'&&!edPaibanHasContent(el))return true;
+  }
+  return false;
+}
+/**
+ * 规范化一景正文 HTML：删空段落、清段首空白；幂等。
+ * @param {string} html
+ * @returns {string} */
+function edPaibanHtml(html){
+  const before=typeof sceneFigCanon==='function'?sceneFigCanon(html):String(html||'');
+  const box=document.createElement('div');
+  box.innerHTML=before;
+  if(!edPaibanNeeded(box))return before;
+  for(const el of [...box.querySelectorAll('p,h2,h3')]){
+    if(el.closest('figure'))continue;
+    edPaibanStripLead(el);
+  }
+  for(const el of [...box.querySelectorAll('p')]){
+    if(el.closest('figure'))continue;
+    if(!edPaibanHasContent(el))el.remove();
+  }
+  if(![...box.childNodes].some(n=>n.nodeType===1))box.innerHTML='<p><br></p>';
+  return typeof sceneFigCanon==='function'?sceneFigCanon(box.innerHTML):box.innerHTML;
+}
+/**
+ * 当前章全部小节一键排版。有改动的小节各压一条撤销快照（口径同 edSnap：当前编辑景读 live DOM，
+ * 可见邻景也读其 live DOM 以免冲掉未失焦编辑；标题用 edSnapTitleOf／标题框），再 sceneFigCommit＋save。
+ * 无可清理项不压栈、不落盘；无确认弹窗。
+ * @returns {number} */
+function edPaibanChapter(){
+  if(typeof roReason==='function'&&roReason()){roToast();return 0}
+  const sc=typeof curScene==='function'?curScene():null;
+  if(!sc){toast('请先打开一章再排版');return 0}
+  /** @type {any[]} */
+  const list=typeof scenesOf==='function'?scenesOf(sc.novelId,sc.chapterId):[];
+  const area=typeof $==='function'?$('#edArea'):null;
+  const liveOf=/** @param {any} s @returns {any} */(s)=>{
+    if(!area||!s)return null;
+    return [...area.querySelectorAll('.inner[data-scene]')].find(x=>x.dataset.scene===s.id)||null;
+  };
+  const snapTitle=/** @param {any} s @returns {string} */(s)=>{
+    const el=liveOf(s);
+    if(el&&el.id==='edContent'){
+      const t=typeof $==='function'?$('#edTitle'):null;
+      return t?t.value:edSnapTitleOf(s);
+    }
+    return edSnapTitleOf(s);
+  };
+  /** @type {{sc:any,before:string,after:string,el:(Element|null)}[]} */
+  const changes=[];
+  for(const s of list){
+    const el=liveOf(s);
+    const before=sceneFigCanon(el?el.innerHTML:(s.content||''));
+    const after=edPaibanHtml(before);
+    if(after===before)continue;
+    changes.push({sc:s,before,after,el});
+  }
+  if(!changes.length){toast('本章无需整理');return 0}
+  for(const it of changes){
+    edPushHistForScene(it.sc.id,{html:it.before,title:snapTitle(it.sc),figs:edSnapFigs(it.before)});
+    if(it.el)it.el.innerHTML=sceneFigHydrate(it.after,it.sc.novelId);
+    sceneFigCommit(it.sc,it.after);
+    if(it.el&&it.el.id==='edContent'){
+      edDirty=false;
+      const wc=$('#wc');if(wc)wc.textContent=sceneWc(it.sc)+' 字';
+    }
+  }
+  save();
+  toast('已整理本章 '+changes.length+' 个'+(typeof unitLabel==='function'?unitLabel():'小节'));
+  return changes.length;
 }
 
 function editorTitleLabel(sc){
@@ -18245,6 +18397,7 @@ function bindEditor(){
   $$('#edToolbar [data-cmd]').forEach(b=>b.addEventListener('mousedown',(/** @type {any} */ e)=>{e.preventDefault()}));
   $$('#edToolbar [data-act="wx-split-scene"]').forEach(b=>b.addEventListener('mousedown',e=>{e.preventDefault()}));   // 票08：点击不抢焦点，保住正文光标/选区作切点
   $$('#edToolbar [data-act="ed-fig"]').forEach(b=>b.addEventListener('mousedown',e=>{e.preventDefault()}));   // 外观票05：点击不抢焦点，图插在原光标处
+  $$('#edToolbar [data-act="ed-paiban"]').forEach(b=>b.addEventListener('mousedown',(/** @type {any} */ e)=>{e.preventDefault()}));   // 一键排版：点击不抢焦点
   bindEditorSide(sc);
 }
 function bindEditorSide(sc){
@@ -24575,6 +24728,7 @@ document.addEventListener('click',async e=>{
   case'ed-undo':edUndo();break;
   case'ed-redo':edRedo();break;
   case'ed-fig':{if(roReason()){roToast();break}const inp=$('#ed-fig-file');if(inp)inp.click();break}
+  case'ed-paiban':edPaibanChapter();break;
   case'snip-insert':{const sn=S.data.snippets.find(x=>x.id===id);if(sn&&insertProseAtCaret(sn.content)){closeModal();toast('已插入')}break}   // 失败保留弹窗不假成功，与 doInsert 同款收编（回验发现 1）
   case'codex-prog-add':openCodexProgModal(id,curScene()?.id);break;
   case'codex-prog-save':{const e2=S.data.codexEntries.find(x=>x.id===$('#pg2-entry').value&&x.novelId===nid&&!isSharedEntry(x));   // 双键+所有权：+演只写本书条目（票33）
