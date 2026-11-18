@@ -657,6 +657,13 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-edges line.dim{opacity:.12}
 ::highlight(cdx-ed-hl){background-color:color-mix(in srgb,var(--ac2) 45%,transparent); color:inherit}   /* 票07：写作页正文命中（CSS Highlight，不改 DOM） */
 .graph-wrap .graph-node.sel .graph-ring{stroke:var(--ok); stroke-width:3.4}   /* codex-graph-ux票05：多选态描边（绿＝选中，区别于票04 搜索高亮的强调色） */
+.graph-wrap .graph-node.ghost{cursor:default;pointer-events:none}
+.graph-wrap .graph-node.minor{opacity:.48}
+.graph-wrap .graph-node.minor.hit,.graph-wrap .graph-node.minor.sel{opacity:.92}
+.graph-wrap .graph-node.minor.dim{opacity:.26}
+.graph-tools .btn{border:1px solid var(--line);background:var(--bg3);color:var(--tx);border-radius:8px;padding:4px 9px;cursor:pointer;font:inherit;font-size:11.5px;min-height:28px}
+.graph-tools .btn:hover{border-color:var(--ac);color:var(--ac)}
+.graph-tools .btn:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--tx3)}
 .graph-marquee{fill:color-mix(in srgb, var(--ac) 10%, transparent); stroke:var(--ac); stroke-width:1; stroke-dasharray:4 3; pointer-events:none}   /* 票05：框选矩形（SVG 画布坐标，随缩放） */
 .graph-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px}
 .graph-head .pt{margin:0;flex:0 1 auto}
@@ -2368,7 +2375,7 @@ async function stWipe(){   // 清空＝结构化文本与设置文件移入数�
   location.reload();
 }
 /* ---- 瞬态 UI 态（localStorage 唯一用途）：上次视图/小说/场景/设置分类/折叠记忆/关联场景配置（按书），跨刷新续位 ---- */
-function uiStateSave(){try{const m=edScrollMem();localStorage.setItem(UI_KEY,JSON.stringify({view:S.ui.view,novelId:S.ui.novelId,sceneId:S.ui.sceneId,settingsTab:S.ui.settingsTab,res:S.ui.res,resW:S.ui.resW,resNarrow:S.ui.resNarrow,edL:S.ui.edL,edR:S.ui.edR,edScroll:{l:m.l,r:m.r},folds:uiFolds(),edFolds:edFolds(),edLW:S.ui.edLW,relCfg:relCfgMem(),cdxCollapsed:cdxCollapsedMem(),snipCollapsed:snipCollapsedMem(),cdxSort:cdxSortMem(),copilotOpen:!!S.ui.copilotOpen,cpW:S.ui.cpW,asstPtHideNote:!!S.ui.asstPtHideNote,plFavs:Array.isArray(S.ui.plFavs)?S.ui.plFavs:[],plPins:Array.isArray(S.ui.plPins)?S.ui.plPins:[],plRecent:Array.isArray(S.ui.plRecent)?S.ui.plRecent:[],conflictIgnored:(S.ui.conflictIgnored&&typeof S.ui.conflictIgnored==='object')?S.ui.conflictIgnored:{},cfLastFp:(S.ui._cfLastFp&&typeof S.ui._cfLastFp==='object')?S.ui._cfLastFp:{},cfDismissed:(S.ui._cfDismissed&&typeof S.ui._cfDismissed==='object')?S.ui._cfDismissed:{},reviewAiNudgeMute:!!S.ui.reviewAiNudgeMute,graphLayout:(S.ui.graphLayout&&typeof S.ui.graphLayout==='object')?S.ui.graphLayout:{},graphScale:(S.ui.graphScale&&typeof S.ui.graphScale==='object')?S.ui.graphScale:{}}))}catch(e){}}
+function uiStateSave(){try{const m=edScrollMem();localStorage.setItem(UI_KEY,JSON.stringify({view:S.ui.view,novelId:S.ui.novelId,sceneId:S.ui.sceneId,settingsTab:S.ui.settingsTab,res:S.ui.res,resW:S.ui.resW,resNarrow:S.ui.resNarrow,edL:S.ui.edL,edR:S.ui.edR,edScroll:{l:m.l,r:m.r},folds:uiFolds(),edFolds:edFolds(),edLW:S.ui.edLW,relCfg:relCfgMem(),cdxCollapsed:cdxCollapsedMem(),snipCollapsed:snipCollapsedMem(),cdxSort:cdxSortMem(),copilotOpen:!!S.ui.copilotOpen,cpW:S.ui.cpW,asstPtHideNote:!!S.ui.asstPtHideNote,plFavs:Array.isArray(S.ui.plFavs)?S.ui.plFavs:[],plPins:Array.isArray(S.ui.plPins)?S.ui.plPins:[],plRecent:Array.isArray(S.ui.plRecent)?S.ui.plRecent:[],conflictIgnored:(S.ui.conflictIgnored&&typeof S.ui.conflictIgnored==='object')?S.ui.conflictIgnored:{},cfLastFp:(S.ui._cfLastFp&&typeof S.ui._cfLastFp==='object')?S.ui._cfLastFp:{},cfDismissed:(S.ui._cfDismissed&&typeof S.ui._cfDismissed==='object')?S.ui._cfDismissed:{},reviewAiNudgeMute:!!S.ui.reviewAiNudgeMute,graphLayout:(S.ui.graphLayout&&typeof S.ui.graphLayout==='object')?S.ui.graphLayout:{},graphScale:(S.ui.graphScale&&typeof S.ui.graphScale==='object')?S.ui.graphScale:{},graphPushOthers:S.ui.graphPushOthers!==false}))}catch(e){}}
 let _uiSaveT=null;
 function uiStateSaveSoon(){if(_uiSaveT)return;_uiSaveT=setTimeout(()=>{_uiSaveT=null;try{uiStateSave()}catch(e){}},800)}
 function uiStateRestore(ui){
@@ -2386,6 +2393,7 @@ function uiStateRestore(ui){
     if(typeof j.reviewAiNudgeMute==='boolean')ui.reviewAiNudgeMute=j.reviewAiNudgeMute;
     if(j.graphLayout&&typeof j.graphLayout==='object')ui.graphLayout=j.graphLayout;
     if(j.graphScale&&typeof j.graphScale==='object')ui.graphScale=j.graphScale;
+    if(typeof j.graphPushOthers==='boolean')ui.graphPushOthers=j.graphPushOthers;
     /* 票21：资源栏选项/宽度/开合（坏值容错；展开态必须有一个选项在显示，否则按收窄） */
     if(['codex','snippets','chat'].includes(j.res))ui.res=j.res;
     if(typeof j.resW==='number'&&Number.isFinite(j.resW))ui.resW=j.resW;
@@ -14916,6 +14924,15 @@ document.addEventListener('keydown',e=>{
   }
   killPopMenu();
 });
+document.addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey)||e.altKey)return;
+  if(!(S&&S.ui&&S.ui.view==='graph'))return;
+  const t=/** @type {any} */(e.target);
+  if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable],#modalRoot,#askRoot'))return;
+  const k=String(e.key||'').toLowerCase();
+  if(k==='z'&&!e.shiftKey){e.preventDefault();graphUndo();return}
+  if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();graphRedo()}
+});
 document.addEventListener('click',e=>{   // 点空白收菜单（菜单项与两个开菜单按钮除外）
   if(!document.getElementById('popMenu'))return;
   if(e.target.closest&&(e.target.closest('#popMenu')||e.target.closest('[data-act="node-menu"],[data-act="hot-menu"]')))return;
@@ -18947,15 +18964,449 @@ function graphLayoutMem(nid){
   if(!S.ui.graphLayout[nid]||typeof S.ui.graphLayout[nid]!=='object')S.ui.graphLayout[nid]={};
   return S.ui.graphLayout[nid];
 }
+/** 关系图谱滚轮缩放范围（仅关系图谱；剧情图谱仍用 0.25–3）。 */
+const GRAPH_SCALE_MIN=0.1;
+const GRAPH_SCALE_MAX=4;
+/** 节点半径：14 + min(31, 全书提及×0.1)，下限 14、上限 45（约 310 次封顶）。 */
+const GRAPH_NODE_R_MIN=14;
+const GRAPH_NODE_R_SPAN=31;
+/** 碰撞盒在实际半径之外再留的缝。 */
+const GRAPH_NODE_GAP=6;
+const GRAPH_UNDO_MAX=60;
+/**
+ * @param {number} total 全书累计提及次数
+ * @returns {number}
+ */
+function graphNodeRadius(total){
+  const t=Number(total);
+  const n=(Number.isFinite(t)&&t>0)?t:0;
+  return GRAPH_NODE_R_MIN+Math.min(GRAPH_NODE_R_SPAN,n*0.1);
+}
+/**
+ * @param {any} e
+ * @returns {boolean}
+ */
+function graphIsMinorEntry(e){
+  return typeof codexAiIncludeOf==='function'&&codexAiIncludeOf(e)==='onDetectOff';
+}
+/**
+ * 关掉次要后、已有坐标的次要：浅影占位（无坐标的隐藏次要不画）。
+ * @param {any[]} entries
+ * @param {boolean} showMinor
+ * @param {any} pos
+ * @returns {any[]}
+ */
+function graphGhostEntries(entries,showMinor,pos){
+  if(showMinor)return [];
+  return (entries||[]).filter((/** @type {any} */ e)=>{
+    if(!graphIsMinorEntry(e))return false;
+    return !!graphPosXY(pos,e.id);
+  });
+}
+/**
+ * @returns {boolean}
+ */
+function graphPushOthersOn(){
+  if(!S||!S.ui)return true;
+  if(S.ui.graphPushOthers==null)S.ui.graphPushOthers=true;
+  return S.ui.graphPushOthers!==false;
+}
+/**
+ * @param {number} ax @param {number} ay @param {number} ar
+ * @param {number} bx @param {number} by @param {number} br
+ * @param {number=} gap
+ * @returns {boolean}
+ */
+function graphOverlaps(ax,ay,ar,bx,by,br,gap){
+  const g=gap==null?GRAPH_NODE_GAP:Number(gap)||0;
+  const d=ar+br+g;
+  const dx=ax-bx,dy=ay-by;
+  return dx*dx+dy*dy<d*d;
+}
+/**
+ * @param {number} x @param {number} y @param {number} r
+ * @param {{id?:string,x:number,y:number,r:number}[]} others
+ * @param {string=} skipId
+ * @param {number=} gap
+ * @returns {{id?:string,x:number,y:number,r:number}|null}
+ */
+function graphOverlapsAny(x,y,r,others,skipId,gap){
+  for(const o of others||[]){
+    if(skipId!=null&&o&&o.id===skipId)continue;
+    if(o&&graphOverlaps(x,y,r,o.x,o.y,o.r,gap))return o;
+  }
+  return null;
+}
+/**
+ * 螺旋/邻域搜索附近空位；无重叠则原位返回。
+ * @param {number} startX @param {number} startY @param {number} r
+ * @param {{id?:string,x:number,y:number,r:number}[]} others
+ * @param {string=} skipId
+ * @param {number=} gap
+ * @returns {{x:number,y:number,moved:boolean}}
+ */
+function graphSpiralSearch(startX,startY,r,others,skipId,gap){
+  if(!graphOverlapsAny(startX,startY,r,others,skipId,gap))return {x:startX,y:startY,moved:false};
+  const step=8;
+  for(let ring=1;ring<=280;ring++){
+    const rad=ring*step;
+    const n=Math.max(8,Math.ceil(2*Math.PI*rad/step));
+    for(let i=0;i<n;i++){
+      const a=(i/n)*Math.PI*2;
+      const x=startX+Math.cos(a)*rad;
+      const y=startY+Math.sin(a)*rad;
+      if(!graphOverlapsAny(x,y,r,others,skipId,gap))return {x,y,moved:true};
+    }
+  }
+  return {x:startX,y:startY,moved:false};
+}
+/**
+ * @param {string} id
+ * @returns {number}
+ */
+function graphStableUnit(id){
+  let h=2166136261;
+  const s=String(id==null?'':id);
+  for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619);
+  return (h>>>0)/4294967296;
+}
+/**
+ * @param {string} id
+ * @returns {{x:number,y:number}}
+ */
+function graphStableDir(id){
+  const a=graphStableUnit(id)*Math.PI*2;
+  return {x:Math.cos(a),y:Math.sin(a)};
+}
+/**
+ * @param {{x:number,y:number}} n
+ * @param {{x:number,y:number}[]} setNodes
+ * @returns {number}
+ */
+function graphMinDistToSet(n,setNodes){
+  let best=Infinity;
+  for(const m of setNodes||[]){
+    const d=Math.hypot(n.x-m.x,n.y-m.y);
+    if(d<best)best=d;
+  }
+  return best;
+}
+/**
+ * @param {string} nid
+ * @param {any=} men
+ * @returns {(id: string) => number}
+ */
+function graphRadiusFn(nid,men){
+  let table=men||null;
+  if(!table&&typeof mentionScan==='function'&&nid){
+    try{table=mentionScan(nid)}catch(_e){table=null}
+  }
+  return (/** @type {string} */ id)=>{
+    try{
+      const m=table&&typeof table.get==='function'?table.get(id):null;
+      return graphNodeRadius(m&&m.total);
+    }catch(_e2){return graphNodeRadius(0)}
+  };
+}
+/**
+ * 当前占位体：可见节点 +（关闭次要时）有坐标的浅影。
+ * @param {string} nid
+ * @param {Set<string>|string[]|null=} exceptIds
+ * @param {any=} layout
+ * @returns {{id:string,x:number,y:number,r:number,ghost:boolean,minor:boolean}[]}
+ */
+function graphOccupiers(nid,exceptIds,layout){
+  const skip=exceptIds instanceof Set?exceptIds:new Set(exceptIds||[]);
+  const showMinor=!!(S&&S.ui&&S.ui.graphShowMinor);
+  const mem=layout||graphLayoutMem(nid);
+  const radiusOf=graphRadiusFn(nid);
+  const list=(typeof entriesOf==='function'?entriesOf(nid):[])||[];
+  /** @type {{id:string,x:number,y:number,r:number,ghost:boolean,minor:boolean}[]} */
+  const out=[];
+  for(const e of list){
+    if(!e||e.id==null||skip.has(e.id))continue;
+    const inc=typeof codexAiIncludeOf==='function'?codexAiIncludeOf(e):'onDetect';
+    if(inc==='never')continue;
+    const minor=inc==='onDetectOff';
+    const ghost=minor&&!showMinor;
+    if(minor&&!showMinor){
+      const p=graphPosXY(mem,e.id);
+      if(!p)continue;
+      out.push({id:e.id,x:p.x,y:p.y,r:radiusOf(e.id),ghost:true,minor:true});
+      continue;
+    }
+    const p=graphPosXY(mem,e.id);
+    if(!p)continue;
+    out.push({id:e.id,x:p.x,y:p.y,r:radiusOf(e.id),ghost:false,minor:minor});
+  }
+  return out;
+}
+/**
+ * @param {{id:string,r:number}} node
+ * @param {number} x
+ * @param {number} y
+ * @param {{id?:string,x:number,y:number,r:number}[]} others
+ * @param {Set<string>=} skipIds
+ * @returns {{x:number,y:number}|null}
+ */
+function graphConstrainPos(node,x,y,others,skipIds){
+  const skip=skipIds||new Set(node&&node.id!=null?[node.id]:[]);
+  const r=node&&node.r!=null?node.r:GRAPH_NODE_R_MIN;
+  const skipId=node&&node.id;
+  let px=x,py=y;
+  for(let iter=0;iter<12;iter++){
+    let pushed=false;
+    for(const o of others||[]){
+      if(!o||(o.id!=null&&skip.has(o.id)))continue;
+      const minD=r+o.r+GRAPH_NODE_GAP;
+      let dx=px-o.x,dy=py-o.y;
+      let d=Math.hypot(dx,dy);
+      if(d<1e-6){dx=1;dy=0;d=1}
+      if(d<minD){
+        const s=minD/d;
+        px=o.x+dx*s;
+        py=o.y+dy*s;
+        pushed=true;
+      }
+    }
+    if(!pushed)return {x:px,y:py};
+  }
+  if(!graphOverlapsAny(px,py,r,others,skipId))return {x:px,y:py};
+  const found=graphSpiralSearch(x,y,r,others,skipId);
+  if(!found.moved&&graphOverlapsAny(found.x,found.y,r,others,skipId))return null;
+  return {x:found.x,y:found.y};
+}
+/**
+ * 拖动者视为固定，把其余占位沿接触方向推开；被推开的再给第三者让位。只做几何分离。
+ * 会就地改 others 的 x/y，不改 movers。
+ * @param {{id:string,x:number,y:number,r:number}[]} movers
+ * @param {{id:string,x:number,y:number,r:number}[]} others
+ */
+function graphResolvePush(movers,others){
+  if(!movers||!movers.length||!others||!others.length)return;
+  for(let iter=0;iter<36;iter++){
+    let maxPen=0;
+    for(const m of movers){
+      for(const o of others){
+        const minD=m.r+o.r+GRAPH_NODE_GAP;
+        let dx=o.x-m.x,dy=o.y-m.y;
+        let d=Math.hypot(dx,dy);
+        if(d<1e-6){
+          const dir=graphStableDir(o.id);
+          dx=dir.x;dy=dir.y;d=1;
+        }
+        if(d<minD){
+          const pen=minD-d;
+          if(pen>maxPen)maxPen=pen;
+          const s=pen/d;
+          o.x+=dx*s;o.y+=dy*s;
+        }
+      }
+    }
+    for(let i=0;i<others.length;i++){
+      for(let j=i+1;j<others.length;j++){
+        const a=others[i],b=others[j];
+        const minD=a.r+b.r+GRAPH_NODE_GAP;
+        let dx=b.x-a.x,dy=b.y-a.y;
+        let d=Math.hypot(dx,dy);
+        if(d<1e-6){
+          const dir=graphStableDir(String(a.id)+':'+String(b.id));
+          dx=dir.x;dy=dir.y;d=1;
+        }
+        if(d<minD){
+          const pen=minD-d;
+          if(pen>maxPen)maxPen=pen;
+          const da=graphMinDistToSet(a,movers);
+          const db=graphMinDistToSet(b,movers);
+          if(Math.abs(da-db)<1){
+            const half=pen/(2*d);
+            a.x-=dx*half;a.y-=dy*half;
+            b.x+=dx*half;b.y+=dy*half;
+          }else if(da<db){
+            const s=pen/d;b.x+=dx*s;b.y+=dy*s;
+          }else{
+            const s=pen/d;a.x-=dx*s;a.y-=dy*s;
+          }
+        }
+      }
+    }
+    if(maxPen<0.2)break;
+  }
+  const fixed=movers.slice();
+  /** @type {{id:string,x:number,y:number,r:number}[]} */
+  const leftover=[];
+  for(const o of others){
+    if(graphOverlapsAny(o.x,o.y,o.r,movers,o.id)||graphOverlapsAny(o.x,o.y,o.r,others,o.id))leftover.push(o);
+    else fixed.push(o);
+  }
+  leftover.sort((a,b)=>graphMinDistToSet(a,movers)-graphMinDistToSet(b,movers));
+  for(const o of leftover){
+    const found=graphSpiralSearch(o.x,o.y,o.r,fixed,o.id);
+    o.x=found.x;o.y=found.y;
+    fixed.push(o);
+  }
+}
+/**
+ * @param {string} nid
+ * @returns {Record<string,{x:number,y:number}>}
+ */
+function graphLayoutSnap(nid){
+  const mem=graphLayoutMem(nid);
+  /** @type {Record<string,{x:number,y:number}>} */
+  const out={};
+  if(!mem||typeof mem!=='object')return out;
+  for(const id of Object.keys(mem)){
+    const p=graphPosXY(mem,id);
+    if(p)out[id]={x:p.x,y:p.y};
+  }
+  return out;
+}
+/**
+ * @param {string} nid
+ * @param {Record<string,{x:number,y:number}>} snap
+ */
+function graphLayoutApply(nid,snap){
+  if(!S.ui.graphLayout||typeof S.ui.graphLayout!=='object')S.ui.graphLayout={};
+  /** @type {Record<string,{x:number,y:number}>} */
+  const next={};
+  if(snap&&typeof snap==='object'){
+    for(const id of Object.keys(snap)){
+      const p=snap[id];
+      if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
+        next[id]={x:p.x,y:p.y};
+    }
+  }
+  S.ui.graphLayout[nid]=next;
+}
+/** @type {{nid:string,map:Record<string,{x:number,y:number}>}[]} */
+let _graphUndoStack=[];
+/** @type {{nid:string,map:Record<string,{x:number,y:number}>}[]} */
+let _graphRedoStack=[];
+/**
+ * @param {string} nid
+ * @param {Record<string,{x:number,y:number}>} snap
+ */
+function graphUndoPush(nid,snap){
+  _graphUndoStack.push({nid,map:snap});
+  if(_graphUndoStack.length>GRAPH_UNDO_MAX)_graphUndoStack.shift();
+  _graphRedoStack=[];
+}
+function graphUndo(){
+  const nid=S&&S.ui&&S.ui.novelId;
+  const top=_graphUndoStack.length?_graphUndoStack[_graphUndoStack.length-1]:null;
+  if(!top||!nid||top.nid!==nid){if(typeof toast==='function')toast('没有可撤销的操作');return}
+  _graphUndoStack.pop();
+  _graphRedoStack.push({nid,map:graphLayoutSnap(nid)});
+  graphLayoutApply(nid,top.map);
+  try{if(typeof uiStateSaveSoon==='function')uiStateSaveSoon()}catch(_e){}
+  if(typeof render==='function')render();
+  if(typeof toast==='function')toast('已撤销一步布局');
+}
+function graphRedo(){
+  const nid=S&&S.ui&&S.ui.novelId;
+  const top=_graphRedoStack.length?_graphRedoStack[_graphRedoStack.length-1]:null;
+  if(!top||!nid||top.nid!==nid){if(typeof toast==='function')toast('没有可重做的操作');return}
+  _graphRedoStack.pop();
+  _graphUndoStack.push({nid,map:graphLayoutSnap(nid)});
+  if(_graphUndoStack.length>GRAPH_UNDO_MAX)_graphUndoStack.shift();
+  graphLayoutApply(nid,top.map);
+  try{if(typeof uiStateSaveSoon==='function')uiStateSaveSoon()}catch(_e){}
+  if(typeof render==='function')render();
+  if(typeof toast==='function')toast('已重做一步布局');
+}
+/**
+ * 只把与已占位重叠的次要错开到附近空位；主要节点绝对不动。
+ * @param {string} nid
+ * @returns {{id:string,x:number,y:number}[]}
+ */
+function graphResolveMinorOverlaps(nid){
+  const all=((typeof entriesOf==='function'?entriesOf(nid):[])||[]).filter((/** @type {any} */ e)=>e&&(typeof codexAiIncludeOf!=='function'||codexAiIncludeOf(e)!=='never'));
+  let men=null;
+  if(typeof mentionScan==='function'){try{men=mentionScan(nid)}catch(_eMen){men=null}}
+  const layout=graphLayoutMem(nid);
+  const radiusOf=graphRadiusFn(nid,men);
+  /** @param {any} e */
+  const body=e=>{
+    const p=graphPosXY(layout,e.id);
+    if(!p)return null;
+    return {id:e.id,x:p.x,y:p.y,r:radiusOf(e.id),name:String(e.name||'')};
+  };
+  const majors=all.filter((/** @type {any} */ e)=>!graphIsMinorEntry(e)).map(body).filter(Boolean);
+  const minors=all.filter((/** @type {any} */ e)=>graphIsMinorEntry(e)).map(body).filter(Boolean);
+  /** @type {any[]} */
+  const conflict=[];
+  const fixed=majors.slice();
+  for(const m of minors){
+    if(graphOverlapsAny(m.x,m.y,m.r,majors,m.id)||graphOverlapsAny(m.x,m.y,m.r,minors,m.id))conflict.push(m);
+    else fixed.push(m);
+  }
+  conflict.sort((a,b)=>{
+    const recA=men&&men.get(a.id),recB=men&&men.get(b.id);
+    const ma=recA?Number(recA.total)||0:0;
+    const mb=recB?Number(recB.total)||0:0;
+    if(mb!==ma)return mb-ma;
+    return String(a.name).localeCompare(String(b.name),'zh');
+  });
+  /** @type {{id:string,x:number,y:number}[]} */
+  const moved=[];
+  for(const m of conflict){
+    const found=graphSpiralSearch(m.x,m.y,m.r,fixed,m.id);
+    if(found.x!==m.x||found.y!==m.y){
+      moved.push({id:m.id,x:found.x,y:found.y});
+      m.x=found.x;m.y=found.y;
+      layout[m.id]={x:found.x,y:found.y};
+    }
+    fixed.push(m);
+  }
+  return moved;
+}
+/**
+ * 显示次要时，是否仍有「错开算法会处理」的次要重叠。
+ * @param {string} nid
+ * @returns {boolean}
+ */
+function graphHasMinorOverlap(nid){
+  const all=((typeof entriesOf==='function'?entriesOf(nid):[])||[]).filter((/** @type {any} */ e)=>e&&(typeof codexAiIncludeOf!=='function'||codexAiIncludeOf(e)!=='never'));
+  let men=null;
+  if(typeof mentionScan==='function'){try{men=mentionScan(nid)}catch(_eMen){men=null}}
+  const layout=graphLayoutMem(nid);
+  const radiusOf=graphRadiusFn(nid,men);
+  const majors=[];
+  const minors=[];
+  for(const e of all){
+    const p=graphPosXY(layout,e.id);
+    if(!p)continue;
+    const b={id:e.id,x:p.x,y:p.y,r:radiusOf(e.id)};
+    if(graphIsMinorEntry(e))minors.push(b);
+    else majors.push(b);
+  }
+  for(const m of minors){
+    if(graphOverlapsAny(m.x,m.y,m.r,majors,m.id)||graphOverlapsAny(m.x,m.y,m.r,minors,m.id))return true;
+  }
+  return false;
+}
+/**
+ * 打开次要前先给缺坐标的可见节点落点（不推动已有坐标），再错开冲突次要。
+ * @param {string} nid
+ * @returns {{id:string,x:number,y:number}[]}
+ */
+function graphEnsureAndResolveMinors(nid){
+  const entries=graphEntriesVisible((typeof entriesOf==='function'?entriesOf(nid):[])||[],true);
+  const grid=graphGridBoardSize(entries.length);
+  const pre=graphBoardFromPos(entries,graphLayoutMem(nid),{minW:grid.W,minH:grid.H});
+  graphComputePos(entries,[],pre.W,pre.H,nid);
+  return graphResolveMinorOverlaps(nid);
+}
+
 function graphScaleOf(nid){
   if(!S.ui.graphScale||typeof S.ui.graphScale!=='object')S.ui.graphScale={};
   let s=Number(S.ui.graphScale[nid]);
   if(!Number.isFinite(s)||s<=0)s=1;
-  return Math.min(3,Math.max(0.25,s));
+  return Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,s));
 }
 function graphScaleSet(nid,s){
   if(!S.ui.graphScale||typeof S.ui.graphScale!=='object')S.ui.graphScale={};
-  S.ui.graphScale[nid]=Math.min(3,Math.max(0.25,s));
+  S.ui.graphScale[nid]=Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,s));
 }
 /** 关系图谱／剧情图谱共用画板边距：包住节点环与标签，避免贴边被 SVG viewBox 裁切。 */
 const GRAPH_BOARD_PAD_X=96;
@@ -19128,44 +19579,85 @@ function graphApplyBoard(wrap,svg,canvas,board,scale){
 }
 function graphComputePos(entries,edges,W,H,nid){
   const saved=graphLayoutMem(nid);
+  const radiusOf=graphRadiusFn(nid);
   const pos=new Map();
-  let miss=0;
-  for(const e of entries){
-    const s=saved[e.id];
-    if(s&&typeof s.x==='number'&&typeof s.y==='number'&&Number.isFinite(s.x)&&Number.isFinite(s.y))
-      pos.set(e.id,{x:s.x,y:s.y});
-    else miss++;
-  }
-  if(miss||pos.size!==entries.length){
-    const cols=Math.max(8,Math.ceil(Math.sqrt(entries.length*1.6)));
-    for(let i=0;i<entries.length;i++){
-      const e=entries[i];
-      if(pos.has(e.id))continue;
-      pos.set(e.id,{x:W/2+(i%cols-(cols-1)/2)*120+(Math.random()*40-20),y:80+Math.floor(i/cols)*130+(Math.random()*40-20)});
+  /** @type {{id:string,x:number,y:number,r:number}[]} */
+  const fixed=[];
+  const visIds=new Set(); for(const e of entries||[]){ if(e&&e.id!=null)visIds.add(e.id); }
+  /* 已有坐标的隐藏次要（浅影）视为固定障碍，不得把缺坐标节点落在它们上面，也不得用推力挪走它们。 */
+  if(nid&&typeof entriesOf==='function'){
+    const showMinor=!!(S&&S.ui&&S.ui.graphShowMinor);
+    for(const e of entriesOf(nid)||[]){
+      if(!e||visIds.has(e.id))continue;
+      if(typeof codexAiIncludeOf==='function'&&codexAiIncludeOf(e)==='never')continue;
+      if(!(graphIsMinorEntry(e)&&!showMinor))continue;
+      const gp=graphPosXY(saved,e.id);
+      if(!gp)continue;
+      fixed.push({id:e.id,x:gp.x,y:gp.y,r:radiusOf(e.id)});
     }
-    const n0=entries.length;
+  }
+  let miss=0;
+  for(const e of entries||[]){
+    if(!e||e.id==null)continue;
+    const p=graphPosXY(saved,e.id);
+    if(p){
+      pos.set(e.id,{x:p.x,y:p.y});
+      fixed.push({id:e.id,x:p.x,y:p.y,r:radiusOf(e.id)});
+    }else miss++;
+  }
+  const list=entries||[];
+  const allMissing=miss===list.length&&list.length>0;
+  const ghostObstacles=fixed.some(f=>!visIds.has(f.id));
+  if(allMissing&&!ghostObstacles){
+    const cols=Math.max(8,Math.ceil(Math.sqrt(list.length*1.6)));
+    for(let i=0;i<list.length;i++){
+      const e=list[i];
+      if(pos.has(e.id))continue;
+      const jx=(graphStableUnit(e.id)-0.5)*40;
+      const jy=(graphStableUnit(e.id+':y')-0.5)*40;
+      pos.set(e.id,{x:W/2+(i%cols-(cols-1)/2)*120+jx,y:80+Math.floor(i/cols)*130+jy});
+    }
+    const n0=list.length;
     const itMax=n0>200?200:280;
     for(let it=0;it<itMax&&n0>1;it++){
-      for(let i=0;i<entries.length;i++)for(let j=i+1;j<entries.length;j++){
-        const a=pos.get(entries[i].id),b=pos.get(entries[j].id);
+      for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
+        const a=pos.get(list[i].id),b=pos.get(list[j].id);
         let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1;
         const f=Math.min(26,4200/(d*d));dx/=d;dy/=d;
         a.x-=dx*f;a.y-=dy*f;b.x+=dx*f;b.y+=dy*f;
       }
-      for(const ed of edges){
+      for(const ed of edges||[]){
         const a=pos.get(ed&&ed.a&&ed.a.id),b=pos.get(ed&&ed.b&&ed.b.id);
         if(!a||!b)continue;
         let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1;
         const f=(d-165)*0.02;dx/=d;dy/=d;
         a.x+=dx*f;a.y+=dy*f;b.x-=dx*f;b.y-=dy*f;
       }
-      for(const e of entries){const p=pos.get(e.id);p.x+=(W/2-p.x)*0.0025;p.y+=(H/2-p.y)*0.0025}
+      for(const e of list){const p=pos.get(e.id);p.x+=(W/2-p.x)*0.0025;p.y+=(H/2-p.y)*0.0025}
     }
     const cx0=Math.min(GRAPH_BOARD_PAD_X,Math.max(30,W/2)),cy0=Math.min(GRAPH_BOARD_PAD_Y,Math.max(30,H/2));
-    for(const e of entries){const p=pos.get(e.id);p.x=Math.max(cx0,Math.min(W-cx0,p.x));p.y=Math.max(cy0,Math.min(H-cy0,p.y))}
+    for(const e of list){const p=pos.get(e.id);p.x=Math.max(cx0,Math.min(W-cx0,p.x));p.y=Math.max(cy0,Math.min(H-cy0,p.y))}
+  }else if(miss){
+    const cols=Math.max(8,Math.ceil(Math.sqrt(Math.max(1,list.length)*1.6)));
+    let slot=0;
+    for(const e of list){
+      if(!e||e.id==null||pos.has(e.id))continue;
+      const i=slot++;
+      const jx=(graphStableUnit(e.id)-0.5)*24;
+      const jy=(graphStableUnit(e.id+':y')-0.5)*24;
+      const gx=(Number(W)||GRAPH_BOARD_MIN_W)/2+(i%cols-(cols-1)/2)*120+jx;
+      const gy=80+Math.floor(i/cols)*130+jy;
+      const r=radiusOf(e.id);
+      const found=graphSpiralSearch(gx,gy,r,fixed,e.id);
+      pos.set(e.id,{x:found.x,y:found.y});
+      fixed.push({id:e.id,x:found.x,y:found.y,r});
+    }
   }
   const out=graphLayoutMem(nid);
-  for(const e of entries){const p=pos.get(e.id);out[e.id]={x:p.x,y:p.y}}
+  for(const e of list){
+    const p=pos.get(e.id);
+    if(p)out[e.id]={x:p.x,y:p.y};
+  }
   return pos;
 }
 function graphNoteTransform(a,b){
@@ -19261,6 +19753,8 @@ function vGraph(){
   const allEntries=entriesOf(nid);
   if(S.ui.graphShowMinor==null)S.ui.graphShowMinor=false;
   const showMinor=!!S.ui.graphShowMinor;
+  if(S.ui.graphPushOthers==null)S.ui.graphPushOthers=true;
+  const pushOthers=S.ui.graphPushOthers!==false;
   const entries=graphEntriesVisible(allEntries,showMinor);
   const men=mentionScan(nid);
   if(S.ui.graphShowNotes==null)S.ui.graphShowNotes=true;
@@ -19300,17 +19794,31 @@ function vGraph(){
   }
   const n0=entries.length;
   const grid=graphGridBoardSize(n0);
-  const pre=graphBoardFromPos(entries,graphLayoutMem(nid),{minW:grid.W,minH:grid.H});
+  const layout0=graphLayoutMem(nid);
+  const ghosts=graphGhostEntries(allEntries,showMinor,layout0);
+  const boardEntries=entries.concat(ghosts);
+  const pre=graphBoardFromPos(boardEntries,layout0,{minW:grid.W,minH:grid.H});
   const pos=graphComputePos(entries,edges,pre.W,pre.H,nid);
-  const board=graphBoardFromPos(entries,pos,{minW:grid.W,minH:grid.H});
+  for(const g of ghosts){const gp=graphPosXY(pos,g.id)||graphPosXY(graphLayoutMem(nid),g.id);if(gp)pos.set(g.id,{x:gp.x,y:gp.y})}
+  const board=graphBoardFromPos(boardEntries,pos,{minW:grid.W,minH:grid.H});
+  const canSpread=showMinor&&graphHasMinorOverlap(nid);
   const W=board.W,H=board.H,originX=board.originX,originY=board.originY;
   const scale=graphScaleOf(nid);
   const dW=Math.round(W*scale),dH=Math.round(H*scale);
   const marker=`<defs><marker id="sfHierArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ac)" opacity=".9"/></marker></defs>`;
   const svgEdges=edges.map(ed=>graphEdgeSVG(ed,pos,showNotes)).join('');
-  const svgNodes=entries.map(e=>{
+  const svgGhosts=ghosts.map(e=>{
+    const p=pos.get(e.id);if(!p)return '';
+    const mh=men.get(e.id);
+    const r=graphNodeRadius(mh?mh.total:0);
+    return `<g class="graph-node ghost" data-id="${e.id}" data-r="${r}" pointer-events="none">
+      <circle class="graph-ring" cx="${p.x}" cy="${p.y}" r="${r}" fill="rgba(236,234,243,0.03)" stroke="var(--tx3)" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.38" pointer-events="none"/>
+    </g>`;
+  }).join('');
+  const svgNodes=svgGhosts+entries.map(e=>{
     const p=pos.get(e.id);const m=men.get(e.id);
-    const r=14+Math.min(15,(m?m.total:0)*1.5);
+    const r=graphNodeRadius(m?m.total:0);
+    const minor=graphIsMinorEntry(e);
     const col=entryIconColor(e,nid);
     const img=entryImageDataUrl(e);
     let inner='';
@@ -19324,7 +19832,7 @@ function vGraph(){
       const sc=Math.max(0.35,(r*1.15)/24);
       inner=`<g class="graph-fig" data-kind="svg" data-sc="${sc}" transform="translate(${p.x-12*sc},${p.y-12*sc}) scale(${sc})" fill="none" stroke="${col}" stroke-width="${(1.5/sc).toFixed(3)}" stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
     }
-    return `<g class="graph-node" data-id="${e.id}" data-r="${r}">
+    return `<g class="graph-node${minor?' minor':''}" data-id="${e.id}" data-r="${r}">
       <circle class="graph-ring" cx="${p.x}" cy="${p.y}" r="${r}" fill="${img?'var(--bg2)':col+'22'}" stroke="${col}" stroke-width="2"/>
       ${inner}
       <text class="graph-label" x="${p.x}" y="${p.y+r+14}" text-anchor="middle" font-size="11" fill="var(--tx2)" pointer-events="none">${esc(e.name)}</text>
@@ -19338,14 +19846,14 @@ function vGraph(){
   return `<div class="page" style="max-width:none"><div class="graph-head"><h1 class="pt">关系图谱 · ${esc(n.title)}</h1>
   <div class="graph-scene-pick"><select id="graphSceneSel" data-act="graph-scene" aria-label="图谱${unitLabel()}" title="选择${unitLabel()}后可显示该${unitLabel()}的同${unitLabel()}共现">${graphSceneOptionsHTML(nid,gSid||'')}</select>
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
-  <p class="pd">节点大小与提及次数相关。实线箭头＝归属／下属；虚线＝平级关联。画布按内容延伸，拖到边缘会扩展世界，不会把节点切在边上。滚轮缩放；右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
-  ${allEntries.length?`<div class="graph-shell">${entries.length?`<div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>`:`<div class="empty">没有可显示的设定。「从不包含」不会出现在关系图谱；要查看「检测到时不包含」的设定，请勾选「显示次要设定」。</div>`}
-  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" name="graphShowNotes" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" name="graphShowMentions" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" name="graphShowMinor" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" name="graphShowCo" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
+  <p class="pd">节点半径按全书提及次数计算，约 310 次封顶到半径 45，与追踪态无关；打开次要后次要只更淡、不另缩。关掉「显示次要设定」后，已有坐标的次要留下浅影占位（同等体积，不能拖、不进框选、点击不打开）；再打开时只把重叠的次要错开到附近空位，主要设定不动。可勾选「拖动时推开其他设定」。画布按内容延伸，拖到边缘会扩展世界，不会把节点切在边上。滚轮缩放 10%–400%；关系图谱内 Ctrl+Z／Ctrl+Y 撤销或重做布局。右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
+  ${allEntries.length?`<div class="graph-shell">${(entries.length||ghosts.length)?`<div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>`:`<div class="empty">没有可显示的设定。「从不包含」不会出现在关系图谱；要查看「检测到时不包含」的设定，请勾选「显示次要设定」。</div>`}
+  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" name="graphShowNotes" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" name="graphShowMentions" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" name="graphShowMinor" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="打开后，拖动设定会把碰到的其他可见设定或浅影沿接触方向推开；关闭后不能重叠，自己被挡住或找空位"><input type="checkbox" name="graphPushOthers" data-act="graph-toggle-push" ${pushOthers?'checked':''}> 拖动时推开其他设定</label><button type="button" class="btn sm" data-act="graph-spread-overlaps" ${canSpread?'':'disabled '}title="${canSpread?'只把重叠的次要错开到附近空位，主要设定不动':'显示次要设定后，若仍有重叠可点'}">散开重叠</button><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" name="graphShowCo" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
     <span class="hint"><span style="color:var(--ac)">→</span> 归属／下属 ${hierN} 条</span>
     <span class="hint"><span style="color:var(--ac2)">┆</span> 平级关联 ${linkN} 条</span>
     ${showCo&&gSid?`<span class="hint"><span style="color:var(--tx3)">┆</span> 同${unitLabel()}共现 ${coN} 条（取前60）</span>`:''}
-    <span class="hint">节点 ${entries.length}</span>
+    <span class="hint">节点 ${entries.length}</span>${!showMinor&&ghosts.length?`<span class="hint">浅影占位 ${ghosts.length}</span>`:''}
   </div>`:`<div class="empty">设定集中还没有条目</div>`}</div>`;
 }
 /** codex-graph-ux 票07：清写作页正文条目高亮（CSS Highlight；不改 contenteditable DOM） */
@@ -19443,7 +19951,7 @@ function bindGraph(){
   const svg=wrap.querySelector('svg');
   if(!svg)return;
   const ds=(/** @type {HTMLElement} */(wrap)).dataset;
-  const nid=ds.nid;
+  const nid=String(ds.nid||'');
   let BW=Number(ds.bw)||1000;
   let BH=Number(ds.bh)||560;
   let originX=Number(ds.ox)||0;
@@ -19468,6 +19976,7 @@ function bindGraph(){
   };
   const paintHits=(/** @type {Set<string>|null} */ hitIds,/** @type {string} */ focusId)=>{
     svg.querySelectorAll('.graph-node').forEach(g=>{
+      if(g.classList.contains('ghost'))return;
       const gid=g.getAttribute('data-id')||'';
       const on=!!(hitIds&&hitIds.has(gid));
       g.classList.toggle('hit',on);
@@ -19488,7 +19997,7 @@ function bindGraph(){
     hitOrder=[];hitFocus=-1;
     if(q){
       hitIds=new Set();
-      for(const e of entriesOf(nid)){
+      for(const e of graphEntriesVisible(entriesOf(nid),!!S.ui.graphShowMinor)){
         const hay=[e.name].concat(Array.isArray(e.aliases)?e.aliases:[]).concat(Array.isArray(e.tags)?e.tags:[]);
         if(hay.some(v=>String(v==null?'':v).toLowerCase().includes(q))){hitIds.add(e.id);hitOrder.push(e.id)}
       }
@@ -19542,7 +20051,7 @@ function bindGraph(){
   }
   const applyScale=(s,cx,cy)=>{
     const old=scale;
-    scale=Math.min(3,Math.max(0.25,s));
+    scale=Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,s));
     graphScaleSet(nid,scale);
     graphApplyBoard(wrap,svg,canvas,{originX,originY,W:BW,H:BH},scale);
     if(cx!=null&&cy!=null){
@@ -19624,7 +20133,7 @@ function bindGraph(){
      Shift+左键拖空白＝框选（恢复旧习惯；框选替换选中，追加仍用 Shift+点）；
      左键拖空白＝平移；左键点空白／Esc＝清空（票08）；拖任一选中（≥2）＝整组同位移，松手 uiStateSaveSoon；
      右键拖任意处＝画布平移（点中节点也只平移）；无 Shift 单节点拖＝只移该点。 */
-  let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
+let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
   let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
   /** @type {{id:string,x:number,y:number}[]|null} */ let grpStart=null;
   /** @type {{x:number,y:number}|null} */ let boxStart=null;
@@ -19635,9 +20144,79 @@ function bindGraph(){
   const gSel=new Set();   // 多选集合：会话瞬态（闭包内，重渲染即清；不写 UI_KEY）
   const nodeOf=id=>svg.querySelector('.graph-node[data-id="'+CSS.escape(id)+'"]');
   const ringCenter=(/** @type {Element|null} */ g)=>{const c=g&&g.querySelector('circle.graph-ring');return c?{x:Number(c.getAttribute('cx'))||0,y:Number(c.getAttribute('cy'))||0}:null};
-  const selSync=()=>{svg.querySelectorAll('.graph-node').forEach(g=>g.classList.toggle('sel',gSel.has(g.getAttribute('data-id')||'')))};
+  const isGhostNode=(/** @type {Element|null} */ g)=>!!(g&&g.classList&&g.classList.contains('ghost'));
+  const selSync=()=>{svg.querySelectorAll('.graph-node').forEach(g=>{if(isGhostNode(g)){g.classList.remove('sel');return}g.classList.toggle('sel',gSel.has(g.getAttribute('data-id')||''))})};
   /** @returns {boolean} 票08：供全局 Esc 清空多选；有选中则清并返回 true */
   (/** @type {any} */(wrap))._gSelClear=()=>{if(!gSel.size)return false;gSel.clear();selSync();return true};
+  /** @type {{ids:Set<string>,start:Record<string,{x:number,y:number}>,allStart:Record<string,{x:number,y:number}>,pushedUndo:boolean,lastGood:Record<string,{x:number,y:number}>|null,changed:boolean,pushedCount:number}|null} */
+  let dragState=null;
+  const nodeRadius=(/** @type {string} */ id)=>{
+    const g=nodeOf(id);
+    const r=g?Number(g.getAttribute('data-r')):NaN;
+    return Number.isFinite(r)&&r>0?r:graphNodeRadius(0);
+  };
+  /**
+   * @param {string[]} ids
+   * @param {number} dx
+   * @param {number} dy
+   */
+  const applyDragMove=(ids,dx,dy)=>{
+    const st=dragState;
+    if(!st||!ids.length)return;
+    const idSet=st.ids;
+    if(graphPushOthersOn()){
+      for(const id of ids){
+        const s=st.start[id];if(!s)continue;
+        moveNode(id,s.x+dx,s.y+dy);
+      }
+      const movers=ids.map(id=>{const p=pos[id]||st.start[id];return {id,x:p.x,y:p.y,r:nodeRadius(id)}});
+      const others=graphOccupiers(nid,idSet,pos);
+      const before=others.map(o=>({id:o.id,x:o.x,y:o.y}));
+      graphResolvePush(movers,others);
+      let pushed=0;
+      for(let i=0;i<others.length;i++){
+        const o=others[i],b=before[i];
+        if(Math.abs(o.x-b.x)>0.01||Math.abs(o.y-b.y)>0.01){moveNode(o.id,o.x,o.y);pushed++}
+      }
+      const moverMoved=ids.some(id=>{const s=st.start[id],p=pos[id];return s&&p&&(Math.abs(p.x-s.x)>0.01||Math.abs(p.y-s.y)>0.01)});
+      if(moverMoved||pushed){
+        if(!st.pushedUndo){graphUndoPush(nid,st.allStart);st.pushedUndo=true}
+        st.changed=true;
+        st.pushedCount=pushed;
+      }
+      return;
+    }
+    const tryPlace=(/** @type {number} */ tdx,/** @type {number} */ tdy)=>{
+      const others=graphOccupiers(nid,idSet,pos);
+      /** @type {Record<string,{x:number,y:number}>} */
+      const positions={};
+      for(const id of ids){
+        const s=st.start[id];if(!s)return null;
+        const n={id,r:nodeRadius(id)};
+        const q=graphConstrainPos(n,s.x+tdx,s.y+tdy,others,idSet);
+        if(!q)return null;
+        if(graphOverlapsAny(q.x,q.y,n.r,others,id))return null;
+        positions[id]=q;
+      }
+      return positions;
+    };
+    let positions=tryPlace(dx,dy);
+    if(!positions){
+      let lo=0,hi=1,best=null;
+      for(let i=0;i<10;i++){
+        const mid=(lo+hi)/2;
+        const q=tryPlace(dx*mid,dy*mid);
+        if(q){best=q;lo=mid}else hi=mid;
+      }
+      positions=best||st.lastGood||null;
+    }
+    if(!positions)return;
+    const any=ids.some(id=>{const s=st.start[id],p=positions[id];return s&&p&&(Math.abs(p.x-s.x)>0.01||Math.abs(p.y-s.y)>0.01)});
+    if(any&&!st.pushedUndo){graphUndoPush(nid,st.allStart);st.pushedUndo=true}
+    for(const id of ids){const p=positions[id];if(p)moveNode(id,p.x,p.y)}
+    st.lastGood=positions;
+    if(any)st.changed=true;
+  };
 
   wrap.addEventListener('selectstart',e=>e.preventDefault());
   wrap.addEventListener('pointerdown',e=>{
@@ -19647,8 +20226,9 @@ function bindGraph(){
     if(e.target.closest&&e.target.closest('.graph-tools'))return;
     if(e.cancelable)e.preventDefault();
     try{const sel=window.getSelection();if(sel&&sel.removeAllRanges)sel.removeAllRanges()}catch(_e){}
-    const node=button===2?null:(e.target.closest&&e.target.closest('.graph-node'));
-    moved=false;grpStart=null;boxStart=null;
+    let node=button===2?null:(e.target.closest&&e.target.closest('.graph-node'));
+    if(node&&isGhostNode(node))node=null;   // 浅影不参与选择／拖拽／打开
+    moved=false;grpStart=null;boxStart=null;dragState=null;
     if(node&&button===0&&pe.shiftKey){
       const sid=node.getAttribute('data-id')||'';   // Shift+点＝切换选中；不进入拖拽、不打开编辑
       if(sid){if(gSel.has(sid))gSel.delete(sid);else gSel.add(sid);selSync()}
@@ -19663,12 +20243,18 @@ function bindGraph(){
         ox=pt0.x;oy=pt0.y;
         grpStart=[...gSel].map(i=>{const c=ringCenter(nodeOf(i))||{x:ox,y:oy};return {id:i,x:c.x,y:c.y}});
         grpStart.forEach(s=>{const g=nodeOf(s.id);if(g)g.classList.add('dragging')});
+        /** @type {Record<string,{x:number,y:number}>} */
+        const start={};
+        for(const s of grpStart)start[s.id]={x:s.x,y:s.y};
+        dragState={ids:new Set(grpStart.map(s=>s.id)),start,allStart:graphLayoutSnap(nid),pushedUndo:false,lastGood:null,changed:false,pushedCount:0};
       }else{
         mode='node';
         const pt=svgPt(pe.clientX,pe.clientY);
         const p=pos[nidDrag]||{x:pt.x,y:pt.y};
         ox=pt.x-p.x;oy=pt.y-p.y;
         node.classList.add('dragging');
+        const dragId=String(nidDrag||'');
+        dragState={ids:new Set([dragId]),start:{[dragId]:{x:p.x,y:p.y}},allStart:graphLayoutSnap(nid),pushedUndo:false,lastGood:null,changed:false,pushedCount:0};
       }
     }else if(button===0&&pe.shiftKey){
       mode='box';   // Shift+左键空白＝框选（替换选中；追加用 Shift+点）
@@ -19703,27 +20289,28 @@ function bindGraph(){
       boxRect.setAttribute('y',String(Math.min(boxStart.y,pt.y)));
       boxRect.setAttribute('width',String(Math.abs(pt.x-boxStart.x)));
       boxRect.setAttribute('height',String(Math.abs(pt.y-boxStart.y)));
-    }else if(mode==='node'&&nidDrag){
+    }else if(mode==='node'&&nidDrag&&dragState){
       const pt=svgPt(pe.clientX,pe.clientY);
       const nx=pt.x-ox,ny=pt.y-oy;
-      const p=pos[nidDrag];
-      if(p&&(Math.abs(nx-p.x)>0.5||Math.abs(ny-p.y)>0.5))moved=true;
-      moveNode(nidDrag,nx,ny);
-    }else if(mode==='nodes'&&grpStart){
+      const s=dragState.start[nidDrag];
+      const dx=s?nx-s.x:0,dy=s?ny-s.y:0;
+      if(Math.abs(dx)>0.5||Math.abs(dy)>0.5)moved=true;
+      applyDragMove([nidDrag],dx,dy);
+    }else if(mode==='nodes'&&grpStart&&dragState){
       const pt=svgPt(pe.clientX,pe.clientY);
       const dx=pt.x-ox,dy=pt.y-oy;
       if(Math.abs(dx)>0.5||Math.abs(dy)>0.5)moved=true;
-      for(const s of grpStart)moveNode(s.id,s.x+dx,s.y+dy);
+      applyDragMove(grpStart.map(s=>s.id),dx,dy);
     }
   });
   const endPtr=e=>{
     if(!mode)return;
     const pe=(/** @type {PointerEvent} */(e));
-    const was=mode,id=nidDrag,did=moved;
+    const was=mode,id=nidDrag,did=moved,didLayout=!!(dragState&&dragState.changed);
     const node=id&&nodeOf(id);
     if(node)node.classList.remove('dragging');
     if(was==='nodes')svg.querySelectorAll('.graph-node.dragging').forEach(g=>g.classList.remove('dragging'));
-    mode=null;nidDrag=null;moved=false;
+    mode=null;nidDrag=null;moved=false;dragState=null;
     if(was==='box'){
       const bx=boxStart;boxStart=null;panClear=false;
       if(boxRect){try{boxRect.remove()}catch(_e2){}boxRect=null}
@@ -19732,6 +20319,7 @@ function bindGraph(){
       const pt=svgPt(pe.clientX,pe.clientY);
       const x0=Math.min(bx.x,pt.x),x1=Math.max(bx.x,pt.x),y0=Math.min(bx.y,pt.y),y1=Math.max(bx.y,pt.y);
       const boxHit=(/** @type {Element} */ g)=>{
+        if(isGhostNode(g))return false;
         const c=ringCenter(g);if(!c)return false;
         return c.x>=x0&&c.x<=x1&&c.y>=y0&&c.y<=y1;
       };
@@ -19746,14 +20334,12 @@ function bindGraph(){
       return;
     }
     panClear=false;
-    if(was==='nodes'&&did){
-      try{uiStateSaveSoon()}catch(_e2){}   // 整组平移松手＝逐点经 moveNode 写入既有布局存储，与单拖同款持久化
+    if((was==='node'||was==='nodes')&&didLayout){
+      try{uiStateSaveSoon()}catch(_e2){}   // 整段拖动（含被推开的节点）松手落盘；撤销已在首次移动时入栈
       return;
     }
     if((was==='node'||was==='nodes')&&id&&!did){
       try{openCodexEditModal(id)}catch(_e2){}   // 点击（含点选中节点）＝编辑，原语义保留
-    }else if(was==='node'&&id&&did){
-      try{uiStateSaveSoon()}catch(_e2){}
     }
   };
   wrap.addEventListener('pointerup',endPtr);
@@ -25538,6 +26124,7 @@ document.addEventListener('click',async e=>{
   case'graph-toggle-notes':
   case'graph-toggle-mentions':
   case'graph-toggle-co':
+  case'graph-toggle-push':
   case'graph-toggle-minor':{
     e.stopPropagation();
     const box=el.matches&&el.matches('input[type=checkbox]')?el:el.querySelector&&el.querySelector('input[type=checkbox]');
@@ -25545,8 +26132,35 @@ document.addEventListener('click',async e=>{
     if(act==='graph-toggle-notes')S.ui.graphShowNotes=on;
     else if(act==='graph-toggle-mentions')S.ui.graphShowMentions=on;
     else if(act==='graph-toggle-co')S.ui.graphShowCo=on;
-    else S.ui.graphShowMinor=on;
+    else if(act==='graph-toggle-push'){
+      S.ui.graphPushOthers=on;
+      try{uiStateSaveSoon()}catch(_eP){}
+    }else{
+      const was=!!S.ui.graphShowMinor;
+      S.ui.graphShowMinor=on;
+      if(on&&!was&&nid){
+        const snap=graphLayoutSnap(nid);
+        const moved=graphEnsureAndResolveMinors(nid);
+        if(moved.length){
+          graphUndoPush(nid,snap);
+          try{uiStateSaveSoon()}catch(_eM){}
+          if(typeof toast==='function')toast('已把 '+moved.length+' 个重叠的次要错开到附近空位，主要设定未移动');
+        }
+      }
+    }
     render();
+    break}
+  case'graph-spread-overlaps':{
+    e.stopPropagation();
+    if(!S.ui.graphShowMinor){toast('请先显示次要设定');break}
+    if(!nid)break;
+    const snapSp=graphLayoutSnap(nid);
+    const movedSp=graphEnsureAndResolveMinors(nid);
+    if(!movedSp.length){toast('没有需要错开的重叠');break}
+    graphUndoPush(nid,snapSp);
+    try{uiStateSaveSoon()}catch(_eS){}
+    render();
+    toast('已把 '+movedSp.length+' 个重叠的次要错开到附近空位，主要设定未移动');
     break}
   case'graph-scene-jump':{
     const sid=S.ui.graphSceneId;
