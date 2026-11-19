@@ -3109,7 +3109,8 @@ const G3_SIDE_FORMAT='novel-studio-scene-sidecar-v1';
 const G3_MD_FORMAT='novel-studio-entry-v1';
 const G3_TAGS_FORMAT='novel-studio-tags-v1';
 const G3_RECYCLE_FORMAT='novel-studio-recycle-v1';
-const G3_PLOT_FORMAT='novel-studio-plot-graph-v1';   // plot-graph-mvp：书根剧情图谱工程态（坐标／边／钉住）
+const G3_PLOT_FORMAT='novel-studio-plot-graph-v2';   // plot-graph-cards 02：卡片化布局（坐标／边／钉住）；写侧恒用本常量＝v1 旧档重铺后随 boot flush 升格落盘
+const G3_PLOT_FORMAT_V1='novel-studio-plot-graph-v1';   // 圆形时代旧布局：载入时触发一次性整卷重铺（ADR 0008；重铺后不再认读侧标记以外的 v1 语义）
 const G3_REL_FORMAT='novel-studio-rel-graph-v1';     // graph-drawio-gestures 票01：书根关系图谱布局工程态（只含坐标；ADR 0007）
 const G3_CHAT_FORMAT='novel-studio-chat-v1';
 
@@ -7621,11 +7622,14 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
       }
     }
   }
-  /* plot-graph-mvp：书根 剧情图谱.json */
+  /* plot-graph-mvp：书根 剧情图谱.json（plot-graph-cards 02：v1＝圆形时代旧布局，照常认领——
+     章场景读完后按目录顺序整卷重铺一次，写回随 boot flush 以 v2 落盘；其余格式仍只告警不认领） */
+  let plotRelayoutV1=false;
   {
     const pj=await g3ReadJson(dir+'/'+G3_FN.plotGraph,files,warns,null);
     if(pj){
-      if(pj._format===G3_PLOT_FORMAT){
+      if(pj._format===G3_PLOT_FORMAT||pj._format===G3_PLOT_FORMAT_V1){
+        plotRelayoutV1=pj._format===G3_PLOT_FORMAT_V1;
         (/** @type {any} */(out)).plotGraphs=[plotGraphNormalizeOne(pj,n.id)];
       }else{
         const pe=files.get(dir+'/'+G3_FN.plotGraph);if(pe)pe.keep=true;
@@ -7687,6 +7691,13 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
     return{c,scenes:got.filter(x=>x)};
   });
   for(const r of chGot){if(!r)continue;out.chapters.push(r.c);for(const sc of r.scenes)out.scenes.push(sc)}
+  /* plot-graph-cards 02：v1 旧布局一次性整卷重铺（ADR 0008，同 0007 迁移哲学——旧坐标弃不备份）。
+     放在目录读完后：重铺要按卷→章→小节的目录顺序；edges/pins 原样保留（含钉住节点重铺新位置）；
+     内存态即重铺结果，boot flush 投影时以 G3_PLOT_FORMAT（v2）写回——二次打开读 v2 不再触发。 */
+  if(plotRelayoutV1){
+    const pg=(/** @type {any} */(out)).plotGraphs[0];
+    if(pg)plotGraphRelayoutCards(pg,out.acts,out.chapters,out.scenes);
+  }
   /* 设定 */
   out.codexEntries=await g3ScanEntries(files,warns,dir+'/'+G3_DIR.codex,n.id,out.codexCategories,paths);
   /* 伏笔 / 片段 / 会话 */
@@ -19638,6 +19649,16 @@ function plotGridCols(n){
   return Math.max(3,Math.ceil(Math.sqrt(Math.max(1,n)*2.2)));
 }
 /**
+ * 剧情铺点槽位（第 i 个叶在 cols 列网格的中心坐标；首铺 plotEnsurePositions 与 v1 整卷重铺
+ * plotGraphRelayoutCards 共用同一公式，迁移产物与新鲜铺点同形）。
+ * @param {number} i
+ * @param {number} cols
+ * @returns {{x:number,y:number}}
+ */
+function plotGridSlotOf(i,cols){
+  return{x:PLOT_CARD_HW+20+(i%cols)*(PLOT_CARD_W+PLOT_CARD_GAP_X),y:PLOT_CARD_HH+30+Math.floor(i/cols)*(PLOT_CARD_H+PLOT_CARD_GAP_Y)};
+}
+/**
  * 剧情图谱网格下限（铺点仍走 plotEnsurePositions，此处只算画板下限；间距按卡片步长）。
  * @param {number} n0
  * @returns {{W:number,H:number,cols:number}}
@@ -21379,7 +21400,8 @@ function bindGraph(){
 
 
 /* ---------- 剧情图谱（plot-graph-mvp）----------
-   工程态：S.data.plotGraphs[] → 书根 剧情图谱.json（_format=novel-studio-plot-graph-v1）。
+   工程态：S.data.plotGraphs[] → 书根 剧情图谱.json（_format=novel-studio-plot-graph-v2；v1 旧档
+   载入时一次性整卷重铺后写回 v2——plotGraphRelayoutCards，ADR 0008）。
    坐标／边／钉住同文件；不进设定集、不写 UI_KEY／graphLayout。
    票01＝壳＋当前卷叶铺点＋单击／双击；票02＝边；票03＝窗外／角标。MVP 无搜索／多选。 */
 /** @param {any} d @param {string} nid */
@@ -21455,6 +21477,39 @@ function plotGraphNormalizeOne(raw,nid){
   }
   return{novelId:nid,positions,edges,pins};
 }
+/** plot-graph-cards 02：v1（圆形时代）旧布局一次性整卷重铺（ADR 0008，同 0007 单向迁移——旧坐标弃、不备份）。
+ * 按目录顺序（卷→章→章内小节，口径同 actsOf/chaptersOf/scenesOf 的 sort 序）把本书 positions 里
+ * 全部现存条目重排进卡片步长网格（plotGridSlotOf 同公式，产物与新鲜首铺同形）；edges 与 pins 原样
+ * 不动——钉住节点也重铺到新位置、钉态存于 pins 不丢；目录里已不存在的孤儿 id 追加在网格尾部
+ * （图谱不渲染、不静默丢档）。无栈时代（05 票前）不进任何撤销栈；空 positions 零动作。
+ * @param {any} st 归一后的本书剧情图谱工程态（原位改写 positions）
+ * @param {any[]} acts @param {any[]} chapters @param {any[]} scenes
+ * @returns {number} 重排条目数 */
+function plotGraphRelayoutCards(st,acts,chapters,scenes){
+  const ids=Object.keys(st.positions||{});
+  if(!ids.length)return 0;
+  const want=new Set(ids);
+  /** @type {string[]} */
+  const ordered=[];
+  const nid=st.novelId;
+  const scenesByCh=new Map();
+  for(const sc of g3BySort(scenes,(/** @type {any} */ x)=>x&&x.novelId===nid&&want.has(String(x.id)))){
+    const k=String(sc.chapterId);
+    if(!scenesByCh.has(k))scenesByCh.set(k,[]);
+    scenesByCh.get(k).push(String(sc.id));
+  }
+  for(const a of g3BySort(acts,(/** @type {any} */ x)=>x&&x.novelId===nid)){
+    for(const c of g3BySort(chapters,(/** @type {any} */ x)=>x&&x.novelId===nid&&String(x.actId)===String(a.id))){
+      if(want.has(String(c.id)))ordered.push(String(c.id));
+      for(const sid of(scenesByCh.get(String(c.id))||[]))ordered.push(sid);
+    }
+  }
+  const done=new Set(ordered);
+  for(const id of ids)if(!done.has(id))ordered.push(id);   // 孤儿（异卷章/已删实体/陌生 id）：追加尾部，不丢档
+  const cols=plotGridCols(ordered.length);
+  ordered.forEach((id,i)=>{st.positions[id]=plotGridSlotOf(i,cols)});
+  return ordered.length;
+}
 /** 当前卷（跟随写作区当前小节所属卷；无则首卷）
  * @param {string} nid @returns {string|null} */
 function plotCurActId(nid){
@@ -21529,7 +21584,7 @@ function plotEnsurePositions(nid,leaves){
   leaves.forEach((/** @type {any} */ leaf,/** @type {number} */ i)=>{
     const p=st.positions[leaf.id];
     if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))return;
-    st.positions[leaf.id]={x:PLOT_CARD_HW+20+(i%cols)*(PLOT_CARD_W+PLOT_CARD_GAP_X),y:PLOT_CARD_HH+30+Math.floor(i/cols)*(PLOT_CARD_H+PLOT_CARD_GAP_Y)};
+    st.positions[leaf.id]=plotGridSlotOf(i,cols);
     added=true;
   });
   if(added)save();
