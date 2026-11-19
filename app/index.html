@@ -730,6 +730,15 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap .plot-edge.sel{stroke-width:3.2; opacity:1}
 .graph-wrap .plot-edge-g{cursor:pointer}
 .graph-wrap .plot-edge-hit{pointer-events:stroke}
+/* plot-graph-cards 06（规格 Q4；术语「关系图谱搜索」剧情同口径段）：标题搜索高亮——卡片描边语言适配
+   .plot-card 系（不照搬圆形 ring）：命中 .hit＝描边强调色、焦点 .hit.focus＝Enter 循环当前项；
+   非命中 .dim 走上方通用 .graph-node.dim（.26）；两端都非命中的边组弱化同关系图谱 .12；
+   规则置后于 .plot-focus——搜索态与单击聚焦叠放时描边让位搜索（单击态色带/角标不受影响） */
+.graph-wrap .plot-card.hit .plot-card-bg{stroke:var(--ac2); stroke-width:3.2}
+.graph-wrap .plot-card.hit .plot-card-title{font-weight:700}
+.graph-wrap .plot-card.hit.focus .plot-card-bg{stroke:var(--ac); stroke-width:4.2}
+.graph-wrap .plot-card.hit.focus .plot-card-title{fill:var(--ac)}
+.graph-wrap .plot-edge-g.dim{opacity:.12}
 /* plot-graph-cards 03（规格 Q11/Q12）：悬停全文浮层——HTML 层贴卡片下方（fixed 定位、rAF 逐帧贴锚卡），
    区别于 SVG 内嵌文本＝屏上固定字号不随缩放（字号/限宽由 JS 常量 PLOT_POP_* 控制）；
    pointer-events:none＝点击穿底不跳转（跳转仍走双击／「打开写作」）、在场不挡拉线/拖点等后续手势 */
@@ -21700,6 +21709,16 @@ function plotVisibleLeaves(nid,actId){
   for(const id of dragIns){const L=resolve(String(id));if(L){L.dragged=true;byId.set(L.id,L)}}
   return [...byId.values()];
 }
+/** 剧情搜索命中序（纯函数，供冒烟直测；plot-graph-cards 06 规格 Q4）：仅匹配节点标题
+ *  （引子全文不参与——plotLeafIntro 投影链不进场），大小写不敏感片段包含，按窗内目录序返回命中叶 id。
+ * @param {any[]} leaves 窗内可见叶（plotVisibleLeaves 投影）
+ * @param {string} qs 查询串（原始输入，内部自做 trim／小写归一）
+ * @returns {string[]} 命中叶 id 序（空查询＝空数组） */
+function plotSearchHitIds(leaves,qs){
+  const q=String(qs==null?'':qs).trim().toLowerCase();
+  if(!q)return[];
+  return leaves.filter(l=>String(l&&l.title||'').toLowerCase().includes(q)).map(l=>l.id);
+}
 /** 首次／换卷：只给尚无坐标的叶铺网格（已有坐标不重排；步长＝卡片尺寸＋缝，plot-graph-cards 01）
  * @param {string} nid @param {any[]} leaves @returns {Record<string,{x:number,y:number}>} */
 function plotEnsurePositions(nid,leaves){
@@ -22144,9 +22163,9 @@ function vPlotGraph(){
   <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
-  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）兜底；悬停卡片 0.8s 出拉线箭头，按下拖到目标卡松手弹「导致／相关」二选一（回车确认，Esc／点空白取消）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。MVP 无图谱搜索／多选。</p>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）兜底；悬停卡片 0.8s 出拉线箭头，按下拖到目标卡松手弹「导致／相关」二选一（回车确认，Esc／点空白取消）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。工具栏可按标题搜索节点（命中高亮并滚入视野、Enter 循环、清空恢复；引子不参与）。MVP 无多选。</p>
   ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
-  <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
+  <div class="graph-tools"><input type="text" id="plotSearch" class="graph-search" placeholder="搜索节点标题" aria-label="搜索剧情叶节点（仅标题）" title="按节点标题片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复（引子不参与）" value="${esc(S.ui.plotQ||'')}"><span id="plotSearchStat" class="hint" style="margin:0" aria-live="polite"></span><span class="hint" style="margin:0" id="plotScaleLbl">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
   <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
   <button type="button" class="btn sm" data-act="plot-link-relate" title="进入拉相关边：依次单击两个叶节点">拉相关</button>
   <button type="button" class="btn sm danger" data-act="plot-edge-del" title="选中边后可删除" disabled>删边</button>
@@ -22172,7 +22191,7 @@ function bindPlotGraph(){
   const st=plotGraphOf(nid);
   const pos=st.positions;
   const canvas=/** @type {any} */(wrap.querySelector('.graph-canvas')||svg.parentElement);
-  const scaleLbl=()=>{const el=document.querySelector('.graph-tools .hint');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};
+  const scaleLbl=()=>{const el=document.getElementById('plotScaleLbl');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};   // 06：改按 id 定位——工具栏首个 .hint 已是搜索统计 plotSearchStat，querySelector 首个命中会写错元素（关系图谱票06 同坑同修）
   /** @param {{originX:number,originY:number,W:number,H:number}} b @param {{x?:number,y?:number}=} scrollShift */
   const adoptBoard=(b,scrollShift)=>{
     originX=b.originX;originY=b.originY;BW=b.W;BH=b.H;
@@ -22578,6 +22597,65 @@ function bindPlotGraph(){
     },PLOT_HOVER_ARROW_MS);
   });
   wrap.addEventListener('pointerleave',hovReset);   // 鼠标移开画布＝全部即消
+  /* plot-graph-cards 06（规格 Q4；术语「关系图谱搜索」剧情同口径段，参照 applyQ／_graphFocus 模式）：
+     工具栏标题搜索——只切 SVG 类名（.hit/.dim/.focus，卡片描边语言 CSS 适配），不重算布局/坐标；
+     命中＝节点标题含查询片段（大小写不敏感，plotSearchHitIds 单源；引子全文不参与）；两端都非命中的
+     连线一并弱化；有命中时焦点项滚入视野；多命中 Enter 循环；清空恢复。查询存 S.ui.plotQ（会话瞬态，
+     不入 UI_KEY）；入口独立——不与关系图谱搜索框（graphSearch/graphQ）共用 DOM/状态；弱化态不动
+     pointer-events，03 全文浮层／04 拉线悬停照常（浮层为屏上 HTML 层不参与弱化）。重渲后 bind 重挂，
+     按 S.ui.plotQ 同源重建的输入值就地恢复高亮。 */
+  const pSearch=/** @type {HTMLInputElement|null} */(document.getElementById('plotSearch'));
+  /** @type {string[]} */ let plotHitOrder=[];
+  let plotHitFocus=-1;
+  const plotScrollIntoView=(/** @type {string} */ id)=>{
+    const p=pos[id];if(!p)return;   // 卡中心＝positions 真源（拖点实时同步，无需求 DOM 解 transform）
+    const mx=wrap.clientWidth/2,my=wrap.clientHeight/2;
+    wrap.scrollLeft=Math.max(0,(p.x-originX)*scale-mx);
+    wrap.scrollTop=Math.max(0,(p.y-originY)*scale-my);
+  };
+  /** 高亮切换（hitIds=null＝清空恢复全亮）；边组两端都非命中才弱化（同关系图谱口径）。
+   * @param {Set<string>|null} hitIds @param {string} focusId */
+  const plotPaintHits=(hitIds,focusId)=>{
+    svg.querySelectorAll('.graph-node.plot-card').forEach((/** @type {any} */ g)=>{
+      const gid=g.getAttribute('data-id')||'';
+      const on=!!(hitIds&&hitIds.has(gid));
+      g.classList.toggle('hit',on);
+      g.classList.toggle('dim',!!(hitIds&&!hitIds.has(gid)));
+      g.classList.toggle('focus',!!(focusId&&gid===focusId));
+    });
+    svg.querySelectorAll('.graph-edges .plot-edge-g').forEach((/** @type {any} */ g)=>{
+      const lit=!hitIds||hitIds.has(g.getAttribute('data-a')||'')||hitIds.has(g.getAttribute('data-b')||'');
+      g.classList.toggle('dim',!lit);
+    });
+    if(focusId)plotScrollIntoView(focusId);
+  };
+  const plotApplyQ=(/** @type {string} */ qs)=>{
+    S.ui.plotQ=qs;
+    const q=qs.trim().toLowerCase();
+    plotHitOrder=q?plotSearchHitIds(plotVisibleLeaves(nid,plotCurActId(nid)),qs):[];
+    plotHitFocus=plotHitOrder.length?0:-1;
+    plotPaintHits(q?new Set(plotHitOrder):null,plotHitFocus>=0?plotHitOrder[plotHitFocus]:'');
+    const stat=document.getElementById('plotSearchStat');
+    if(stat){
+      if(!q)stat.textContent='';
+      else if(plotHitOrder.length)stat.textContent='命中 '+plotHitOrder.length+' 个节点'+(plotHitOrder.length>1?'（Enter 循环）':'');
+      else stat.textContent='没有匹配「'+qs.trim()+'」的节点';
+    }
+  };
+  if(pSearch){
+    pSearch.addEventListener('input',()=>plotApplyQ(pSearch.value));
+    pSearch.addEventListener('keydown',e=>{
+      if(e.key!=='Enter')return;
+      if(e.isComposing||e.keyCode===229)return;   // IME 组合键不循环（04 微浮层同款守卫；组合确认的 Enter 不当循环用）
+      e.preventDefault();
+      if(plotHitOrder.length<1)return;   // 无命中：Enter 静默不报错
+      plotHitFocus=plotHitOrder.length===1?0:(plotHitFocus+1)%plotHitOrder.length;
+      plotPaintHits(new Set(plotHitOrder),plotHitOrder[plotHitFocus]);
+      const stat=document.getElementById('plotSearchStat');
+      if(stat&&plotHitOrder.length>1)stat.textContent='命中 '+plotHitOrder.length+' 个节点（'+(plotHitFocus+1)+'/'+plotHitOrder.length+'）';
+    });
+    plotApplyQ(pSearch.value);   // 重渲后按当前查询就地恢复高亮（输入框 value 由 S.ui.plotQ 同源重建）
+  }
 }
 if(!(/** @type {any} */(window))._plotLeafDragBound){
   (/** @type {any} */(window))._plotLeafDragBound=true;
