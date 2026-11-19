@@ -736,6 +736,18 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .plot-full-pop{position:fixed; z-index:89; box-sizing:border-box; padding:8px 11px; background:var(--bg2); border:1px solid var(--ac); border-radius:10px; box-shadow:0 10px 28px rgba(0,0,0,.3); pointer-events:none; line-height:1.65; color:var(--tx2); word-break:break-all}
 .plot-full-pop .pfp-t{margin:0 0 3px; font-weight:600; color:var(--tx)}
 .plot-full-pop .pfp-i{margin:0}
+/* plot-graph-cards 04（规格 Q2）：拉线目标高亮——卡片描边语言（关系图谱 pull-hit/pull-bad 同款视觉语义）；
+   悬停箭头／橡皮筋复用既有全局样式 .graph-hover-arrow／.graph-pull-line（尺寸/虚线两图一致） */
+.graph-wrap .plot-card.pull-hit .plot-card-bg{stroke:var(--ac); stroke-width:3.2}   /* 拉线悬停：有效目标描边 */
+.graph-wrap .plot-card.pull-bad .plot-card-bg{stroke:var(--tx3); stroke-width:2.2; stroke-dasharray:4 3}   /* 拉线悬停：自身＝无效目标 */
+/* plot-graph-cards 04：拉线微浮层——「导致（默认预选）／相关」二选一 chips、无注释输入（A-03 微浮层同构，仅选项不同） */
+.plot-edge-pop{position:fixed; z-index:90; width:min(230px,92vw); box-sizing:border-box; display:flex; flex-direction:column; gap:8px; padding:10px; background:var(--bg2); border:1px solid var(--ac); border-radius:10px; box-shadow:0 10px 28px rgba(0,0,0,.3); font-size:12.5px}
+.plot-edge-pop .pep-hd{display:flex; align-items:baseline; gap:5px; margin:0; color:var(--tx2); font-size:12px; overflow:hidden; white-space:nowrap}
+.plot-edge-pop .pep-hd b{color:var(--tx); font-weight:600; overflow:hidden; text-overflow:ellipsis}
+.plot-edge-pop .pep-chips{display:flex; flex-wrap:wrap; gap:4px}
+.plot-edge-pop .pep-chips button{appearance:none; border:1px solid var(--line); background:transparent; color:var(--tx2); border-radius:99px; padding:4px 10px; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap}
+.plot-edge-pop .pep-chips button.on{background:color-mix(in srgb,var(--ac) 18%,transparent); border-color:var(--ac); color:var(--on-tx, var(--ac2))}
+.plot-edge-pop .pep-hint{margin:0; font-size:11px; color:var(--tx3)}
 .graph-tools .btn.on{outline:2px solid var(--ac); outline-offset:1px}
 .c-rel-top{display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:12px}
 .c-rel-intro{flex:1; min-width:180px; font-size:12.5px; color:var(--tx2); line-height:1.55; margin:0}
@@ -15005,6 +15017,11 @@ document.addEventListener('keydown',e=>{
     const gw=document.querySelector('.graph-wrap');
     if(gw&&typeof (/** @type {any} */(gw))._gSelClear==='function'&&(/** @type {any} */(gw))._gSelClear()){e.preventDefault();return}
   }
+  /* plot-graph-cards 04：剧情图谱拉线 Esc 中止（零副作用；微浮层 Esc 由其自身 capture 层先收） */
+  if(S.ui.view==='plot-graph'){
+    const pw=document.querySelector('.graph-wrap[data-plot="1"]');
+    if(pw&&typeof (/** @type {any} */(pw))._plotEsc==='function'&&(/** @type {any} */(pw))._plotEsc()){e.preventDefault();return}
+  }
   killPopMenu();
 });
 document.addEventListener('keydown',e=>{
@@ -21832,6 +21849,7 @@ function plotFullPopHTML(leaf){
  */
 function plotFullPopOpen(nid,leafId){
   const id=String(leafId||'');if(!nid||!id)return;
+  if(_plotEdgePop)return;   // plot-graph-cards 04：拉线微浮层在场＝被动全文浮层不开（同层互斥，时序互不打架）
   const leaf=plotVisibleLeaves(nid,plotCurActId(nid)).find(l=>l.id===id);
   if(!leaf)return;
   const wrap=/** @type {HTMLElement|null} */(document.querySelector('.graph-wrap[data-plot="1"]'));
@@ -21867,6 +21885,107 @@ function plotFullPopOpen(nid,leafId){
   (document.body||document.documentElement).appendChild(pop);
   place();
   if(typeof requestAnimationFrame==='function')st.raf=requestAnimationFrame(tick);
+}
+/* plot-graph-cards 04（规格 Q2）：拉线微浮层——拉线松手在有效目标卡旁弹 HTML 浮层，
+   「导致（默认预选）／相关」二选一 chips、无注释输入（边备注＝本批非目标）。
+   交互与关系图谱票 03 微浮层（graphRelPop* 系列）同构、仅选项不同——A-03 落地后对齐其实现模式：
+   fixed 定位、rAF 逐帧贴目标卡（缩放/平移/拖点跟随）；回车确认＝复用 plotEdgeAdd 落边并 render 即时重渲
+   （两端已有同向同类型边＝plotEdgeAdd 返回 false → 提示已存在、不重复建）；Esc／点浮层外＝取消零副作用
+   （capture 收 Esc，浮层内点按不拦传播）；重渲/切视图/删叶（锚卡脱离 DOM）rAF 自毁＝视图切换销毁浮层。
+   与 03 全文浮层同层互斥（plotFullPopOpen 入口守卫＋此处开层先收）：被动浮层让位、二者不叠放。 */
+/** @type {{el:HTMLElement,raf:number,key:((ev:KeyboardEvent)=>void)|null,out:((ev:PointerEvent)=>void)|null}|null} */
+let _plotEdgePop=null;
+/** 收掉拉线微浮层（幂等）：撤监听／停 rAF／摘 DOM；不动任何数据。 */
+function plotEdgePopClose(){
+  const p=_plotEdgePop;_plotEdgePop=null;
+  if(!p)return;
+  if(p.raf&&typeof cancelAnimationFrame==='function')cancelAnimationFrame(p.raf);
+  try{p.el.remove()}catch(_e){}
+  if(p.key)document.removeEventListener('keydown',p.key,true);
+  if(p.out)document.removeEventListener('pointerdown',p.out,true);
+}
+/**
+ * 拉线微浮层内容（纯函数，供冒烟直测）：标题 A→B＋「导致（默认）／相关」二选一 chips＋操作提示；无注释输入。
+ * @param {any} leafA 拉线起点（目录叶投影）
+ * @param {any} leafB 松手目标（浮层贴它旁边）
+ * @returns {string} 浮层 innerHTML
+ */
+function plotEdgePopHTML(leafA,leafB){
+  const nm=(/** @type {any} */ l)=>String(l&&l.title||'').replace(/[\r\n\t]+/g,' ').replace(/\s{2,}/g,' ').trim()||'（未命名）';
+  return '<p class="pep-hd">建立剧情边：<b>'+esc(nm(leafA))+'</b><span>→</span><b>'+esc(nm(leafB))+'</b></p>'
+    +'<div class="pep-chips"><button type="button" class="on" data-kind="cause">导致</button><button type="button" data-kind="relate">相关</button></div>'
+    +'<p class="pep-hint">回车确认 · Esc／点空白取消</p>';
+}
+/**
+ * 打开拉线微浮层（bindPlotGraph 拉线松手有效目标入口）。
+ * @param {string} nid 书 id
+ * @param {string} from 拉线起点叶 id（边的 a 端）
+ * @param {string} to 松手目标叶 id（边的 b 端，浮层贴它旁边）
+ * @returns {void}
+ */
+function plotEdgePopOpen(nid,from,to){
+  plotEdgePopClose();
+  const fid=String(from||''),tid=String(to||'');
+  if(!nid||!fid||!tid||fid===tid)return;
+  const leaves=plotVisibleLeaves(nid,plotCurActId(nid));
+  const fa=leaves.find(l=>l.id===fid),fb=leaves.find(l=>l.id===tid);
+  if(!fa||!fb)return;
+  const wrap=/** @type {HTMLElement|null} */(document.querySelector('.graph-wrap[data-plot="1"]'));
+  const nodeEl=wrap&&wrap.querySelector('svg .graph-node[data-id="'+CSS.escape(tid)+'"]');
+  if(!wrap||!nodeEl)return;
+  plotFullPopClose();   // 同层互斥：交互浮层在场＝被动全文浮层即收
+  const pop=document.createElement('div');
+  pop.className='plot-edge-pop';
+  pop.innerHTML=plotEdgePopHTML(fa,fb);
+  let kind=/** @type {'cause'|'relate'} */('cause');
+  /** @type {{el:HTMLElement,raf:number,key:((ev:KeyboardEvent)=>void)|null,out:((ev:PointerEvent)=>void)|null}} */
+  const st={el:pop,raf:0,key:null,out:null};
+  const chips=Array.prototype.slice.call(pop.querySelectorAll('.pep-chips button'));
+  const setKind=(/** @type {'cause'|'relate'} */ k)=>{kind=k;chips.forEach((/** @type {Element} */ c)=>c.classList.toggle('on',String(c.getAttribute('data-kind')||'')===k))};
+  chips.forEach((/** @type {Element} */ c)=>c.addEventListener('click',()=>setKind(/** @type {'cause'|'relate'} */(String(c.getAttribute('data-kind')||'cause')))));
+  const confirmAdd=()=>{
+    const ok=plotEdgeAdd(nid,fid,tid,kind);   // 查重在 plotEdgeAdd 内：两端已有同向同类型边＝false 不重复建
+    plotEdgePopClose();
+    if(ok){toast('已建边');try{render()}catch(_e2){}}   // 落边即渲：与工具栏两段式入口同一收口
+    else toast('该边已存在');
+  };
+  st.key=ev=>{   // Esc 收浮层／回车确认（capture 先于全局 Esc 分发与按钮默认激活）
+    if(ev.key!=='Escape'&&ev.key!=='Enter')return;
+    if(ev.isComposing||ev.keyCode===229)return;   // IME 组合键不确认
+    ev.preventDefault();ev.stopPropagation();
+    if(ev.key==='Escape')plotEdgePopClose();
+    else confirmAdd();
+  };
+  document.addEventListener('keydown',st.key,true);
+  st.out=ev=>{   // 点浮层外任意处＝取消（不拦传播：图谱其他交互照常进行）
+    const t=/** @type {any} */(ev.target);
+    if(t&&t.nodeType===1&&pop.contains(/** @type {Node} */(t)))return;
+    plotEdgePopClose();
+  };
+  document.addEventListener('pointerdown',st.out,true);
+  const place=()=>{
+    const bg=nodeEl.querySelector('.plot-card-bg');
+    if(!bg){plotEdgePopClose();return}
+    const r=bg.getBoundingClientRect();   // 卡片实际屏上盒（随平移/缩放/拖点实时变），与 03 全文浮层同口径免手算变换
+    const vw=window.innerWidth||document.documentElement.clientWidth||1200,vh=window.innerHeight||document.documentElement.clientHeight||800;
+    const pw=pop.offsetWidth||230,ph=pop.offsetHeight||84;
+    let left=Math.max(8,Math.min(r.left+r.width/2-pw/2,vw-pw-8));   // 水平：对目标卡居中，钳视口
+    let top=r.bottom+PLOT_POP_GAP_PX;   // 贴目标卡下方
+    if(top+ph>vh-8)top=Math.max(8,r.top-PLOT_POP_GAP_PX-ph);   // 下方放不下翻卡片上方
+    pop.style.left=Math.round(left)+'px';pop.style.top=Math.round(top)+'px';
+  };
+  const tick=()=>{
+    if(_plotEdgePop!==st)return;
+    if(pop.isConnected===false||nodeEl.isConnected===false||wrap.isConnected===false){plotEdgePopClose();return}   // 重渲/切视图/删叶＝销毁
+    place();
+    if(_plotEdgePop!==st)return;   // place 防御性收场（卡面元素丢失）
+    st.raf=requestAnimationFrame(tick);   // 逐帧贴卡：平移/缩放/拖点都不离位
+  };
+  _plotEdgePop=st;
+  (document.body||document.documentElement).appendChild(pop);
+  place();
+  if(typeof requestAnimationFrame==='function')st.raf=requestAnimationFrame(tick);
+  setTimeout(()=>{if(_plotEdgePop===st){const d=pop.querySelector('.pep-chips button');if(d)try{/** @type {HTMLElement} */(d).focus()}catch(_e3){}}},0);   // 默认 chip 聚焦：回车语义可见＋键盘可达
 }
 /** 剧情图谱视图（plot-graph-cards 01 起：节点＝目录叶方形卡片，引子只读投影，ADR 0008）。 */
 function vPlotGraph(){
@@ -21932,7 +22051,7 @@ function vPlotGraph(){
   <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
-  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。MVP 无图谱搜索／多选。</p>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）兜底；悬停卡片 0.8s 出拉线箭头，按下拖到目标卡松手弹「导致／相关」二选一（回车确认，Esc／点空白取消）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。MVP 无图谱搜索／多选。</p>
   ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
   <div class="graph-tools"><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
   <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
@@ -22084,11 +22203,97 @@ function bindPlotGraph(){
     const cy=(we.clientY-rect.top+wrap.scrollTop)/scale;
     const factor=we.deltaY<0?1.1:1/1.1;
     applyScale(scale*factor,cx,cy);
+    if(hovArrow&&hovId)hovArrowDraw(nodeOf(hovId),hovWX,hovWY);   // 04：缩放后按新 scale 重画在场箭头（只重画，绝不新建——计时未满不出箭头）
   },{passive:false});
   wrap.addEventListener('contextmenu',(/** @type {Event} */ e)=>e.preventDefault());
   let mode=/** @type {string|null} */(null),nidDrag=/** @type {string|null} */(null),moved=false;
   let sx=0,sy=0,sl0=0,st0=0,ox=0,oy=0;
   const THRESH=4;
+  /* plot-graph-cards 04（规格 Q2）：悬停拉线——同卡悬停 ≥PLOT_HOVER_ARROW_MS 出箭头并武装按下接管；
+     拉线态橡皮筋＋目标高亮（pull-hit/pull-bad）。剧情版无浅影（窗外叶也是可交互卡）、无多选态分支（剧情无多选）。 */
+  /** @type {Element|null} */ let hovArrow=null;   // 一级拉线箭头 <g class="graph-hover-arrow">
+  let pullArmId='';   // 箭头在场＝该卡左键按下可接管拉线
+  /** @type {SVGLineElement|null} */ let pullLine=null;   // 橡皮筋 <line class="graph-pull-line">
+  /** @type {Element|null} */ let pullTargetEl=null;   // 拉线悬停目标卡（pull-hit/pull-bad 高亮）
+  let pullFrom='';   // 拉线起点叶 id
+  let hovX=0,hovY=0,hovWX=0,hovWY=0;   // 悬停鼠标采样（屏幕＋世界坐标：箭头随鼠标转向）
+  /** 画／转向拉线箭头：锚＝卡片矩形边框朝鼠标方位出点（plotCardExit，规格 Q9）外推 6 世界单位；
+      尺寸按屏幕像素（随缩放 1/scale 反算，GRAPH_HOVER_ARROW_PX 两图同款）。
+   * @param {Element} g 悬停卡片
+   * @param {number} mx 鼠标（画布世界坐标 x）
+   * @param {number} my 鼠标（画布世界坐标 y） */
+  const hovArrowDraw=(g,mx,my)=>{
+    const id=String(g.getAttribute('data-id')||'');
+    const p=pos[id];if(!p)return;
+    const hw=Number(g.getAttribute('data-r'))||PLOT_CARD_HW;   // 01 定档：data-r／data-rh＝半宽／半高
+    const hh=Number(g.getAttribute('data-rh'))||PLOT_CARD_HH;
+    const dx=mx-p.x,dy=my-p.y;
+    const len=Math.hypot(dx,dy);
+    if(len<0.5)return;
+    const ex=plotCardExit(p.x,p.y,mx,my,hw,hh);
+    const ax=ex.x+dx/len*6,ay=ex.y+dy/len*6;
+    const ang=Math.atan2(dy,dx)*180/Math.PI;
+    if(!hovArrow){
+      hovArrow=document.createElementNS('http://www.w3.org/2000/svg','g');
+      hovArrow.setAttribute('class','graph-hover-arrow');
+      const h=GRAPH_HOVER_ARROW_PX/2;
+      hovArrow.innerHTML='<path d="M'+h+' 0 L'+(-h*0.8)+' '+(-h*0.68)+' L'+(-h*0.4)+' 0 L'+(-h*0.8)+' '+h*0.68+' Z"/>';
+      svg.appendChild(hovArrow);
+    }
+    hovArrow.setAttribute('transform','translate('+ax+','+ay+') rotate('+ang+') scale('+(1/Math.max(0.0001,scale))+')');
+  };
+  /** 收箭头＋武装位（不动 03 全文浮层：其收场仍由悬停链／重渲自管）。 */
+  const hovArrowOff=()=>{
+    if(hovArrow){try{hovArrow.remove()}catch(_e){}hovArrow=null}
+    pullArmId='';
+  };
+  /** 拉线目标高亮切换：el=null 清除；self=true 走无效目标（自身）样式（卡片描边版，同款视觉语言）。
+   * @param {Element|null} el
+   * @param {boolean} self */
+  const pullHighlight=(el,self)=>{
+    if(pullTargetEl&&pullTargetEl!==el){
+      pullTargetEl.classList.remove('pull-hit');
+      pullTargetEl.classList.remove('pull-bad');
+    }
+    pullTargetEl=el||null;
+    if(pullTargetEl){
+      if(self){pullTargetEl.classList.remove('pull-hit');pullTargetEl.classList.add('pull-bad')}
+      else{pullTargetEl.classList.remove('pull-bad');pullTargetEl.classList.add('pull-hit')}
+    }
+  };
+  /** 拉线橡皮筋重画：起点＝起点卡边框朝鼠标方位出点（plotCardExit）；已创建则只更新端点。
+   * @param {number} mx 鼠标（画布世界坐标 x）
+   * @param {number} my 鼠标（画布世界坐标 y） */
+  const pullDraw=(mx,my)=>{
+    if(!pullLine||!pullFrom)return;
+    const g=nodeOf(pullFrom);if(!g)return;
+    const p=pos[pullFrom];if(!p)return;
+    const hw=Number(g.getAttribute('data-r'))||PLOT_CARD_HW;
+    const hh=Number(g.getAttribute('data-rh'))||PLOT_CARD_HH;
+    const e=plotCardExit(p.x,p.y,mx,my,hw,hh);
+    pullLine.setAttribute('x1',String(e.x));
+    pullLine.setAttribute('y1',String(e.y));
+    pullLine.setAttribute('x2',String(mx));
+    pullLine.setAttribute('y2',String(my));
+  };
+  /** 拉线目标：鼠标下卡片（剧情图谱节点全是可交互卡，无浅影穿透分支）。
+   * @param {number} cx 屏幕 x
+   * @param {number} cy 屏幕 y
+   * @returns {Element|null} */
+  const pullTargetAt=(cx,cy)=>{
+    const el=document.elementFromPoint(cx,cy);
+    const t=(/** @type {any} */(el));
+    return t&&t.closest?/** @type {Element|null} */(t.closest('.graph-node')):null;
+  };
+  /** 收拾拉线态视觉（橡皮筋＋目标高亮）；不动任何坐标／选中态。 */
+  const pullCleanup=()=>{
+    if(pullLine){try{pullLine.remove()}catch(_e){}pullLine=null}
+    pullHighlight(null,false);
+  };
+  (/** @type {any} */(wrap))._plotEsc=()=>{   // 04：全局 Esc 中止拉线（零副作用；挂全局 Esc 分发链）
+    if(mode==='pull'){mode=null;pullFrom='';pullCleanup();return true}
+    return false;
+  };
   wrap.addEventListener('pointerdown',(/** @type {PointerEvent} */ e)=>{
     const pe=e;
     if(pe.button===2||pe.button===1){
@@ -22099,11 +22304,26 @@ function bindPlotGraph(){
     if(pe.button!==0)return;
     const t=/** @type {Element} */(pe.target);
     const node=t&&t.closest?t.closest('.graph-node'):null;
+    /* plot-graph-cards 04：箭头在场时该卡左键按下＝拉线接管候选（先取值再收悬停态；未拖动仍按原点按语义收场）。
+       工具栏两段式拉边态（linkMode）优先＝兜底入口语义不变。 */
+    const armCand=node?String(node.getAttribute('data-id')||''):'';
+    const armedPull=armCand&&!linkMode&&hovArrow&&pullArmId&&pullArmId===armCand?pullArmId:'';
+    if(hovTimer){clearTimeout(hovTimer);hovTimer=0}   // 任何按下都打断悬停计时（A 系列 hoverStop 同款；03 全文浮层收场仍走悬停链自身）
+    if(hovTimer2){clearTimeout(hovTimer2);hovTimer2=0}
+    hovArrowOff();
     if(node){
       nidDrag=node.getAttribute('data-id')||'';
       /* 拉边态：只点选，不进入拖点（微移也会把 click 吃成拖，导致「拉不出线」） */
       if(linkMode){
         mode='linktap';moved=false;
+        try{wrap.setPointerCapture(pe.pointerId)}catch(_e2){}
+        return;
+      }
+      if(armedPull){
+        mode='pull';   // 04：拉线态——不设拖动、不动坐标、不进撤销栈
+        nidDrag=null;
+        pullFrom=armedPull;
+        sx=pe.clientX;sy=pe.clientY;moved=false;
         try{wrap.setPointerCapture(pe.pointerId)}catch(_e2){}
         return;
       }
@@ -22127,8 +22347,15 @@ function bindPlotGraph(){
     try{wrap.setPointerCapture(pe.pointerId)}catch(_e3){}
   });
   wrap.addEventListener('pointermove',(/** @type {PointerEvent} */ e)=>{
-    if(!mode)return;
     const pe=e;
+    if(!mode){   // 04：悬停采样——箭头在场时随鼠标实时转向（剧情链不判静止：换卡即重起算，03 同口径）
+      if(hovId){
+        hovX=pe.clientX;hovY=pe.clientY;
+        const pw=svgPt(hovX,hovY);hovWX=pw.x;hovWY=pw.y;
+        if(hovArrow)hovArrowDraw(nodeOf(hovId),hovWX,hovWY);
+      }
+      return;
+    }
     if(mode==='edgesel'){
       const dx=pe.clientX-sx,dy=pe.clientY-sy;
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH){
@@ -22146,14 +22373,44 @@ function bindPlotGraph(){
       const p=pos[nidDrag];
       if(p&&(Math.abs(nx-p.x)>0.5||Math.abs(ny-p.y)>0.5))moved=true;
       moveNode(nidDrag,nx,ny);
+    }else if(mode==='pull'&&pullFrom){   // 04：拉线态——越阈值才画橡皮筋（未过阈值松手＝原点按语义）；目标高亮随鼠标更新
+      if(!moved){
+        if(Math.abs(pe.clientX-sx)<=THRESH&&Math.abs(pe.clientY-sy)<=THRESH)return;
+        moved=true;
+        if(!pullLine){
+          pullLine=document.createElementNS('http://www.w3.org/2000/svg','line');
+          pullLine.setAttribute('class','graph-pull-line');
+          svg.appendChild(pullLine);
+          plotFullPopClose();   // 交互手势起手＝被动全文浮层让位（其 pointer-events:none 本不挡手势，避免视觉叠放）
+        }
+      }
+      const pt=svgPt(pe.clientX,pe.clientY);
+      pullDraw(pt.x,pt.y);
+      const tg=pullTargetAt(pe.clientX,pe.clientY);
+      if(!tg)pullHighlight(null,false);
+      else pullHighlight(tg,String(tg.getAttribute('data-id')||'')===pullFrom);
     }
   });
   const endPtr=(/** @type {PointerEvent} */ e)=>{
     if(!mode)return;
-    const was=mode,id=nidDrag,did=moved;
+    const was=mode;let id=nidDrag;const did=moved;
     if(id){const g=nodeOf(id);if(g)g.classList.remove('dragging')}
     mode=null;nidDrag=null;moved=false;
-    if((was==='node'||was==='linktap')&&id&&(was==='linktap'||!did)){
+    if(was==='pull'){   // 04：拉线态收场——不动坐标／选中态；剧情版无空白快建（Q15 双击空白无操作）
+      const from=pullFrom||'';
+      const tgt=pullTargetEl;
+      const tgtId=tgt?String(tgt.getAttribute('data-id')||''):'';
+      pullFrom='';
+      pullCleanup();
+      if(e.type==='pointercancel')return;   // 系统打断＝纯取消
+      if(did){
+        if(tgt&&(!tgtId||tgtId===from)){toast('不能与自己建立边');return}   // 自身＝无效提示，零副作用
+        if(tgt){plotEdgePopOpen(nid,from,tgtId);return}   // 有效目标＝「导致／相关」二选一微浮层（查重在确认时 plotEdgeAdd 内）
+        return;   // 空白＝取消不新建
+      }
+      id=from||null;   // 未拖动＝原「点按」语义（聚焦／双击开写，走下方共用收口）
+    }
+    if((was==='node'||was==='linktap'||was==='pull')&&id&&(was!=='node'||!did)){
       if(linkMode){
         if(!linkFrom){linkFrom=id;setFocus(id);linkHint();return}
         if(linkFrom===id){toast('请点另一个节点作终点');return}
@@ -22193,15 +22450,18 @@ function bindPlotGraph(){
   };
   wrap.addEventListener('pointerup',endPtr);
   wrap.addEventListener('pointercancel',endPtr);
-  /* plot-graph-cards 03（规格 Q11/Q12）：悬停三层时序链——静止悬停同一张卡起算：≥0.5s 弹全文浮层（本票，
-     PLOT_HOVER_POP_MS）；0.8s 拉线箭头（04 落地时在同一悬停链追加槽位，PLOT_HOVER_ARROW_MS 已定档）；
-     1.5s 邻居高亮（07 挂载位，PLOT_HOVER_NB_MS）。换卡/移出画布＝定时器全撤＋浮层即消；
-     浮层 pointer-events:none，在场不挡后续手势（「浮层偏移让位」＝贴卡下方留 GAP、点击穿底不跳转）。 */
+  /* plot-graph-cards 03（规格 Q11/Q12）：悬停三层时序链——静止悬停同一张卡起算：≥0.5s 弹全文浮层（03，
+     PLOT_HOVER_POP_MS）；0.8s 拉线箭头（04 已接：hovTimer2 槽位，PLOT_HOVER_ARROW_MS）；1.5s 邻居高亮
+     （07 挂载位，PLOT_HOVER_NB_MS）。换卡/移出画布＝定时器全撤＋浮层/箭头即消；浮层 pointer-events:none，
+     在场不挡后续手势（「浮层偏移让位」＝贴卡下方留 GAP、点击穿底不跳转；04 微浮层在场时两者互斥不叠放）。 */
   let hovId='';
   let hovTimer=0;
+  let hovTimer2=0;
   const hovReset=()=>{
     if(hovTimer){clearTimeout(hovTimer);hovTimer=0}
+    if(hovTimer2){clearTimeout(hovTimer2);hovTimer2=0}
     hovId='';
+    hovArrowOff();   // 04：换卡/移出＝箭头随定时器一并消失
     plotFullPopClose();   // 幂等：未开浮层时空收无副作用
   };
   wrap.addEventListener('pointerover',(/** @type {PointerEvent} */ e)=>{
@@ -22212,7 +22472,13 @@ function bindPlotGraph(){
     hovReset();
     if(!id)return;   // 移到空白/边上＝悬停作废（浮层已收）
     hovId=id;
+    hovX=e.clientX;hovY=e.clientY;
+    const pw0=svgPt(hovX,hovY);hovWX=pw0.x;hovWY=pw0.y;
     hovTimer=setTimeout(()=>{hovTimer=0;if(hovId===id)plotFullPopOpen(nid,id)},PLOT_HOVER_POP_MS);
+    hovTimer2=setTimeout(()=>{   // 04：同卡悬停 ≥0.8s 出拉线箭头并武装按下接管（0.5s 浮层在场照常起——浮层 pointer-events:none 让位不挡）
+      hovTimer2=0;
+      if(hovId===id&&!mode&&!_plotEdgePop){hovArrowDraw(nodeOf(id),hovWX,hovWY);pullArmId=id}
+    },PLOT_HOVER_ARROW_MS);
   });
   wrap.addEventListener('pointerleave',hovReset);   // 鼠标移开画布＝全部即消
 }
