@@ -699,6 +699,18 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-edge-g.sel .graph-edge-link{stroke-width:2.4; opacity:1}
 .graph-edge-hit{pointer-events:stroke; fill:none}
 .graph-edges .graph-edge-g.dim{opacity:.12}
+/* graph-drawio-gestures 票05（决策 8/10）：邻居高亮（二级悬停）——svg.nb-on 期间非邻居节点/边淡至 --nb-dim（约 15%），
+   邻居（.nb-lit）保持原亮度（边的原亮度经 graphEdgeSVG 模板 --geo 变量精确复原）＋轻描边；
+   特异性刻意压过搜索高亮 .dim/.hit（邻居临时优先），移开由 JS 摘类、级联回落即自动复原搜索态。 */
+.graph-wrap svg.nb-on{--nb-dim:.15}
+.graph-wrap svg.nb-on .graph-node:not(.nb-lit){opacity:var(--nb-dim)}
+.graph-wrap svg.nb-on .graph-node.nb-lit{opacity:var(--geo,1)}
+.graph-wrap svg.nb-on .graph-node.nb-lit .graph-ring{stroke-width:3}   /* 邻居节点轻描边（保留原描边色） */
+.graph-wrap svg.nb-on .graph-edges > line:not(.nb-lit){opacity:var(--nb-dim)}
+.graph-wrap svg.nb-on .graph-edges .graph-edge-g:not(.nb-lit){opacity:var(--nb-dim)}
+.graph-wrap svg.nb-on .graph-edges > line.nb-lit{opacity:var(--geo,1)}
+.graph-wrap svg.nb-on .graph-edges .graph-edge-g.nb-lit{opacity:var(--geo,1)}
+.graph-wrap svg.nb-on .graph-edges .nb-lit{filter:drop-shadow(0 0 2px var(--ac2))}   /* 相连边轻描边（柔光） */
 /* plot-graph-mvp：剧情图谱（复用 .graph-shell／.graph-wrap 壳；独立数据与入口） */
 .graph-wrap .graph-node.plot-focus .graph-ring{stroke:var(--ac); stroke-width:3.6}
 .graph-wrap .graph-node.plot-focus .graph-label{fill:var(--ac); font-weight:700}
@@ -19144,6 +19156,7 @@ const GRAPH_NODE_GAP=6;
 const GRAPH_UNDO_MAX=60;
 /* graph-drawio-gestures 票02（规格决策 10）：悬停手势参数集中定义，便于调整。 */
 const GRAPH_HOVER_L1_MS=800;   // 一级拉线箭头：静止悬停触发时长（毫秒，用户指定）
+const GRAPH_HOVER_L2_MS=1500;  // 票05（决策 8/10）：二级邻居高亮——同一节点持续悬停触发时长（毫秒，用户指定）；非邻居淡出浓度＝CSS 变量 --nb-dim（见 .graph-wrap svg.nb-on 规则）
 const GRAPH_HOVER_STILL_PX=3;  // 「静止」判定容差（屏幕像素）：距静止锚点累计位移超过即重置悬停计时
 const GRAPH_HOVER_ARROW_PX=22; // 拉线箭头屏幕尺寸（画布缩放下恒定，按 1/scale 反算）
 /**
@@ -20065,7 +20078,7 @@ function graphEdgeSVG(ed,pos,showNotes,noteEnv){
   if(!a||!b)return '';
   const ids=`data-a="${ed.a.id}" data-b="${ed.b.id}"`;
   if(ed.type==='hier')
-    return `<line ${ids} data-etype="hier" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac)" stroke-width="1.9" opacity=".85" marker-end="url(#sfHierArrow)"/>`;
+    return `<line ${ids} data-etype="hier" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac)" stroke-width="1.9" opacity=".85" style="--geo:.85" marker-end="url(#sfHierArrow)"/>`;   /* --geo：票05 nb-lit 复原原亮度（与 opacity 同步改） */
   if(ed.type==='link'){
     const nameA=String((ed.a&&ed.a.name)||'未命名');
     const nameB=String((ed.b&&ed.b.name)||'未命名');
@@ -20087,7 +20100,7 @@ function graphEdgeSVG(ed,pos,showNotes,noteEnv){
     }
     return `<g class="graph-edge-g" ${ids} data-etype="link">${title}<line class="graph-edge-link" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac2)" stroke-width="1.6" opacity=".75" stroke-dasharray="5 4"/><line class="graph-edge-hit" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="16" fill="none"/>${noteTxt}</g>`;
   }
-  return `<line ${ids} data-etype="co" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--tx3)" stroke-width="${Math.min(2.5,.8+(Number(ed.w)||0)*.25)}" stroke-dasharray="4 4" opacity=".5"/>`;
+  return `<line ${ids} data-etype="co" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--tx3)" stroke-width="${Math.min(2.5,.8+(Number(ed.w)||0)*.25)}" stroke-dasharray="4 4" opacity=".5" style="--geo:.5"/>`;   /* --geo：票05 nb-lit 复原原亮度（与 opacity 同步改） */
 }
 let _graphCoCache=null;   // {nid,gen,sceneId,pairs:[{a,b,w}]}
 function setWriteSceneId(sid){
@@ -20838,7 +20851,9 @@ function bindGraph(){
      箭头在场时于该节点内左键（非 Shift）pointerdown＋拖动＝拉线态（mode='pull'）：橡皮筋虚线
      （起点圆周→鼠标）、目标高亮；不设 dragState，故不触发节点拖动／推开、不进布局撤销栈。
      松手：有效目标（非浅影非自身）→graphPullHooks.done（03 接管）；空白→graphPullHooks.blank
-     （04 接管，未挂载＝取消）；自身／Esc／pointercancel＝零副作用取消。未拖动的按下＝原点按语义。 */
+     （04 接管，未挂载＝取消）；自身／Esc／pointercancel＝零副作用取消。未拖动的按下＝原点按语义。
+     票05（决策 8/10）：同一节点继续悬停 ≥GRAPH_HOVER_L2_MS 触发邻居高亮（nbApply，一级箭头保留在场）；
+     移开／任何按下随 hoverStop 一并撤销（nbOff）。 */
   /** @type {number|null} */ let hoverT=null;
   /** @type {Element|null} */ let hoverNode=null;   // 当前悬停节点（计时／箭头归属）
   let hoverX=0,hoverY=0;    // 上次采样鼠标（屏幕坐标）
@@ -20849,14 +20864,54 @@ function bindGraph(){
   /** @type {string|null} */ let pullFrom=null;     // 拉线起点节点 id（mode='pull' 期间）
   /** @type {Element|null} */ let pullLine=null;    // 橡皮筋 <line class="graph-pull-line">
   /** @type {Element|null} */ let pullTargetEl=null; // 当前拉线目标节点元素（高亮挂载处）
+  /* 票05：二级悬停邻居高亮——相连边（hier/link/co 按当前渲染 DOM：.graph-edges > [data-a][data-b]，
+     含裸 line 与 link 组）＋对端节点保持原亮度并加轻描边，其余淡至 CSS --nb-dim（约 15%）。
+     纯 class 切换（svg.nb-on ＋ .nb-lit），不重排数据、不动 DOM 结构、不碰搜索高亮类（.dim/.hit/.focus）——
+     优先级由 CSS 特异性压过搜索高亮（邻居临时优先），移开摘类、级联回落即自动复原搜索态。
+     浅影对端不算邻居（对端不亮、那条边不点亮，随其余淡出）；多选态／拖拽／拉线态不触发（沿一级口径，
+     pointerdown 已先行 hoverStop）。 */
+  /** @type {number|null} */ let hoverT2=null;   // 二级计时器（与一级同锚点、同静止重置；一级箭头在场后不再重启）
+  let nbId='';                                  // 当前邻居高亮所属节点 id（空＝未激活）
+  /** 点亮 id 的邻居集合：悬停节点＋非浅影对端节点＋相连边加 .nb-lit，svg 加 .nb-on。
+   * @param {string} id 悬停节点 id */
+  const nbApply=(id)=>{
+    if(!id)return;
+    const litIds=new Set([id]);
+    /** @type {Element[]} */ const litEdges=[];
+    svg.querySelectorAll('.graph-edges > [data-a][data-b]').forEach(el=>{
+      const a=String(el.getAttribute('data-a')||''),b=String(el.getAttribute('data-b')||'');
+      if(a!==id&&b!==id)return;
+      const other=a===id?b:a;
+      const og=svg.querySelector('.graph-node[data-id="'+CSS.escape(other)+'"]');
+      if(!og||og.classList.contains('ghost'))return;   // 浅影不算邻居：对端不亮、该边不点亮
+      litIds.add(other);
+      litEdges.push(el);
+    });
+    svg.querySelectorAll('.graph-node').forEach(g=>{
+      if(g.classList.contains('ghost'))return;
+      if(litIds.has(String(g.getAttribute('data-id')||'')))g.classList.add('nb-lit');
+    });
+    for(const el of litEdges)el.classList.add('nb-lit');
+    svg.classList.add('nb-on');
+    nbId=id;
+  };
+  /** 撤销邻居高亮（幂等；未激活时零 DOM 操作；搜索高亮态因类未动而自动复原）。 */
+  const nbOff=()=>{
+    if(!nbId)return;
+    nbId='';
+    svg.classList.remove('nb-on');
+    svg.querySelectorAll('.nb-lit').forEach(el=>el.classList.remove('nb-lit'));
+  };
   const hoverL1Off=()=>{
     if(hoverArrow){try{hoverArrow.remove()}catch(_e){}hoverArrow=null}
     pullArmId='';
   };
   const hoverStop=()=>{
     if(hoverT!=null){clearTimeout(hoverT);hoverT=null}
+    if(hoverT2!=null){clearTimeout(hoverT2);hoverT2=null}
     hoverNode=null;
     hoverL1Off();
+    nbOff();   // 票05：移开／任何按下即撤邻居高亮，搜索高亮态自动复原
   };
   /** 画／转向一级拉线箭头：锚在节点圆周外、指向当前鼠标（尺寸按屏幕像素，随缩放反算）。
    * @param {Element} g 悬停节点
@@ -20879,9 +20934,12 @@ function bindGraph(){
     }
     hoverArrow.setAttribute('transform','translate('+ax+','+ay+') rotate('+ang+') scale('+(1/Math.max(0.0001,scale))+')');
   };
-  /** 启动／重启静止悬停计时（锚点重取当前采样）；到点核态（拖拽中／多选态不出）后画箭头并武装拉线接管。 */
+  /** 启动／重启静止悬停计时（锚点重取当前采样）；到点核态（拖拽中／多选态不出）后画箭头并武装拉线接管；
+      票05：二级计时同步启动——同节点持续悬停至 GRAPH_HOVER_L2_MS 出邻居高亮（一级箭头保留在场）。 */
   const hoverTimerStart=()=>{
     if(hoverT!=null)clearTimeout(hoverT);
+    if(hoverT2!=null)clearTimeout(hoverT2);
+    nbOff();   // 重启计时即撤销已出的二级高亮（防御：箭头在场后本不再重启，此后再静止 1.5s 会重新触发）
     hoverAX=hoverX;hoverAY=hoverY;   // 静止锚点＝计时启动采样：按累计位移判静止
     hoverT=setTimeout(()=>{
       hoverT=null;
@@ -20889,6 +20947,11 @@ function bindGraph(){
       hoverArrowDraw(hoverNode,hoverWX,hoverWY);
       pullArmId=String(hoverNode.getAttribute('data-id')||'');
     },GRAPH_HOVER_L1_MS);
+    hoverT2=setTimeout(()=>{
+      hoverT2=null;
+      if(!hoverNode||mode||gSel.size>=2)return;   // 触发时再核一次防竞态（沿一级口径）
+      nbApply(String(hoverNode.getAttribute('data-id')||''));
+    },GRAPH_HOVER_L2_MS);
   };
   /** 拉线目标高亮切换：el=null 清除；self=true 走无效目标（自身）样式。
    * @param {Element|null} el
