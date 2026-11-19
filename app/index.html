@@ -699,17 +699,15 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-edge-g.sel .graph-edge-link{stroke-width:2.4; opacity:1}
 .graph-edge-hit{pointer-events:stroke; fill:none}
 .graph-edges .graph-edge-g.dim{opacity:.12}
-/* graph-drawio-gestures 票05（决策 8/10）：邻居高亮（二级悬停）——svg.nb-on 期间非邻居节点/边淡至 --nb-dim（约 15%），
-   邻居（.nb-lit）保持原亮度（边的原亮度经 graphEdgeSVG 模板 --geo 变量精确复原）＋轻描边；
-   特异性刻意压过搜索高亮 .dim/.hit（邻居临时优先），移开由 JS 摘类、级联回落即自动复原搜索态。 */
+/* graph-drawio-gestures 票05（决策 8/10；05 review 修订）：邻居高亮（二级悬停）——svg.nb-on 期间仅非邻居节点/边
+   定向淡至 --nb-dim（约 15%，规则一律 :not(.nb-lit)）；邻居（.nb-lit）零 opacity 规则、自然保持无 nb 基线
+   （节点 minor .48／minor.hit/.sel .92／普通 1；边保持自身 opacity 属性）＋轻描边；
+   淡出规则特异性刻意压过搜索高亮 .dim/.hit（非邻居临时优先；邻居回落各自搜索态），移开由 JS 摘类、级联回落即自动复原。 */
 .graph-wrap svg.nb-on{--nb-dim:.15}
 .graph-wrap svg.nb-on .graph-node:not(.nb-lit){opacity:var(--nb-dim)}
-.graph-wrap svg.nb-on .graph-node.nb-lit{opacity:var(--geo,1)}
 .graph-wrap svg.nb-on .graph-node.nb-lit .graph-ring{stroke-width:3}   /* 邻居节点轻描边（保留原描边色） */
 .graph-wrap svg.nb-on .graph-edges > line:not(.nb-lit){opacity:var(--nb-dim)}
 .graph-wrap svg.nb-on .graph-edges .graph-edge-g:not(.nb-lit){opacity:var(--nb-dim)}
-.graph-wrap svg.nb-on .graph-edges > line.nb-lit{opacity:var(--geo,1)}
-.graph-wrap svg.nb-on .graph-edges .graph-edge-g.nb-lit{opacity:var(--geo,1)}
 .graph-wrap svg.nb-on .graph-edges .nb-lit{filter:drop-shadow(0 0 2px var(--ac2))}   /* 相连边轻描边（柔光） */
 /* plot-graph-mvp：剧情图谱（复用 .graph-shell／.graph-wrap 壳；独立数据与入口） */
 .graph-wrap .graph-node.plot-focus .graph-ring{stroke:var(--ac); stroke-width:3.6}
@@ -20078,7 +20076,7 @@ function graphEdgeSVG(ed,pos,showNotes,noteEnv){
   if(!a||!b)return '';
   const ids=`data-a="${ed.a.id}" data-b="${ed.b.id}"`;
   if(ed.type==='hier')
-    return `<line ${ids} data-etype="hier" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac)" stroke-width="1.9" opacity=".85" style="--geo:.85" marker-end="url(#sfHierArrow)"/>`;   /* --geo：票05 nb-lit 复原原亮度（与 opacity 同步改） */
+    return `<line ${ids} data-etype="hier" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac)" stroke-width="1.9" opacity=".85" marker-end="url(#sfHierArrow)"/>`;   /* opacity 即基线：票05 review 后 nb-lit 不写 opacity，边原样保持 */
   if(ed.type==='link'){
     const nameA=String((ed.a&&ed.a.name)||'未命名');
     const nameB=String((ed.b&&ed.b.name)||'未命名');
@@ -20100,7 +20098,7 @@ function graphEdgeSVG(ed,pos,showNotes,noteEnv){
     }
     return `<g class="graph-edge-g" ${ids} data-etype="link">${title}<line class="graph-edge-link" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--ac2)" stroke-width="1.6" opacity=".75" stroke-dasharray="5 4"/><line class="graph-edge-hit" ${ids} data-etype="link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="16" fill="none"/>${noteTxt}</g>`;
   }
-  return `<line ${ids} data-etype="co" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--tx3)" stroke-width="${Math.min(2.5,.8+(Number(ed.w)||0)*.25)}" stroke-dasharray="4 4" opacity=".5" style="--geo:.5"/>`;   /* --geo：票05 nb-lit 复原原亮度（与 opacity 同步改） */
+  return `<line ${ids} data-etype="co" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--tx3)" stroke-width="${Math.min(2.5,.8+(Number(ed.w)||0)*.25)}" stroke-dasharray="4 4" opacity=".5"/>`;   /* opacity 即基线：同 hier（nb-lit 不写 opacity，原样保持） */
 }
 let _graphCoCache=null;   // {nid,gen,sceneId,pairs:[{a,b,w}]}
 function setWriteSceneId(sid){
@@ -20865,9 +20863,10 @@ function bindGraph(){
   /** @type {Element|null} */ let pullLine=null;    // 橡皮筋 <line class="graph-pull-line">
   /** @type {Element|null} */ let pullTargetEl=null; // 当前拉线目标节点元素（高亮挂载处）
   /* 票05：二级悬停邻居高亮——相连边（hier/link/co 按当前渲染 DOM：.graph-edges > [data-a][data-b]，
-     含裸 line 与 link 组）＋对端节点保持原亮度并加轻描边，其余淡至 CSS --nb-dim（约 15%）。
+     含裸 line 与 link 组）＋对端节点保持无 nb 基线亮度（nb-lit 零 opacity 规则，minor/.hit/.sel/.dim 各自回落）
+     并加轻描边，其余定向淡至 CSS --nb-dim（约 15%，规则一律 :not(.nb-lit)）。
      纯 class 切换（svg.nb-on ＋ .nb-lit），不重排数据、不动 DOM 结构、不碰搜索高亮类（.dim/.hit/.focus）——
-     优先级由 CSS 特异性压过搜索高亮（邻居临时优先），移开摘类、级联回落即自动复原搜索态。
+     非邻居淡出规则特异性压过搜索高亮（临时优先；邻居不写 opacity、回落各自搜索态），移开摘类、级联回落即自动复原搜索态。
      浅影对端不算邻居（对端不亮、那条边不点亮，随其余淡出）；多选态／拖拽／拉线态不触发（沿一级口径，
      pointerdown 已先行 hoverStop）。 */
   /** @type {number|null} */ let hoverT2=null;   // 二级计时器（与一级同锚点、同静止重置；一级箭头在场后不再重启）
