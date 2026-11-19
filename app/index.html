@@ -21155,12 +21155,11 @@ function bindGraph(){
      浅影不参与（有已存坐标但不可交互，CONTEXT「区域移动」）：坐标保持不动。
      框住判定＝起手快照（regionOrig＝按下时刻各节点圆心）＋并入后只增不减：矩形与节点都随指针走，按实时位置判
      会让贴矩形边的节点反复进出集合而抖动，快照＋单调并入彻底消除（节点中途再「进出」矩形不影响已定集合）。
-     松手＝一次 save()＋压一条 graphUndoPush（快照＝起手时刻全量布局，一次 Ctrl+Z 整组回）；Esc＝回原状不落盘不占栈。 */
+     松手按净位移收口（review P2-2：任一框住节点 pos 与起手快照差 >0.01 才收，划出又拖回起手点＝零 save 零占栈，与节点拖动同口径）＝一次 save()＋压一条 graphUndoPush（快照＝起手时刻全量布局，一次 Ctrl+Z 整组回）；Esc＝回原状不落盘不占栈。 */
   /** @type {{x:number,y:number}|null} */ let regionStart=null;   // 起手点（画布世界坐标）
-  /** @type {Record<string,{x:number,y:number}>} */ let regionOrig={};   // 起手快照：非浅影节点圆心（框住判定＋Esc 回原位依据）
+  /** @type {Record<string,{x:number,y:number}>} */ let regionOrig={};   // 起手快照：非浅影节点圆心（框住判定＋Esc 回原位＋松手净位移判定依据）
   /** @type {Set<string>} */ let regionIds=new Set();   // 已框住集合（只增不减）
   /** @type {Record<string,{x:number,y:number}>|null} */ let regionAll=null;   // 起手全量布局快照（松手压撤销栈；Esc 不压）
-  let regionMovedAny=false;   // 是否真的平移过 ≥1 节点（松手据此决定落盘/压栈；空框＝零副作用）
   /** @type {SVGRectElement|null} */ let regionRect=null;   // 跟随矩形 <rect class="graph-region-rect">（蓝实线，区别框选虚线）
   /** 收拾区域移动视觉（矩形＋dragging 光标态）；不动坐标与选中态。 */
   const regionVisClear=()=>{
@@ -21168,12 +21167,13 @@ function bindGraph(){
     regionIds.forEach(id=>{const g=nodeOf(id);if(g)g.classList.remove('dragging')});
   };
   /** 票07：Esc 中止——快照内全部节点回起手原位、清视觉、复位态；不 save 不压撤销栈。
+   * review P2-1：末尾复位 mode——中止后紧接的第二次 Esc 落到既有清多选/边选中层（与 _gSelClear 的 pull 分支 mode=null 同口径）。
    * @returns {void} */
   const regionAbort=()=>{
     for(const id of Object.keys(regionOrig)){const o=regionOrig[id];moveNode(id,o.x,o.y)}
     regionVisClear();
-    regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;regionMovedAny=false;
-    moved=false;panClear=false;
+    regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;
+    moved=false;panClear=false;mode=null;
   };
   wrap.addEventListener('pointerover',e=>{
     const pe=(/** @type {PointerEvent} */(e));
@@ -21258,7 +21258,7 @@ function bindGraph(){
     }else if(button===0&&pe.shiftKey&&(pe.ctrlKey||pe.metaKey)&&!edgeDown){
       mode='region';   // 票07：Ctrl+Shift＋左键空白＝区域移动划框（点在边上不算空白，维持既有边选中口径）
       regionStart=svgPt(pe.clientX,pe.clientY);
-      regionOrig={};regionIds=new Set();regionMovedAny=false;regionRect=null;
+      regionOrig={};regionIds=new Set();regionRect=null;
       svg.querySelectorAll('.graph-node').forEach(g=>{
         if(isGhostNode(g))return;   // 浅影不参与区域移动：已存坐标保持不动
         const gid=g.getAttribute('data-id')||'';if(!gid)return;
@@ -21326,7 +21326,7 @@ function bindGraph(){
         if(o.x>=rx0&&o.x<=rx1&&o.y>=ry0&&o.y<=ry1){regionIds.add(id);const g=nodeOf(id);if(g)g.classList.add('dragging')}
       }
       const rdx=pt.x-regionStart.x,rdy=pt.y-regionStart.y;
-      for(const id of regionIds){const o=regionOrig[id];if(!o)continue;moveNode(id,o.x+rdx,o.y+rdy);regionMovedAny=true}   // 平移非推挤：不走 applyDragMove（无占用/推开/钳制）
+      for(const id of regionIds){const o=regionOrig[id];if(!o)continue;moveNode(id,o.x+rdx,o.y+rdy)}   // 平移非推挤：不走 applyDragMove（无占用/推开/钳制）；落盘与否改看松手净位移（review P2-2）
     }else if(mode==='node'&&nidDrag&&dragState){
       const pt=svgPt(pe.clientX,pe.clientY);
       const nx=pt.x-ox,ny=pt.y-oy;
@@ -21394,10 +21394,12 @@ function bindGraph(){
       return;
     }
     if(was==='region'){
-      const didR=regionMovedAny,allR=regionAll;   // 先取值再复位（此处 mode 已置 null，region 态只剩这些闭包变量）
+      let didR=false;   // review P2-2：净位移判定——regionIds 内任一 pos 与起手快照差 >0.01 才算真移（划出又拖回起手点＝零副作用，与节点拖动 >0.01 同口径；原 regionMovedAny 过阈值即真、不反映净位移，已撤）
+      for(const id of regionIds){const o=regionOrig[id],p=pos[id];if(o&&p&&(Math.abs(p.x-o.x)>0.01||Math.abs(p.y-o.y)>0.01)){didR=true;break}}
+      const allR=regionAll;   // 先取值再复位（此处 mode 已置 null，region 态只剩这些闭包变量）
       regionVisClear();
-      regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;regionMovedAny=false;
-      if(didR&&allR){graphUndoPush(nid,allR);try{save()}catch(_e2){}}   // 票07：真平移过才收——一次压栈＋一次落盘；空框/未过阈值＝零副作用。pointercancel 同收（位移已成事实则固化，与节点拖动同口径）
+      regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;
+      if(didR&&allR){graphUndoPush(nid,allR);try{save()}catch(_e2){}}   // 票07：真净位移才收——一次压栈＋一次落盘；空框/未过阈值/拖回原位＝零副作用。pointercancel 同收（净位移已成事实则固化，与节点拖动同口径）
       return;
     }
     if(was==='box'){
