@@ -2950,7 +2950,7 @@ function aiSvcRetireFactory(st){
   const before=st.aiProviders.length;
   const kept=st.aiProviders.filter(p=>!aiSvcIsFactoryRow(p));
   if(!kept.length&&before>0){
-    const p={id:uid(),name:'OpenAI 兼容',base:'',model:'',key:'',protocol:'',reasoningEffort:'',extraBodyJson:''};
+    const p={id:uid(),name:'OpenAI 兼容',base:'',model:'',key:'',protocol:'openai',reasoningEffort:'',extraBodyJson:''};
     st.aiProviders=[p];st.aiProviderId=p.id;
   }else{
     st.aiProviders=kept;
@@ -3001,11 +3001,11 @@ function aiSvcNormalize(st){
     /* 首次迁移（含全新安装）：按出厂种子建一条空的「OpenAI 兼容」。
        已有 live Base/模型/Key 且对不上这条空 Base → 另开「自定义(迁移)」持有并选中，不另造厂商行。
        全空＝没配过，就留在这条空连接上。旧 aiPreset 索引只删除、不拿来定位。 */
-    const list=AI_PRESETS.map(p=>({id:uid(),name:String(p.name),base:String(p.base||''),model:String(p.model||''),key:'',protocol:'',reasoningEffort:'',extraBodyJson:''}));
+    const list=AI_PRESETS.map(p=>({id:uid(),name:String(p.name),base:String(p.base||''),model:String(p.model||''),key:'',protocol:'openai',reasoningEffort:'',extraBodyJson:''}));
     const base=String(st.aiBase||''),model=String(st.aiModel||''),key=String(st.aiKey||'');
     let p=list.find(x=>x.base===base);
     if(p){p.model=model.slice(0,200);p.key=key.slice(0,2000)}
-    else if(base||model||key){p={id:uid(),name:'自定义(迁移)',base:base.slice(0,2000),model:model.slice(0,200),key:key.slice(0,2000),protocol:'',reasoningEffort:'',extraBodyJson:''};list.push(p)}
+    else if(base||model||key){p={id:uid(),name:'自定义(迁移)',base:base.slice(0,2000),model:model.slice(0,200),key:key.slice(0,2000),protocol:'openai',reasoningEffort:'',extraBodyJson:''};list.push(p)}
     else p=list[0];
     st.aiProviders=list;st.aiProviderId=p.id;
     st.aiDefaultsRetired=true;   // 这条列表由新种子生成，不是待清的历史出厂名单
@@ -3038,7 +3038,7 @@ function aiSvcAdd(st){
   const list=aiSvcList(st);if(list.length>=AI_SVC_MAX)return null;
   const names=new Set(list.map(p=>String(p&&p.name||'')));
   let name='自定义';for(let i=2;names.has(name);i++)name='自定义 '+i;
-  const p={id:uid(),name,base:'',model:'',key:'',protocol:'',reasoningEffort:'',extraBodyJson:''};
+  const p={id:uid(),name,base:'',model:'',key:'',protocol:'openai',reasoningEffort:'',extraBodyJson:''};
   list.push(p);st.aiProviders=list;st.aiProviderId=p.id;aiSvcSyncLive(st);
   return p;
 }
@@ -3056,7 +3056,7 @@ function aiSvcDel(st,id){
   return{ok:true,msg:''};
 }
 /* 推荐导入：按 AI_RECOMMEND 补齐缺失行（名＋Base；OpenCode Go 另带默认模型与协议）；永不写 Key；已填 Key 的行整行跳过（不改 Base／不清 Key）。
-   命中行只补空位：Base 空则补、模型空则补、协议停在「自动识别」且推荐声明协议才补（手选协议不覆盖）；
+   命中行补齐口径（散票09 起）：Base 空＝未配置行→整行按推荐写齐（含协议，预选 openai 不当手选）；Base 已有→只补空位（模型空则补、协议停「自动识别」且推荐声明协议才补，手选不覆盖）；
    协议回填收紧（票01）：仅当行 Base 为空（本次补 Base）或与推荐 Base 逐字一致时才回填；名命中但 Base 指向别处的行视作用户改作他用不碰，名称永不改写。
    并标记 aiRecommendSeen（主动提示生命周期结束；手动「推荐」仍可再调）。 */
 function aiSvcMarkRecommendSeen(st){st.aiRecommendSeen=true}
@@ -3077,10 +3077,10 @@ function aiSvcImportRecommend(st){
       if(String(hit.key||'')){skipped++;continue}
       if(name==='自定义'){skipped++;continue}
       const hb=String(hit.base||'');
-      if(!hb&&base){   /* 行 Base 为空：本次补 Base，模型/协议照旧只补空位（手选协议不覆盖） */
+      if(!hb&&base){   /* 散票09：Base 空＝未配置行，整行按推荐写齐（含协议——预选的 openai 不当手选，Gemini 类推荐不再配错协议；模型仍只补空位） */
         hit.base=base;
         if(!String(hit.model||'')&&rec.model)hit.model=String(rec.model).slice(0,200);
-        if(!aiProtocolOf(hit.protocol)&&rec.protocol)hit.protocol=aiProtocolOf(rec.protocol);
+        hit.protocol=aiProtocolOf(rec.protocol);
         filled++;continue;
       }
       if(hb&&hb===base){   /* 行 Base 与推荐 Base 逐字一致（按名或按 Base 命中）：只补空位，名称不改写 */
@@ -25652,10 +25652,10 @@ function vSettings(){
     <div><label class="f">温度</label><input type="number" id="s-temp" value="${st.aiTemp}" step="0.1" min="0" max="2" style="width:90px" ${ro?'disabled':''}></div>
     <div><label class="f">最大 tokens</label><input type="number" id="s-max" value="${st.aiMaxTokens}" style="width:110px" ${ro?'disabled':''}></div>
     <div><label class="f">上下文窗口</label><input type="number" id="s-ctxwin" value="${st.ctxWindow||0}" min="0" step="1024" style="width:110px" ${ro?'disabled':''} title="模型上下文窗口（tokens）。0=自动估计，无法识别时按 8K。大窗口模型建议手填实际值。"></div></div>
-    ${(()=>{const ap0=aiSvcActive(st);const proto=aiProtocolOf(ap0&&ap0.protocol);const protoOpts=[['','自动识别'],['openai','OpenAI（Chat Completions）'],['anthropic','Anthropic（Messages）'],['google','Google（Gemini）']];
+    ${(()=>{const ap0=aiSvcActive(st);const proto=aiProtocolOf(ap0&&ap0.protocol);const protoOpts=[['','自动识别'],['openai','OpenAI 兼容'],['anthropic','Anthropic（Messages）'],['google','Google（Gemini）']];
       const protoHtml=protoOpts.map(function(/** @type {any} */pair){const v=pair[0],l=pair[1];return '<option value="'+v+'"'+(proto===v?' selected':'')+'>'+l+'</option>'}).join('');
       return '<div class="row" style="margin-top:10px"><div style="flex:1;min-width:220px"><label class="f" title="按本条 AI 服务配置。自动识别时由本地服务根据 Base 与模型名选择协议，并自动拼接路径">协议</label><select id="s-protocol" '+(ro?'disabled':'')+'>'+protoHtml+'</select></div></div>'
-        +'<p class="hint" style="margin-top:6px">OpenAI、Anthropic、Google 三条协议由本地服务自动拼路径并翻译请求。OpenCode Go 填 <code>https://opencode.ai/inference/go</code>，模型填 <code>gemini-4-argon</code>，协议选「自动识别」或「Google」即可，不必手拼 <code>/google/v1beta/models/...:generateContent</code>。</p>';
+        +'<p class="hint" style="margin-top:6px">OpenAI 兼容、Anthropic、Google 三条协议由本地服务自动拼路径并翻译请求。OpenCode Go 填 <code>https://opencode.ai/inference/go</code>，模型填 <code>gemini-4-argon</code>，协议选「自动识别」或「Google」即可，不必手拼 <code>/google/v1beta/models/...:generateContent</code>。</p>';
     })()}
     ${(()=>{
   const ap=aiSvcActive(st);const ef=aiReasoningEffortOf(ap&&ap.reasoningEffort);const xb=ap?String(ap.extraBodyJson||''):'';
