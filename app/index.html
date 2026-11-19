@@ -2382,7 +2382,12 @@ async function stWipe(){   // 清空＝结构化文本与设置文件移入数�
   location.reload();
 }
 /* ---- 瞬态 UI 态（localStorage 唯一用途）：上次视图/小说/场景/设置分类/折叠记忆/关联场景配置（按书），跨刷新续位 ---- */
-function uiStateSave(){try{const m=edScrollMem();localStorage.setItem(UI_KEY,JSON.stringify({view:S.ui.view,novelId:S.ui.novelId,sceneId:S.ui.sceneId,settingsTab:S.ui.settingsTab,res:S.ui.res,resW:S.ui.resW,resNarrow:S.ui.resNarrow,edL:S.ui.edL,edR:S.ui.edR,edScroll:{l:m.l,r:m.r},folds:uiFolds(),edFolds:edFolds(),edLW:S.ui.edLW,relCfg:relCfgMem(),cdxCollapsed:cdxCollapsedMem(),snipCollapsed:snipCollapsedMem(),cdxSort:cdxSortMem(),copilotOpen:!!S.ui.copilotOpen,cpW:S.ui.cpW,asstPtHideNote:!!S.ui.asstPtHideNote,plFavs:Array.isArray(S.ui.plFavs)?S.ui.plFavs:[],plPins:Array.isArray(S.ui.plPins)?S.ui.plPins:[],plRecent:Array.isArray(S.ui.plRecent)?S.ui.plRecent:[],conflictIgnored:(S.ui.conflictIgnored&&typeof S.ui.conflictIgnored==='object')?S.ui.conflictIgnored:{},cfLastFp:(S.ui._cfLastFp&&typeof S.ui._cfLastFp==='object')?S.ui._cfLastFp:{},cfDismissed:(S.ui._cfDismissed&&typeof S.ui._cfDismissed==='object')?S.ui._cfDismissed:{},reviewAiNudgeMute:!!S.ui.reviewAiNudgeMute,graphLayout:(S.ui.graphLayout&&typeof S.ui.graphLayout==='object')?S.ui.graphLayout:{},graphScale:(S.ui.graphScale&&typeof S.ui.graphScale==='object')?S.ui.graphScale:{},graphPushOthers:S.ui.graphPushOthers!==false}))}catch(e){}}
+/* graph-drawio-gestures 票01（ADR 0007）：关系图谱布局坐标迁书工程态后，UI_KEY 不再写真源布局；
+   本变量只承载「旧 UI_KEY 布局中尚未确认落盘的书」——迁移看护确认该书 关系图谱.json 已落盘即弃，
+   全部了结后 uiStateSave 彻底不再写 graphLayout 键（旧值随下一次落存整体消失）。 */
+/** @type {Record<string,Record<string,{x:number,y:number}>>|null} */
+let _graphLegacy=null;
+function uiStateSave(){try{const m=edScrollMem();localStorage.setItem(UI_KEY,JSON.stringify({view:S.ui.view,novelId:S.ui.novelId,sceneId:S.ui.sceneId,settingsTab:S.ui.settingsTab,res:S.ui.res,resW:S.ui.resW,resNarrow:S.ui.resNarrow,edL:S.ui.edL,edR:S.ui.edR,edScroll:{l:m.l,r:m.r},folds:uiFolds(),edFolds:edFolds(),edLW:S.ui.edLW,relCfg:relCfgMem(),cdxCollapsed:cdxCollapsedMem(),snipCollapsed:snipCollapsedMem(),cdxSort:cdxSortMem(),copilotOpen:!!S.ui.copilotOpen,cpW:S.ui.cpW,asstPtHideNote:!!S.ui.asstPtHideNote,plFavs:Array.isArray(S.ui.plFavs)?S.ui.plFavs:[],plPins:Array.isArray(S.ui.plPins)?S.ui.plPins:[],plRecent:Array.isArray(S.ui.plRecent)?S.ui.plRecent:[],conflictIgnored:(S.ui.conflictIgnored&&typeof S.ui.conflictIgnored==='object')?S.ui.conflictIgnored:{},cfLastFp:(S.ui._cfLastFp&&typeof S.ui._cfLastFp==='object')?S.ui._cfLastFp:{},cfDismissed:(S.ui._cfDismissed&&typeof S.ui._cfDismissed==='object')?S.ui._cfDismissed:{},reviewAiNudgeMute:!!S.ui.reviewAiNudgeMute,graphScale:(S.ui.graphScale&&typeof S.ui.graphScale==='object')?S.ui.graphScale:{},graphPushOthers:S.ui.graphPushOthers!==false,...(_graphLegacy?{graphLayout:_graphLegacy}:{})}))}catch(e){}}
 let _uiSaveT=null;
 function uiStateSaveSoon(){if(_uiSaveT)return;_uiSaveT=setTimeout(()=>{_uiSaveT=null;try{uiStateSave()}catch(e){}},800)}
 function uiStateRestore(ui){
@@ -2398,7 +2403,7 @@ function uiStateRestore(ui){
     if(j.cfLastFp&&typeof j.cfLastFp==='object')ui._cfLastFp=j.cfLastFp;
     if(j.cfDismissed&&typeof j.cfDismissed==='object')ui._cfDismissed=j.cfDismissed;
     if(typeof j.reviewAiNudgeMute==='boolean')ui.reviewAiNudgeMute=j.reviewAiNudgeMute;
-    if(j.graphLayout&&typeof j.graphLayout==='object')ui.graphLayout=j.graphLayout;
+    if(j.graphLayout&&typeof j.graphLayout==='object'&&typeof graphLegacyImport==='function')graphLegacyImport(j.graphLayout);   // 票01/ADR 0007：旧布局只作一次性迁移源（graphLayoutMigrate），不再进 S.ui
     if(j.graphScale&&typeof j.graphScale==='object')ui.graphScale=j.graphScale;
     if(typeof j.graphPushOthers==='boolean')ui.graphPushOthers=j.graphPushOthers;
     /* 票21：资源栏选项/宽度/开合（坏值容错；展开态必须有一个选项在显示，否则按收窄） */
@@ -3058,13 +3063,14 @@ const G3_FORMAT='novel-studio-files-v1';
 const G3_LIB=DF_WS+'/书库.json';                    // 旧库文件（G2 形态）：G3 起退役
 const G3_F={prompts:DF_WS+'/提示词.json',style:DF_WS+'/文风.json',usage:DF_WS+'/用量.json',presets:DF_WS+'/大纲预设.json',shared:DF_WS+'/共享设定'};   // shared＝S16 旧共享设定目录（票34 起只认领回收＋清空数据，不投影）
 const G3_DIR={text:'正文',codex:'设定',fs:'伏笔',snip:'片段',chat:'会话',talk:'对话',image:'图'};
-const G3_FN={proj:'项目.json',tags:'标签.json',recycle:'回收站.json',plotGraph:'剧情图谱.json',act:'卷.json',chap:'章.json',cat:'_分类.json'};
+const G3_FN={proj:'项目.json',tags:'标签.json',recycle:'回收站.json',plotGraph:'剧情图谱.json',relGraph:'关系图谱.json',act:'卷.json',chap:'章.json',cat:'_分类.json'};
 const G3_SEG_MAX=40;                                // 单个路径段长度帽（服务端解析后绝对路径 255 上限的余量）
 const G3_SIDE_FORMAT='novel-studio-scene-sidecar-v1';
 const G3_MD_FORMAT='novel-studio-entry-v1';
 const G3_TAGS_FORMAT='novel-studio-tags-v1';
 const G3_RECYCLE_FORMAT='novel-studio-recycle-v1';
 const G3_PLOT_FORMAT='novel-studio-plot-graph-v1';   // plot-graph-mvp：书根剧情图谱工程态（坐标／边／钉住）
+const G3_REL_FORMAT='novel-studio-rel-graph-v1';     // graph-drawio-gestures 票01：书根关系图谱布局工程态（只含坐标；ADR 0007）
 const G3_CHAT_FORMAT='novel-studio-chat-v1';
 
 /* ---------- 固定功能会话模型（写作体验票54／#06；spec §11） ----------
@@ -7207,6 +7213,11 @@ function g3ProjBook(d,n,out,used,paths,trace,cx){
     const pg=plotGraphSerializeOf0(d,n.id);
     if(pg)out.set(P+G3_FN.plotGraph,g3J(pg));
   }
+  /* graph-drawio-gestures 票01：书根 关系图谱.json（有坐标才落文件；空则不写，删空后随删除腿回收） */
+  {
+    const rg=relGraphSerializeOf0(d,n.id);
+    if(rg)out.set(P+G3_FN.relGraph,g3J(rg));
+  }
 
   /* 正文：卷 → 章 → 场景（一景一文件＋边车） */
   const usedAct=new Set();
@@ -7541,6 +7552,7 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
   out.assistants=[];   // 助理票01：与固定功能会话分列；旧程序见不认识的 _format 会撤回认领，不删文件
   out.entryImages=[];   // 外观票04：像素与条目分列；身份在条目 image
   (/** @type {any} */(out)).plotGraphs=[];   // plot-graph-mvp：书级剧情图谱工程态
+  (/** @type {any} */(out)).relGraphs=[];   // graph-drawio-gestures 票01：书级关系图谱布局工程态
   const verCap=opts&&opts.verCap;
   if(paths)paths.set(n.id,dir);   // 路径名稳定：读到的名字即认领名
   /* 票39：作品级标签定义（书根 `标签.json`，权威位置）——有效契约对象才认领；坏档只告警不认领（不静默改写/删除）。
@@ -7578,6 +7590,18 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
       }else{
         const pe=files.get(dir+'/'+G3_FN.plotGraph);if(pe)pe.keep=true;
         warns.push('「'+dir+'/'+G3_FN.plotGraph+'」不是本契约的剧情图谱文件（_format 不符），已跳过');
+      }
+    }
+  }
+  /* graph-drawio-gestures 票01：书根 关系图谱.json（坏档只告警不认领——keep 撤回收护住手写版） */
+  {
+    const rgj=await g3ReadJson(dir+'/'+G3_FN.relGraph,files,warns,null);
+    if(rgj){
+      if(rgj._format===G3_REL_FORMAT){
+        (/** @type {any} */(out)).relGraphs=[relGraphNormalizeOne(rgj,n.id)];
+      }else{
+        const rge=files.get(dir+'/'+G3_FN.relGraph);if(rge)rge.keep=true;
+        warns.push('「'+dir+'/'+G3_FN.relGraph+'」不是本契约的关系图谱布局文件（_format 不符），已跳过');
       }
     }
   }
@@ -7713,6 +7737,7 @@ async function g3ScanSnapshot(snapshot, opts){
   doc.assistants=[];
   doc.entryImages=[];
   (/** @type {any} */(doc)).plotGraphs=[];   // plot-graph-mvp
+  (/** @type {any} */(doc)).relGraphs=[];   // graph-drawio-gestures 票01
   const pf=await g3ReadJson(G3_F.prompts,files,warns,'提示词文件 ');
   if(pf&&Array.isArray(pf.prompts))doc.prompts=g3PromptsRead(pf.prompts);   // 文件不在=不设键：交给 load() 的补齐逻辑用出厂值（内置提示词/默认大纲预设/空用量）
   const sf=await g3ReadJson(G3_F.style,files,warns,'文风文件 ');
@@ -7733,7 +7758,7 @@ async function g3ScanSnapshot(snapshot, opts){
     if(!p)continue;
     doc.novels.push(p.novel);
     doc.schemaVersion=Math.max(doc.schemaVersion,p.schemaVersion);
-    for(const k of['acts','chapters','scenes','codexCategories','codexEntries','foreshadows','snippets','chats','chatSessions','tagDefs','recycleBin','assistants','entryImages','plotGraphs'])for(const x of (p[k]||[]))doc[k].push(x);
+    for(const k of['acts','chapters','scenes','codexCategories','codexEntries','foreshadows','snippets','chats','chatSessions','tagDefs','recycleBin','assistants','entryImages','plotGraphs','relGraphs'])for(const x of (p[k]||[]))doc[k].push(x);
   }
   if(onRead)delete files.sfOnRead;   // 票06：回调只活在这一次扫描，不跟着文件表进 ST.files
   return{doc,files,warns,paths,books:parts.filter(Boolean).length,sharedRetired};
@@ -8550,6 +8575,7 @@ function freshData(){return {
   codexCategories:[],codexEntries:[],snippets:[],foreshadows:[],styleProfiles:[],
   tagDefs:[],recycleBin:[],   // 票39标签；回收站＝软删卷/章/场景快照（书根 回收站.json）
   plotGraphs:/** @type {any[]} */([]),   // plot-graph-mvp：每书一份 {novelId,positions,edges,pins}；文件真源＝书根 剧情图谱.json
+  relGraphs:/** @type {any[]} */([]),   // graph-drawio-gestures 票01：每书一份 {novelId,positions}；文件真源＝书根 关系图谱.json
   prompts:builtinPrompts(),chats:[],chatSessions:[],   // 票54：chatSessions＝固定功能会话（文件真源＝对话/）；chats＝旧多消息会话（只读保留）
   assistants:[],   // 助理票01：多轮对话（文件真源同为 对话/，_format=novel-studio-assistant-v1；不进固定功能会话）
   entryImages:[],   // 外观票04：条目配图像素（身份在条目 image；文件真源＝图/<身份>.png.txt）
@@ -9466,6 +9492,7 @@ function load(libText,setText){
     if(typeof entryImagesNormalize==='function')entryImagesNormalize(S.data);   // 外观票04：像素与身份归一（ahead 档在上方已返回，不改写）
     S.data.tagDefs=tagDefsNormalize(S.data.tagDefs);   // 票39：标签定义归一（坏形状/空名整条丢、同书同 id 去重；旧档无字段＝空数组）
     if(!Array.isArray(S.data.plotGraphs))S.data.plotGraphs=[];   // plot-graph-mvp：缺字段＝空
+    if(!Array.isArray(S.data.relGraphs))S.data.relGraphs=[];   // graph-drawio-gestures 票01：缺字段＝空
     for(const s39 of(S.data.scenes||[])){   // 票39：场景分配归一（缺字段＝未分配；空结果不落键——与边车「空省略」同口径，保写盘定点）
       if(!s39)continue;
       const tids39=sceneTagIdsNormalize(s39.tagIds);
@@ -9488,6 +9515,7 @@ function load(libText,setText){
     S.data.prompts=S.data.prompts.filter(x=>x&&(!x.builtin||f.prompts.some(bp=>bp&&bp.id===x.id))); // 清理代码版已撤销的失效内置条目（防老数据残留同名组件劫持 include）
     for(const bp of f.prompts){if(!bp||!bp.id)continue;const i=S.data.prompts.findIndex(x=>x&&x.id===bp.id);if(i<0)S.data.prompts.push(bp);else if(S.data.prompts[i].builtin)S.data.prompts[i]=bp} // 内置提示词是只读代码资产：缺失补齐、已内置者随代码版本刷新（老数据自动升级，历史改动自愈）；克隆/导入条目 builtin=false 不受影响
     uiStateRestore(S.ui);
+    try{graphLayoutMigrate()}catch(_eG){}   // graph-drawio-gestures 票01：旧 UI_KEY 布局一次性迁书工程态（ADR 0007；沙盒缺真身时静默跳过）
     return}catch(e){}
   S={data:freshData(),ui:{view:'novels',novelId:null,sceneId:null,chatId:null,codexCat:'',editorTab:'info'}};
   aiSvcNormalize(S.data.settings);   // 全新安装/清空后首跑也走迁移归一（出厂种子建列表；漏掉它首跑列表为空且永不补种）
@@ -18957,10 +18985,133 @@ function tlReorder(srcId,tgtId,tgtChId){
 }
 
 /* ---------- 视图：关系图谱 ---------- */
+/* graph-drawio-gestures 票01（ADR 0007）：布局坐标迁书工程态——内存真源 S.data.relGraphs[]
+   （每书一份 {novelId,positions}），文件真源＝书根 关系图谱.json（_format=novel-studio-rel-graph-v1，
+   只含坐标）；缩放 graphScale／工具栏开关仍属视图偏好留 UI_KEY。旧 UI_KEY 布局由 graphLayoutMigrate
+   在 load() 尾部一次性迁入，确认文件落盘后才清 UI_KEY 旧值（防双源）；写失败旧值保留、下次打开重试。 */
+/** 取（缺失即建）本书关系图谱布局工程态。
+ * @param {any} d @param {string} nid
+ * @returns {{novelId:string,positions:Record<string,{x:number,y:number}>}} */
+function relGraphOf0(d,nid){
+  if(!d)return {novelId:String(nid||''),positions:{}};
+  if(!Array.isArray(d.relGraphs))d.relGraphs=[];
+  let st=null;
+  for(const x of d.relGraphs){if(x&&x.novelId===nid){st=x;break}}
+  if(!st){st={novelId:nid,positions:{}};d.relGraphs.push(st)}
+  if(!st.positions||typeof st.positions!=='object')st.positions={};
+  return st;
+}
+/** @param {string} nid @returns {{novelId:string,positions:Record<string,{x:number,y:number}>}} */
+function relGraphOf(nid){return relGraphOf0(S.data,nid)}
+/** 序列化本书关系图谱布局；无有效坐标返回 null（不落空文件；删空后随写盘删除腿回收）。
+ * @param {any} d @param {string} nid */
+function relGraphSerializeOf0(d,nid){
+  if(!d||!Array.isArray(d.relGraphs))return null;
+  const st=d.relGraphs.find((/** @type {any} */ x)=>x&&x.novelId===nid);
+  if(!st)return null;
+  const positions=/** @type {Record<string,{x:number,y:number}>} */({});
+  const src=st.positions&&typeof st.positions==='object'?st.positions:{};
+  for(const k of Object.keys(src)){
+    const p=src[k];
+    if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
+      positions[k]={x:p.x,y:p.y};
+  }
+  if(!Object.keys(positions).length)return null;
+  return{_format:G3_REL_FORMAT,positions};
+}
+/** 认领归一：坐标逐点校验（坏点丢弃），坏形状整条不认领（扫描侧已按 _format 分流）。
+ * @param {any} raw @param {string} nid @returns {{novelId:string,positions:Record<string,{x:number,y:number}>}} */
+function relGraphNormalizeOne(raw,nid){
+  const positions=/** @type {Record<string,{x:number,y:number}>} */({});
+  const src=raw&&raw.positions&&typeof raw.positions==='object'?raw.positions:{};
+  for(const k of Object.keys(src)){
+    const p=src[k];
+    if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
+      positions[k]={x:p.x,y:p.y};
+  }
+  return{novelId:nid,positions};
+}
+/** uiStateRestore 捕获旧 UI_KEY 布局为迁移源（逐书逐点校验，坏形状丢弃；空集＝null）。
+ * @param {any} raw */
+function graphLegacyImport(raw){
+  _graphLegacy=null;
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
+  /** @type {Record<string,Record<string,{x:number,y:number}>>} */
+  const out={};
+  for(const nid of Object.keys(raw)){
+    const book=raw[nid];
+    if(!book||typeof book!=='object'||Array.isArray(book))continue;
+    /** @type {Record<string,{x:number,y:number}>} */
+    const pos={};
+    for(const id of Object.keys(book)){
+      const p=graphPosXY(book,id);
+      if(p)pos[id]={x:p.x,y:p.y};
+    }
+    if(Object.keys(pos).length)out[nid]=pos;
+  }
+  if(Object.keys(out).length)_graphLegacy=out;
+}
+/** 首开迁移入口（load() 尾部调用，数据态与 ST.paths 均已就位）：逐书判定——书内已有 关系图谱.json
+    坐标＝文件为准弃旧值；否则旧值拷入工程态并 save() 落文件。只读／清库期不写盘，由看护轮询补腿。
+ * @returns {void} */
+function graphLayoutMigrate(){
+  if(!_graphLegacy||!S||!S.data)return;
+  const alive=new Set((S.data.novels||[]).map((/** @type {any} */ n)=>n&&n.id).filter(Boolean));
+  let copied=0;
+  for(const nid of Object.keys(_graphLegacy)){
+    if(!alive.has(nid)){delete _graphLegacy[nid];continue}   // 书已不存在：旧值无从归属，弃
+    const st=relGraphOf(nid);
+    if(Object.keys(st.positions).length){delete _graphLegacy[nid];continue}   // 文件已有坐标＝文件为准，弃旧值防双源
+    const leg=_graphLegacy[nid];
+    for(const id of Object.keys(leg))st.positions[id]={x:leg[id].x,y:leg[id].y};
+    copied++;
+  }
+  if(!Object.keys(_graphLegacy).length){   // 无一需迁／全部即时了结：落一次净 UI_KEY（graphLayout 键整体消失）
+    _graphLegacy=null;
+    try{uiStateSave()}catch(_e){}
+    return;
+  }
+  if(copied&&!roReason()&&!ST.wiping){try{save()}catch(_e2){}}
+  graphLegacyWatch();
+}
+/** 迁移看护单拍：书文件确认落盘（ST.files 认账）即清该书旧值；全部了结落净 UI_KEY。
+    只读期被挡掉的 save() 在此补腿（ST 干净且可写而文件仍缺＝重发；写失败交既有节律自重试）。 */
+function graphLegacyTick(){
+  if(!S||!S.data||!_graphLegacy){
+    if(_graphLegacyT!=null){try{clearInterval(_graphLegacyT)}catch(_e){}_graphLegacyT=null}
+    return;
+  }
+  for(const nid of Object.keys(_graphLegacy)){
+    const dir=(ST.paths&&typeof ST.paths.get==='function')?ST.paths.get(nid):null;
+    if(dir&&ST.files&&ST.files.has(dir+'/'+G3_FN.relGraph))delete _graphLegacy[nid];   // 文件已落盘＝该书迁移确认
+  }
+  if(!Object.keys(_graphLegacy).length){
+    if(_graphLegacyT!=null){try{clearInterval(_graphLegacyT)}catch(_e2){}_graphLegacyT=null}
+    _graphLegacy=null;
+    try{uiStateSave()}catch(_e3){}   // 落净版 UI_KEY（graphLayout 键整体消失）
+    return;
+  }
+  if(!roReason()&&!ST.wiping&&ST.ready&&!ST.dirty&&!ST.writing){try{save()}catch(_e4){}}
+}
+/** @type {number|null} */
+let _graphLegacyT=null;
+/** 看护轮询（1.5s 一拍；上限由调用方环境兜底——页面卸载即停，未确认书下次打开续迁）。 */
+function graphLegacyWatch(){
+  if(_graphLegacyT!=null)return;
+  let ticks=0;
+  _graphLegacyT=setInterval(()=>{
+    ticks++;
+    try{graphLegacyTick()}catch(_e){}
+    if(ticks>=400&&_graphLegacyT!=null){try{clearInterval(_graphLegacyT)}catch(_e2){}_graphLegacyT=null}   // 看护上限：旧值仍保在 UI_KEY，下次打开续迁
+  },1500);
+}
+/**
+ * 关系图谱布局坐标（书工程态 positions 活引用：坐标直写即进内存真源，落盘走 save()）。
+ * @param {string} nid
+ * @returns {Record<string,{x:number,y:number}>}
+ */
 function graphLayoutMem(nid){
-  if(!S.ui.graphLayout||typeof S.ui.graphLayout!=='object')S.ui.graphLayout={};
-  if(!S.ui.graphLayout[nid]||typeof S.ui.graphLayout[nid]!=='object')S.ui.graphLayout[nid]={};
-  return S.ui.graphLayout[nid];
+  return relGraphOf(nid).positions;
 }
 /** 关系图谱滚轮缩放范围（仅关系图谱；剧情图谱仍用 0.25–3）。 */
 const GRAPH_SCALE_MIN=0.1;
@@ -19260,21 +19411,20 @@ function graphLayoutSnap(nid){
   return out;
 }
 /**
+ * 整体替换本书布局（撤销／重做回放）；原位清键再赋值保引用稳定（已绑定闭包不脱钩）。
  * @param {string} nid
  * @param {Record<string,{x:number,y:number}>} snap
  */
 function graphLayoutApply(nid,snap){
-  if(!S.ui.graphLayout||typeof S.ui.graphLayout!=='object')S.ui.graphLayout={};
-  /** @type {Record<string,{x:number,y:number}>} */
-  const next={};
+  const mem=graphLayoutMem(nid);
+  for(const id of Object.keys(mem))delete mem[id];
   if(snap&&typeof snap==='object'){
     for(const id of Object.keys(snap)){
       const p=snap[id];
       if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
-        next[id]={x:p.x,y:p.y};
+        mem[id]={x:p.x,y:p.y};
     }
   }
-  S.ui.graphLayout[nid]=next;
 }
 /** @type {{nid:string,map:Record<string,{x:number,y:number}>}[]} */
 let _graphUndoStack=[];
@@ -19296,7 +19446,7 @@ function graphUndo(){
   _graphUndoStack.pop();
   _graphRedoStack.push({nid,map:graphLayoutSnap(nid)});
   graphLayoutApply(nid,top.map);
-  try{if(typeof uiStateSaveSoon==='function')uiStateSaveSoon()}catch(_e){}
+  try{save()}catch(_e){}   // 票01：布局已迁书工程态，撤销回放落 关系图谱.json
   if(typeof render==='function')render();
   if(typeof toast==='function')toast('已撤销一步布局');
 }
@@ -19308,7 +19458,7 @@ function graphRedo(){
   _graphUndoStack.push({nid,map:graphLayoutSnap(nid)});
   if(_graphUndoStack.length>GRAPH_UNDO_MAX)_graphUndoStack.shift();
   graphLayoutApply(nid,top.map);
-  try{if(typeof uiStateSaveSoon==='function')uiStateSaveSoon()}catch(_e){}
+  try{save()}catch(_e){}   // 票01：布局已迁书工程态，重做回放落 关系图谱.json
   if(typeof render==='function')render();
   if(typeof toast==='function')toast('已重做一步布局');
 }
@@ -20334,9 +20484,9 @@ function bindGraph(){
     if(!g)return;
     const r=Number(g.dataset.r)||14;
     const c=g.querySelector('circle.graph-ring')||g.querySelector('circle');
-    if(c){c.setAttribute('cx',p.x);c.setAttribute('cy',p.y)}
+    if(c){c.setAttribute('cx',String(p.x));c.setAttribute('cy',String(p.y))}
     const clip=g.querySelector('circle.graph-clip');
-    if(clip){clip.setAttribute('cx',p.x);clip.setAttribute('cy',p.y)}
+    if(clip){clip.setAttribute('cx',String(p.x));clip.setAttribute('cy',String(p.y))}
     const fig=g.querySelector('.graph-fig');
     if(fig){
       if(fig.getAttribute('data-kind')==='img'){
@@ -20348,7 +20498,7 @@ function bindGraph(){
       }
     }
     const lab=g.querySelector('.graph-label');
-    if(lab){lab.setAttribute('x',p.x);lab.setAttribute('y',p.y+r+14)}
+    if(lab){lab.setAttribute('x',String(p.x));lab.setAttribute('y',String(p.y+r+14))}
     const cnt=g.querySelector('.graph-count');
     if(cnt){cnt.setAttribute('x',String(p.x));cnt.setAttribute('y',String(p.y-r-6))}
     svg.querySelectorAll('.graph-edges line[data-a="'+id+'"],.graph-edges line[data-b="'+id+'"]').forEach(ln=>{
@@ -20371,7 +20521,7 @@ function bindGraph(){
 
   /* codex-graph-ux 票05＋手势回改：图谱多选——Shift+点节点＝切换选中；
      Shift+左键拖空白＝框选（恢复旧习惯；框选替换选中，追加仍用 Shift+点）；
-     左键拖空白＝平移；左键点空白／Esc＝清空（票08）；拖任一选中（≥2）＝整组同位移，松手 uiStateSaveSoon；
+     左键拖空白＝平移；左键点空白／Esc＝清空（票08）；拖任一选中（≥2）＝整组同位移，松手 save() 落书工程态（票01）；
      右键拖任意处＝画布平移（点中节点也只平移）；无 Shift 单节点拖＝只移该点。 */
 let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
   let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
@@ -20592,7 +20742,7 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     }
     panClear=false;
     if((was==='node'||was==='nodes')&&didLayout){
-      try{uiStateSaveSoon()}catch(_e2){}   // 整段拖动（含被推开的节点）松手落盘；撤销已在首次移动时入栈
+      try{save()}catch(_e2){}   // 票01：整段拖动（含被推开的节点）松手落书工程态（关系图谱.json）；撤销已在首次移动时入栈
       return;
     }
     if((was==='node'||was==='nodes')&&id&&!did){
@@ -26413,7 +26563,7 @@ document.addEventListener('click',async e=>{
         const moved=graphEnsureAndResolveMinors(nid);
         if(moved.length){
           graphUndoPush(nid,snap);
-          try{uiStateSaveSoon()}catch(_eM){}
+          try{save()}catch(_eM){}   // 票01：错开结果落书工程态（关系图谱.json）
           if(typeof toast==='function')toast('已把 '+moved.length+' 个重叠的次要错开到附近空位，主要设定未移动');
         }
       }
@@ -26428,7 +26578,7 @@ document.addEventListener('click',async e=>{
     const movedSp=graphEnsureAndResolveMinors(nid);
     if(!movedSp.length){toast('没有需要错开的重叠');break}
     graphUndoPush(nid,snapSp);
-    try{uiStateSaveSoon()}catch(_eS){}
+    try{save()}catch(_eS){}   // 票01：散开结果落书工程态（关系图谱.json）
     render();
     toast('已把 '+movedSp.length+' 个重叠的次要错开到附近空位，主要设定未移动');
     break}
