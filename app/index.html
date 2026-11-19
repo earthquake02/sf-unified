@@ -739,6 +739,13 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap .plot-card.hit.focus .plot-card-bg{stroke:var(--ac); stroke-width:4.2}
 .graph-wrap .plot-card.hit.focus .plot-card-title{fill:var(--ac)}
 .graph-wrap .plot-edge-g.dim{opacity:.12}
+/* plot-graph-cards 07（规格 Q6；术语「邻居高亮」剧情同款）：二级悬停邻居高亮——复用 svg.nb-on 通用骨架
+   （非 .nb-lit 卡片淡出＝上方通用 .graph-node:not(.nb-lit) 规则命中卡片；淡出特异性压过搜索 .dim，
+   临时优先，移开摘类级联回落自动复原搜索态）；卡片描边语言适配：邻居卡 .nb-lit＝plot-card-bg 轻描边
+   （保留原描边色，plot-focus/.hit 各自回落）；相连边组（.plot-edge-g.nb-lit）不写 opacity 保持自身
+   基线＋柔光（通用 .graph-edges .nb-lit 规则同款命中），非邻居边组定向淡至 --nb-dim */
+.graph-wrap svg.nb-on .graph-node.plot-card.nb-lit .plot-card-bg{stroke-width:2.8}
+.graph-wrap svg.nb-on .graph-edges .plot-edge-g:not(.nb-lit){opacity:var(--nb-dim)}
 /* plot-graph-cards 03（规格 Q11/Q12）：悬停全文浮层——HTML 层贴卡片下方（fixed 定位、rAF 逐帧贴锚卡），
    区别于 SVG 内嵌文本＝屏上固定字号不随缩放（字号/限宽由 JS 常量 PLOT_POP_* 控制）；
    pointer-events:none＝点击穿底不跳转（跳转仍走双击／「打开写作」）、在场不挡拉线/拖点等后续手势 */
@@ -19677,11 +19684,11 @@ const PLOT_CARD_GAP_Y=44;
 const PLOT_BOARD_PAD_X_C=Math.max(GRAPH_BOARD_PAD_X,PLOT_CARD_HW+14);
 const PLOT_BOARD_PAD_Y_C=Math.max(GRAPH_BOARD_PAD_Y,PLOT_CARD_HH+14);
 /* plot-graph-cards 03（规格 Q11/Q12）：悬停三层时序与全文浮层参数——时长/字号/限宽全部常量化，实现后可调。
-   时序链：全文浮层 0.5s（本票）＜ 拉线箭头 0.8s（04 落地挂载，时序位已预留）＜ 邻居高亮 1.5s（07 落地挂载）；
+   时序链：全文浮层 0.5s（03）＜ 拉线箭头 0.8s（04）＜ 邻居高亮 1.5s（07）；
    三档都从「静止悬停同一张卡」起算，鼠标移开＝定时器全撤＋浮层即消（bindPlotGraph 悬停链）。 */
 const PLOT_HOVER_POP_MS=500;    // 全文浮层弹出延时（本票）
-const PLOT_HOVER_ARROW_MS=800;  // 拉线箭头起手延时（04 挂载位：暂仅定档不接逻辑）
-const PLOT_HOVER_NB_MS=1500;    // 邻居高亮延时（07 挂载位：暂仅定档不接逻辑）
+const PLOT_HOVER_ARROW_MS=800;  // 拉线箭头起手延时（04 已接：bindPlotGraph hovTimer2 槽位）
+const PLOT_HOVER_NB_MS=1500;    // 邻居高亮延时（07 已接：bindPlotGraph hovTimer3 槽位）
 const PLOT_POP_FONT_PX=13;      // 浮层屏上固定字号（世界内容随缩放、浮层不随，规格 Q11）
 const PLOT_POP_MAXW_PX=360;     // 浮层限宽（摘要 ≤200 字多行可容纳、不滚动，规格 Q12 裁定）
 const PLOT_POP_GAP_PX=8;        // 浮层与卡片上下间距
@@ -22188,9 +22195,9 @@ function vPlotGraph(){
   <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
-  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）兜底；悬停卡片 0.8s 出拉线箭头，按下拖到目标卡松手弹「导致／相关」二选一（回车确认，Esc／点空白取消）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。工具栏可按标题搜索节点（命中高亮并滚入视野、Enter 循环、清空恢复；引子不参与）。MVP 无多选。</p>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）兜底；悬停卡片 0.8s 出拉线箭头，按下拖到目标卡松手弹「导致／相关」二选一（回车确认，Esc／点空白取消）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。工具栏可按标题搜索节点（命中高亮并滚入视野、Enter 循环、清空恢复；引子不参与）。工具栏「适配」＝按可见卡片已存坐标包围盒一屏全览（留边距，再点回 100%）；Ctrl+Shift＋左键空白划框＝区域移动：框内卡片整组跟手平移、松手落盘并进撤销栈（起手在卡片上不生效）；悬停卡片 ≥1.5s 触发邻居高亮：相连边与对端卡片保持亮度＋轻描边、其余淡出，移开立即恢复（与搜索高亮并存时临时优先）；任意拖拽进行中（拖点、平移、拉线、区域移动）Esc＝中止回原状，不落盘不占撤销栈。MVP 无多选。</p>
   ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
-  <div class="graph-tools"><input type="text" id="plotSearch" class="graph-search" placeholder="搜索节点标题" aria-label="搜索剧情叶节点（仅标题）" title="按节点标题片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复（引子不参与）" value="${esc(S.ui.plotQ||'')}"><span id="plotSearchStat" class="hint" style="margin:0" aria-live="polite"></span><span class="hint" style="margin:0" id="plotScaleLbl">缩放 ${Math.round(scale*100)}%</span><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
+  <div class="graph-tools"><input type="text" id="plotSearch" class="graph-search" placeholder="搜索节点标题" aria-label="搜索剧情叶节点（仅标题）" title="按节点标题片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复（引子不参与）" value="${esc(S.ui.plotQ||'')}"><span id="plotSearchStat" class="hint" style="margin:0" aria-live="polite"></span><span class="hint" style="margin:0" id="plotScaleLbl">缩放 ${Math.round(scale*100)}%</span><button type="button" class="btn sm" id="plotFitBtn" ${leaves.length?'':'disabled '}title="按可见卡片的已保存坐标缩放平移到一屏全览（留边距，25%–300%）；再点一次回到 100%">适配</button><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
   <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
   <button type="button" class="btn sm" data-act="plot-link-relate" title="进入拉相关边：依次单击两个叶节点">拉相关</button>
   <button type="button" class="btn sm danger" data-act="plot-edge-del" title="选中边后可删除" disabled>删边</button>
@@ -22227,7 +22234,12 @@ function bindPlotGraph(){
     const filled=graphBoardFillView({originX,originY,W:BW,H:BH},wrap.clientWidth,wrap.clientHeight,scale);
     if(filled.W!==BW||filled.H!==BH)adoptBoard(filled);
   }
-  const applyScale=(/** @type {number} */ sc,/** @type {number=} */ cx,/** @type {number=} */ cy)=>{
+  /**
+   * @param {number} sc 目标缩放（钳 25%–300%）
+   * @param {number} [cx] 锚点 X（画布世界坐标；省略＝不锚定不补滚动——07 适配按钮精设滚动时用）
+   * @param {number} [cy] 锚点 Y（省略＝不锚定）
+   */
+  const applyScale=(sc,cx,cy)=>{
     const old=scale;
     scale=Math.min(3,Math.max(0.25,sc));
     plotScaleSet(nid,scale);
@@ -22339,9 +22351,61 @@ function bindPlotGraph(){
     const cx=(we.clientX-rect.left+wrap.scrollLeft)/scale;
     const cy=(we.clientY-rect.top+wrap.scrollTop)/scale;
     const factor=we.deltaY<0?1.1:1/1.1;
+    const before=scale;
     applyScale(scale*factor,cx,cy);
+    if(scale!==before)fitOn=false;   // 07：滚轮等外部缩放一变＝偏离适配视图，fitOn 即灭（下次点「适配」＝重新适配而非回 100%，对齐 A-06 review 修复后口径）；钳边界上 scale 不动则不灭
     if(hovArrow&&hovId)hovArrowDraw(nodeOf(hovId),hovWX,hovWY);   // 04：缩放后按新 scale 重画在场箭头（只重画，绝不新建——计时未满不出箭头）
   },{passive:false});
+  /* plot-graph-cards 07（规格 Q6；术语「适配全图」，参照 bindGraph 票06 适配按钮模式）：按可见卡片已存坐标
+     （pos＝plotEnsurePositions 真源，渲染时缺档已回写）取包围盒（含整卡半宽高＋余量；卡片无外置标签，不留
+     标签分支），缩放平移到留边距的一屏全览，钳制 25%–300%（10%–400% 放宽归 08 票）；再点一次回 100%
+     （以视口中心为锚）。纯视图操作：不产生选中态、不写布局撤销栈、不落盘（缩放仍走 plotScaleSet 既有
+     S.ui.plotGraphScale 持久化，维持现状）；画板先按目标视野扩边（graphBoardGrowTo 带 plot 卡片边距，
+     参照 graphBoardFillView 的包住口径）再精设滚动，不被钳——applyScale 锚定公式吃「原点相对坐标」，此处
+     cx/cy/tlx 是真世界坐标（含 origin），绕开锚定直接精设滚动（与关系图谱同解法）。 */
+  let fitOn=false;
+  const fitBtn=/** @type {HTMLButtonElement|null} */(document.getElementById('plotFitBtn'));
+  if(fitBtn)fitBtn.addEventListener('click',()=>{
+    const vw=wrap.clientWidth,vh=wrap.clientHeight;
+    if(!vw||!vh||fitBtn.disabled)return;
+    if(fitOn){
+      fitOn=false;
+      const cx=originX+(wrap.scrollLeft+vw/2)/scale,cy=originY+(wrap.scrollTop+vh/2)/scale;
+      const r1=graphBoardGrowTo({originX,originY,W:BW,H:BH},cx-vw/2,cy-vh/2,{padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});
+      const r2=graphBoardGrowTo(r1,cx+vw/2,cy+vh/2,{padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});   // 100% 目标视野同样先包住再精设滚动（g2 链在 g1 之上；grown 只对各自输入计，两次取或）
+      if(r1.grown||r2.grown)adoptBoard(r2);
+      applyScale(1);
+      wrap.scrollLeft=Math.max(0,cx-vw/2-originX);
+      wrap.scrollTop=Math.max(0,cy-vh/2-originY);
+      if(hovArrow&&hovId)hovArrowDraw(nodeOf(hovId),hovWX,hovWY);   // 在场箭头按新 scale 重画（与滚轮同口径，绝不新建）
+      return;
+    }
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,any=false;
+    svg.querySelectorAll('.graph-node.plot-card').forEach((/** @type {Element} */ g)=>{
+      const p=pos[g.getAttribute('data-id')||''];
+      if(!p)return;
+      any=true;
+      const hw=Number(g.getAttribute('data-r'))||PLOT_CARD_HW;   // 包围盒含整卡（半宽高）；卡片文字/角标都在卡内，无外置余量
+      const hh=Number(g.getAttribute('data-rh'))||PLOT_CARD_HH;
+      if(p.x-hw-4<minX)minX=p.x-hw-4;
+      if(p.y-hh-4<minY)minY=p.y-hh-4;
+      if(p.x+hw+4>maxX)maxX=p.x+hw+4;
+      if(p.y+hh+4>maxY)maxY=p.y+hh+4;
+    });
+    if(!any)return;   // 空图：无动作不报错（按钮模板已禁用，双保险）
+    const M=48;   // 每侧留边（CSS px）
+    const availW=Math.max(60,vw-2*M),availH=Math.max(60,vh-2*M);
+    const s=Math.min(3,Math.max(0.25,Math.min(availW/Math.max(1,maxX-minX),availH/Math.max(1,maxY-minY))));
+    const tlx=(minX+maxX)/2-vw/(2*s),tly=(minY+maxY)/2-vh/(2*s);
+    const g1=graphBoardGrowTo({originX,originY,W:BW,H:BH},tlx,tly,{padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});
+    const g2=graphBoardGrowTo(g1,tlx+vw/s,tly+vh/s,{padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});
+    if(g1.grown||g2.grown)adoptBoard(g2);
+    applyScale(s);
+    wrap.scrollLeft=Math.max(0,(tlx-originX)*s);
+    wrap.scrollTop=Math.max(0,(tly-originY)*s);
+    fitOn=true;
+    if(hovArrow&&hovId)hovArrowDraw(nodeOf(hovId),hovWX,hovWY);
+  });
   wrap.addEventListener('contextmenu',(/** @type {Event} */ e)=>e.preventDefault());
   let mode=/** @type {string|null} */(null),nidDrag=/** @type {string|null} */(null),moved=false;
   let sx=0,sy=0,sl0=0,st0=0,ox=0,oy=0;
@@ -22428,8 +22492,80 @@ function bindPlotGraph(){
     if(pullLine){try{pullLine.remove()}catch(_e){}pullLine=null}
     pullHighlight(null,false);
   };
-  (/** @type {any} */(wrap))._plotEsc=()=>{   // 04：全局 Esc 中止拉线（零副作用；挂全局 Esc 分发链）
+  /* plot-graph-cards 07（规格 Q6；术语「区域移动」，参照 bindGraph 票07 区域移动模式）：Ctrl+Shift＋左键
+     空白划框，框内卡片整组跟手平移。平移非推挤：直接 moveNode（原位＋位移）——剧情本无推开/占用/钳制
+     （规格 Q8），整组相对位置恒定、框外卡片绝不动；框住判定＝起手快照（regionOrig＝按下时刻各卡中心）
+     ＋并入后只增不减（防贴框卡片随矩形移动反复进出抖动，A-07 同口径）；松手按净位移收口（任一框住卡 pos
+     与起手快照差 >0.01 才收，划出又拖回起手点＝零落盘零占栈，fd0adcb 口径）＝一次 save()＋压一条
+     plotUndoPush（快照＝起手时刻全量布局，05 栈一次 Ctrl+Z 整组回）；不产生选中态（剧情无多选）；
+     起手在卡片上不生效＝普通拖点（上方 node 分支先行接管）。 */
+  /** @type {{x:number,y:number}|null} */ let regionStart=null;   // 起手点（画布世界坐标）
+  /** @type {Record<string,{x:number,y:number}>} */ let regionOrig={};   // 起手快照：各卡中心（框住判定＋Esc 回原位＋松手净位移判定依据）
+  /** @type {Set<string>} */ let regionIds=new Set();   // 已框住集合（只增不减）
+  /** @type {Record<string,{x:number,y:number}>|null} */ let regionAll=null;   // 起手全量布局快照（松手压撤销栈；Esc 不压）
+  /** @type {SVGRectElement|null} */ let regionRect=null;   // 跟随矩形 <rect class="graph-region-rect">（蓝实线，通用样式两图同款）
+  /** 收拾区域移动视觉（矩形＋dragging 光标态）；不动坐标与选中态。 */
+  const regionVisClear=()=>{
+    if(regionRect){try{regionRect.remove()}catch(_e){}regionRect=null}
+    regionIds.forEach(id=>{const g=nodeOf(id);if(g)g.classList.remove('dragging')});
+  };
+  /** Esc 中止——快照内全部卡片回起手原位、清视觉、复位态；不 save 不压撤销栈。
+   * 末尾复位 mode（fd0adcb 口径）：中止后紧接的第二次 Esc 落到全局层维持现状；随后 pointerup 因
+   * mode=null 在 endPtr 首行早退＝零副作用。@returns {void} */
+  const regionAbort=()=>{
+    for(const id of Object.keys(regionOrig)){const o=regionOrig[id];moveNode(id,o.x,o.y)}
+    regionVisClear();
+    regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;
+    moved=false;mode=null;
+  };
+  /* 07：拖点 Esc 中止——dragSnap（05 在 pointerdown 已取的起手全量布局快照）回放回原位；剧情撤销只在
+     松手才压栈（无途中 pushedUndo），故无需弹栈/还原 redo（A-08 dragAbort 口径移植，去推开/弹栈分支）；
+     毯式清 dragging、复位态。 */
+  const dragAbort=()=>{
+    if(dragSnap){for(const id of Object.keys(dragSnap)){const o=dragSnap[id];moveNode(id,o.x,o.y)}}
+    svg.querySelectorAll('.graph-node.dragging').forEach((/** @type {Element} */ g)=>g.classList.remove('dragging'));
+    mode=null;nidDrag=null;moved=false;dragSnap=null;
+  };
+  /* plot-graph-cards 07（规格 Q6；术语「邻居高亮」剧情同款）：二级悬停 ≥PLOT_HOVER_NB_MS——相连边组与
+     对端卡片保持亮度（.nb-lit 零 opacity 规则、plot-focus/.hit/.dim 各自回落）＋卡片轻描边，其余淡至
+     CSS --nb-dim（约 15%）。纯 class 切换（svg.nb-on＋.nb-lit），不动 DOM 结构、不碰搜索高亮类——
+     非邻居淡出特异性压过搜索高亮（临时优先），移开摘类、级联回落即自动复原搜索态。相连判定按渲染边
+     DOM 的对端卡片（剧情无浅影；断边组缺 pos 不渲染，对端必在场）。触发时 0.5s 全文浮层／0.8s 拉线
+     箭头已在场——邻居高亮不收它们（三层时序互不打架）；移开/任何按下随 hovReset／按下清场一并撤销。 */
+  let nbId='';   // 当前邻居高亮所属卡 id（空＝未激活）
+  /** 点亮 id 的邻居集合：悬停卡＋对端卡＋相连边组加 .nb-lit，svg 加 .nb-on。
+   * @param {string} id 悬停卡 id */
+  const nbApply=(/** @type {string} */ id)=>{
+    if(!id)return;
+    const litIds=new Set([id]);
+    /** @type {Element[]} */ const litEdges=[];
+    svg.querySelectorAll('.graph-edges .plot-edge-g[data-a][data-b]').forEach((/** @type {Element} */ el)=>{
+      const a=String(el.getAttribute('data-a')||''),b=String(el.getAttribute('data-b')||'');
+      if(a!==id&&b!==id)return;
+      const other=a===id?b:a;
+      if(!nodeOf(other))return;   // 对端卡不在场＝不算邻居（防御：渲染边组两端必有 pos）
+      litIds.add(other);
+      litEdges.push(el);
+    });
+    svg.querySelectorAll('.graph-node.plot-card').forEach((/** @type {Element} */ g)=>{
+      if(litIds.has(String(g.getAttribute('data-id')||'')))g.classList.add('nb-lit');
+    });
+    for(const el of litEdges)el.classList.add('nb-lit');
+    svg.classList.add('nb-on');
+    nbId=id;
+  };
+  /** 撤销邻居高亮（幂等；未激活时零 DOM 操作；搜索高亮态因类未动而自动复原）。 */
+  const nbOff=()=>{
+    if(!nbId)return;
+    nbId='';
+    svg.classList.remove('nb-on');
+    svg.querySelectorAll('.nb-lit').forEach((/** @type {Element} */ el)=>el.classList.remove('nb-lit'));
+  };
+  (/** @type {any} */(wrap))._plotEsc=()=>{   // 04＋07：全局 Esc 统一中止（挂全局 Esc 分发链）——覆盖剧情图谱全部进行中拖拽态＝回原状不落盘不占栈；无拖拽时返回 false 维持现状
     if(mode==='pull'){mode=null;pullFrom='';pullCleanup();return true}
+    if(mode==='region'){regionAbort();return true}   // 07：整组回起手原位，不落盘不占撤销栈
+    if(mode==='node'){dragAbort();return true}   // 07：拖点回起手原位（快照回放），不落盘不占栈
+    if(mode==='pan'){mode=null;wrap.scrollLeft=sl0;wrap.scrollTop=st0;moved=false;return true}   // 07：回起手滚动位（sl0/st0 随画板生长已补偿，恒指原视口）；Esc 后续 pointerup 因 mode=null 早退，不触发点空白清选
     return false;
   };
   wrap.addEventListener('pointerdown',(/** @type {PointerEvent} */ e)=>{
@@ -22448,6 +22584,8 @@ function bindPlotGraph(){
     const armedPull=armCand&&!linkMode&&hovArrow&&pullArmId&&pullArmId===armCand?pullArmId:'';
     if(hovTimer){clearTimeout(hovTimer);hovTimer=0}   // 任何按下都打断悬停计时（A 系列 hoverStop 同款；03 全文浮层收场仍走悬停链自身）
     if(hovTimer2){clearTimeout(hovTimer2);hovTimer2=0}
+    if(hovTimer3){clearTimeout(hovTimer3);hovTimer3=0}
+    nbOff();   // 07：任何按下即撤邻居高亮（A-05 口径），搜索高亮态自动复原
     hovArrowOff();
     if(node){
       nidDrag=node.getAttribute('data-id')||'';
@@ -22482,6 +22620,20 @@ function bindPlotGraph(){
       try{wrap.setPointerCapture(pe.pointerId)}catch(_e3){}
       return;
     }
+    if(pe.button===0&&pe.shiftKey&&(pe.ctrlKey||pe.metaKey)){
+      mode='region';   // 07：Ctrl+Shift＋左键空白＝区域移动划框（点在卡/边上不算空白：node/edgesel 分支已先行 return）
+      regionStart=svgPt(pe.clientX,pe.clientY);
+      regionOrig={};regionIds=new Set();regionRect=null;
+      svg.querySelectorAll('.graph-node.plot-card').forEach((/** @type {Element} */ g)=>{
+        const gid=g.getAttribute('data-id')||'';if(!gid)return;
+        const o=pos[gid];   // 卡中心＝positions 真源（渲染时缺档已回写，恒有档）
+        if(o)regionOrig[gid]={x:o.x,y:o.y};
+      });
+      regionAll=plotLayoutSnap(nid);   // 起手全量布局快照：松手压一次撤销栈（一次 Ctrl+Z 整组回）
+      moved=false;sx=pe.clientX;sy=pe.clientY;
+      try{wrap.setPointerCapture(pe.pointerId)}catch(_e3){}
+      return;
+    }
     mode='pan';sx=pe.clientX;sy=pe.clientY;sl0=wrap.scrollLeft;st0=wrap.scrollTop;moved=false;
     try{wrap.setPointerCapture(pe.pointerId)}catch(_e3){}
   });
@@ -22506,6 +22658,24 @@ function bindPlotGraph(){
       const dx=pe.clientX-sx,dy=pe.clientY-sy;
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)moved=true;
       panBy(dx,dy);
+    }else if(mode==='region'&&regionStart){
+      if(Math.abs(pe.clientX-sx)>THRESH||Math.abs(pe.clientY-sy)>THRESH)moved=true;
+      if(!moved)return;   // 未过阈值＝还没起划：零副作用（松手即取消）
+      const pt=svgPt(pe.clientX,pe.clientY);
+      if(!regionRect){regionRect=document.createElementNS('http://www.w3.org/2000/svg','rect');regionRect.setAttribute('class','graph-region-rect');svg.appendChild(regionRect)}
+      regionRect.setAttribute('x',String(Math.min(regionStart.x,pt.x)));
+      regionRect.setAttribute('y',String(Math.min(regionStart.y,pt.y)));
+      regionRect.setAttribute('width',String(Math.abs(pt.x-regionStart.x)));
+      regionRect.setAttribute('height',String(Math.abs(pt.y-regionStart.y)));
+      const rx0=Math.min(regionStart.x,pt.x),rx1=Math.max(regionStart.x,pt.x);
+      const ry0=Math.min(regionStart.y,pt.y),ry1=Math.max(regionStart.y,pt.y);
+      for(const id of Object.keys(regionOrig)){   // 框住判定按起手快照＋单调并入（只增不减，防贴框卡片随矩形移动反复进出抖动）
+        if(regionIds.has(id))continue;
+        const o=regionOrig[id];if(!o)continue;
+        if(o.x>=rx0&&o.x<=rx1&&o.y>=ry0&&o.y<=ry1){regionIds.add(id);const g=nodeOf(id);if(g)g.classList.add('dragging')}
+      }
+      const rdx=pt.x-regionStart.x,rdy=pt.y-regionStart.y;
+      for(const id of regionIds){const o=regionOrig[id];if(!o)continue;moveNode(id,o.x+rdx,o.y+rdy)}   // 平移非推挤：剧情本无推开/占用/钳制；落盘与否看松手净位移
     }else if(mode==='node'&&nidDrag){
       const pt=svgPt(pe.clientX,pe.clientY);
       const nx=pt.x-ox,ny=pt.y-oy;
@@ -22550,6 +22720,15 @@ function bindPlotGraph(){
       }
       id=from||null;   // 未拖动＝原「点按」语义（聚焦／双击开写，走下方共用收口）
     }
+    if(was==='region'){
+      let didR=false;   // 净位移判定：regionIds 内任一 pos 与起手快照差 >0.01 才算真移（划出又拖回起手点＝零副作用，fd0adcb 口径）
+      for(const id of regionIds){const o=regionOrig[id],p=pos[id];if(o&&p&&(Math.abs(p.x-o.x)>0.01||Math.abs(p.y-o.y)>0.01)){didR=true;break}}
+      const allR=regionAll;   // 先取值再复位（此处 mode 已置 null，region 态只剩这些闭包变量）
+      regionVisClear();
+      regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;
+      if(didR&&allR){plotUndoPush(nid,allR);try{save()}catch(_e2){}}   // 07：真净位移才收——一次压栈＋一次落盘；空框/未过阈值/拖回原位＝零副作用。pointercancel 同收（净位移已成事实则固化，与拖点同口径）
+      return;
+    }
     if((was==='node'||was==='linktap'||was==='pull')&&id&&(was!=='node'||!did)){
       if(linkMode){
         if(!linkFrom){linkFrom=id;setFocus(id);linkHint();return}
@@ -22592,17 +22771,21 @@ function bindPlotGraph(){
   wrap.addEventListener('pointerup',endPtr);
   wrap.addEventListener('pointercancel',endPtr);
   /* plot-graph-cards 03（规格 Q11/Q12）：悬停三层时序链——静止悬停同一张卡起算：≥0.5s 弹全文浮层（03，
-     PLOT_HOVER_POP_MS）；0.8s 拉线箭头（04 已接：hovTimer2 槽位，PLOT_HOVER_ARROW_MS）；1.5s 邻居高亮
-     （07 挂载位，PLOT_HOVER_NB_MS）。换卡/移出画布＝定时器全撤＋浮层/箭头即消；浮层 pointer-events:none，
-     在场不挡后续手势（「浮层偏移让位」＝贴卡下方留 GAP、点击穿底不跳转；04 微浮层在场时两者互斥不叠放）。 */
+     PLOT_HOVER_POP_MS）；0.8s 拉线箭头（04：hovTimer2 槽位，PLOT_HOVER_ARROW_MS）；1.5s 邻居高亮（07：
+     hovTimer3 槽位，PLOT_HOVER_NB_MS——触发时浮层/箭头已在场，邻居高亮不收它们）。换卡/移出画布＝定时器
+     全撤＋浮层/箭头/邻居高亮即消；浮层 pointer-events:none，在场不挡后续手势（「浮层偏移让位」＝贴卡下方
+     留 GAP、点击穿底不跳转；04 微浮层在场时两者互斥不叠放）。 */
   let hovId='';
   let hovTimer=0;
   let hovTimer2=0;
+  let hovTimer3=0;
   const hovReset=()=>{
     if(hovTimer){clearTimeout(hovTimer);hovTimer=0}
     if(hovTimer2){clearTimeout(hovTimer2);hovTimer2=0}
+    if(hovTimer3){clearTimeout(hovTimer3);hovTimer3=0}
     hovId='';
     hovArrowOff();   // 04：换卡/移出＝箭头随定时器一并消失
+    nbOff();   // 07：移开立即恢复（邻居高亮随悬停链一并撤销，搜索高亮态自动复原；不收 03 浮层——其收场仍由自身链管）
     plotFullPopClose();   // 幂等：未开浮层时空收无副作用
   };
   wrap.addEventListener('pointerover',(/** @type {PointerEvent} */ e)=>{
@@ -22620,6 +22803,10 @@ function bindPlotGraph(){
       hovTimer2=0;
       if(hovId===id&&!mode&&!linkMode&&!_plotEdgePop){hovArrowDraw(nodeOf(id),hovWX,hovWY);pullArmId=id}   // 04复核：linkMode 拉边态下不出箭头（此时按下走 linktap 选端点，箭头所见非所为）
     },PLOT_HOVER_ARROW_MS);
+    hovTimer3=setTimeout(()=>{   // 07：同卡悬停 ≥1.5s 邻居高亮（触发时 0.5s 浮层／0.8s 箭头已在场，不收它们；移开随 hovReset 即消）
+      hovTimer3=0;
+      if(hovId===id&&!mode&&!linkMode&&!_plotEdgePop)nbApply(id);
+    },PLOT_HOVER_NB_MS);
   });
   wrap.addEventListener('pointerleave',hovReset);   // 鼠标移开画布＝全部即消
   /* plot-graph-cards 06（规格 Q4；术语「关系图谱搜索」剧情同口径段，参照 applyQ／_graphFocus 模式）：
