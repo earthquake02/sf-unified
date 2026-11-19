@@ -665,6 +665,12 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-tools .btn:hover{border-color:var(--ac);color:var(--ac)}
 .graph-tools .btn:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--tx3)}
 .graph-marquee{fill:color-mix(in srgb, var(--ac) 10%, transparent); stroke:var(--ac); stroke-width:1; stroke-dasharray:4 3; pointer-events:none}   /* 票05：框选矩形（SVG 画布坐标，随缩放） */
+/* graph-drawio-gestures 票02：悬停一级拉线箭头＋拉线态橡皮筋／目标高亮（仅关系图谱加挂这些类；剧情图谱共用壳但代码不触发） */
+.graph-hover-arrow{pointer-events:none}   /* 悬停≥0.8s：节点圆周朝鼠标方位的隐约箭头（屏幕像素尺寸，不随缩放） */
+.graph-hover-arrow path{fill:var(--ac); opacity:.5}
+.graph-pull-line{stroke:var(--ac2); stroke-width:1.8; stroke-dasharray:6 4; opacity:.75; pointer-events:none}   /* 拉线态橡皮筋虚线（起点圆周→鼠标） */
+.graph-wrap .graph-node.pull-hit .graph-ring{stroke:var(--ac); stroke-width:3.6}   /* 拉线悬停：有效目标描边 */
+.graph-wrap .graph-node.pull-bad .graph-ring{stroke:var(--tx3); stroke-width:2.4; stroke-dasharray:4 3}   /* 拉线悬停：自身＝无效目标样式 */
 .graph-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px}
 .graph-head .pt{margin:0;flex:0 1 auto}
 .graph-scene-pick{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;max-width:100%}
@@ -19122,6 +19128,10 @@ const GRAPH_NODE_R_SPAN=31;
 /** 碰撞盒在实际半径之外再留的缝。 */
 const GRAPH_NODE_GAP=6;
 const GRAPH_UNDO_MAX=60;
+/* graph-drawio-gestures 票02（规格决策 10）：悬停手势参数集中定义，便于调整。 */
+const GRAPH_HOVER_L1_MS=800;   // 一级拉线箭头：静止悬停触发时长（毫秒，用户指定）
+const GRAPH_HOVER_STILL_PX=3;  // 「静止」判定容差（屏幕像素）：位移超过即重置悬停计时
+const GRAPH_HOVER_ARROW_PX=22; // 拉线箭头屏幕尺寸（画布缩放下恒定，按 1/scale 反算）
 /**
  * @param {number} total 全书累计提及次数
  * @returns {number}
@@ -20337,6 +20347,12 @@ function cdxHighlightEntry(id){
   S.ui._graphHlId=id;
   nav('graph');
 }
+/* graph-drawio-gestures 票02：拉线手势回调挂载点（模块级单例；03 关系微浮层／04 空白新建接管挂载）。
+   未挂载＝零副作用取消。done(from,to)＝松手在有效目标；blank(from,x,y)＝松手在空白（x,y 为画布世界坐标）。 */
+/** @type {{done:((from:string,to:string)=>void)|null,blank:((from:string,x:number,y:number)=>void)|null}} */
+const graphPullHooks={done:null,blank:null};
+/** 关系图谱画布交互绑定（渲染后一次性）：搜索高亮、缩放、多选、节点拖动／推开、
+ *  票02 增补静止悬停一级拉线箭头与拉线态（mode='pull'）；剧情图谱走 bindPlotGraph 独立绑定，互不影响。 */
 function bindGraph(){
   const wrap=document.querySelector('.graph-wrap');
   if(!wrap||wrap._graphBound)return;
@@ -20517,13 +20533,14 @@ function bindGraph(){
     const cy=(e.clientY-rect.top+wrap.scrollTop)/scale;
     const next=scale*(e.deltaY<0?1.12:1/1.12);
     applyScale(next,cx,cy);
+    if(hoverNode)hoverArrowDraw(hoverNode,hoverWX,hoverWY);   // 票02：缩放后按新 scale 重画悬停箭头（屏幕像素尺寸恒定）
   },{passive:false});
 
   /* codex-graph-ux 票05＋手势回改：图谱多选——Shift+点节点＝切换选中；
      Shift+左键拖空白＝框选（恢复旧习惯；框选替换选中，追加仍用 Shift+点）；
      左键拖空白＝平移；左键点空白／Esc＝清空（票08）；拖任一选中（≥2）＝整组同位移，松手 save() 落书工程态（票01）；
      右键拖任意处＝画布平移（点中节点也只平移）；无 Shift 单节点拖＝只移该点。 */
-let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
+/** @type {string|null} */ let mode=null; // 'pan' | 'node' | 'nodes' | 'box' | 'pull'（票02 增拉线态）
   let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
   /** @type {{id:string,x:number,y:number}[]|null} */ let grpStart=null;
   /** @type {{x:number,y:number}|null} */ let boxStart=null;
@@ -20545,7 +20562,9 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     edgeSelClear();
     if(el&&!already)el.classList.add('sel');
   };
-  (/** @type {any} */(wrap))._gSelClear=()=>{const edge=edgeSelClear();if(!gSel.size)return edge;gSel.clear();selSync();return true};
+  (/** @type {any} */(wrap))._gSelClear=()=>{
+    if(mode==='pull'){mode=null;pullFrom=null;pullCleanup();return true}   // 票02：Esc 先收拉线（零副作用，不动多选）
+    const edge=edgeSelClear();if(!gSel.size)return edge;gSel.clear();selSync();return true};
   /** @type {{ids:Set<string>,start:Record<string,{x:number,y:number}>,allStart:Record<string,{x:number,y:number}>,pushedUndo:boolean,lastGood:Record<string,{x:number,y:number}>|null,changed:boolean,pushedCount:number}|null} */
   let dragState=null;
   const nodeRadius=(/** @type {string} */ id)=>{
@@ -20618,6 +20637,131 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     graphNotesSync(svg,pos,scale);
   };
 
+  /* graph-drawio-gestures 票02：悬停拉线框架（仅此闭包；剧情图谱 bindPlotGraph 独立，零影响）。
+     静止悬停 ≥GRAPH_HOVER_L1_MS 于非浅影节点出一级拉线箭头（圆心→鼠标方位、随移动实时转向、
+     低透明度、屏幕像素尺寸）；指针位移超静止容差即重置计时；移出节点／任何 pointerdown 即收。
+     多选态（gSel≥2）与浅影不启动计时（触发时再核一次防竞态）。
+     箭头在场时于该节点内左键（非 Shift）pointerdown＋拖动＝拉线态（mode='pull'）：橡皮筋虚线
+     （起点圆周→鼠标）、目标高亮；不设 dragState，故不触发节点拖动／推开、不进布局撤销栈。
+     松手：有效目标（非浅影非自身）→graphPullHooks.done（03 接管）；空白→graphPullHooks.blank
+     （04 接管，未挂载＝取消）；自身／Esc／pointercancel＝零副作用取消。未拖动的按下＝原点按语义。 */
+  /** @type {number|null} */ let hoverT=null;
+  /** @type {Element|null} */ let hoverNode=null;   // 当前悬停节点（计时／箭头归属）
+  let hoverX=0,hoverY=0;    // 上次采样鼠标（屏幕坐标：静止判定基准）
+  let hoverWX=0,hoverWY=0;  // 上次采样鼠标（画布世界坐标：箭头方位）
+  /** @type {Element|null} */ let hoverArrow=null;  // 一级拉线箭头 <g class="graph-hover-arrow">
+  let pullArmId='';         // 箭头所属节点 id：在场时该节点 pointerdown 转拉线
+  /** @type {string|null} */ let pullFrom=null;     // 拉线起点节点 id（mode='pull' 期间）
+  /** @type {Element|null} */ let pullLine=null;    // 橡皮筋 <line class="graph-pull-line">
+  /** @type {Element|null} */ let pullTargetEl=null; // 当前拉线目标节点元素（高亮挂载处）
+  const hoverL1Off=()=>{
+    if(hoverArrow){try{hoverArrow.remove()}catch(_e){}hoverArrow=null}
+    pullArmId='';
+  };
+  const hoverStop=()=>{
+    if(hoverT!=null){clearTimeout(hoverT);hoverT=null}
+    hoverNode=null;
+    hoverL1Off();
+  };
+  /** 画／转向一级拉线箭头：锚在节点圆周外、指向当前鼠标（尺寸按屏幕像素，随缩放反算）。
+   * @param {Element} g 悬停节点
+   * @param {number} mx 鼠标（画布世界坐标 x）
+   * @param {number} my 鼠标（画布世界坐标 y） */
+  const hoverArrowDraw=(g,mx,my)=>{
+    const c=ringCenter(g);if(!c)return;
+    const r=Number(g.getAttribute('data-r'))||GRAPH_NODE_R_MIN;
+    const dx=mx-c.x,dy=my-c.y;
+    const len=Math.hypot(dx,dy);
+    if(len<0.5)return;
+    const ax=c.x+dx/len*(r+6),ay=c.y+dy/len*(r+6);
+    const ang=Math.atan2(dy,dx)*180/Math.PI;
+    if(!hoverArrow){
+      hoverArrow=document.createElementNS('http://www.w3.org/2000/svg','g');
+      hoverArrow.setAttribute('class','graph-hover-arrow');
+      const h=GRAPH_HOVER_ARROW_PX/2;
+      hoverArrow.innerHTML=`<path d="M${h} 0 L${-h*0.8} ${-h*0.68} L${-h*0.4} 0 L${-h*0.8} ${h*0.68} Z"/>`;
+      svg.appendChild(hoverArrow);
+    }
+    hoverArrow.setAttribute('transform','translate('+ax+','+ay+') rotate('+ang+') scale('+(1/Math.max(0.0001,scale))+')');
+  };
+  /** 启动／重启静止悬停计时；到点核态（拖拽中／多选态不出）后画箭头并武装拉线接管。 */
+  const hoverTimerStart=()=>{
+    if(hoverT!=null)clearTimeout(hoverT);
+    hoverT=setTimeout(()=>{
+      hoverT=null;
+      if(!hoverNode||mode||gSel.size>=2)return;
+      hoverArrowDraw(hoverNode,hoverWX,hoverWY);
+      pullArmId=String(hoverNode.getAttribute('data-id')||'');
+    },GRAPH_HOVER_L1_MS);
+  };
+  /** 拉线目标高亮切换：el=null 清除；self=true 走无效目标（自身）样式。
+   * @param {Element|null} el
+   * @param {boolean} self */
+  const pullHighlight=(el,self)=>{
+    if(pullTargetEl&&pullTargetEl!==el){
+      pullTargetEl.classList.remove('pull-hit');
+      pullTargetEl.classList.remove('pull-bad');
+    }
+    pullTargetEl=el||null;
+    if(pullTargetEl){
+      if(self){pullTargetEl.classList.remove('pull-hit');pullTargetEl.classList.add('pull-bad')}
+      else{pullTargetEl.classList.remove('pull-bad');pullTargetEl.classList.add('pull-hit')}
+    }
+  };
+  /** 拉线橡皮筋重画（起点＝起点节点圆周朝鼠标方向上的点；已创建则只更新端点）。
+   * @param {number} mx 鼠标（画布世界坐标 x）
+   * @param {number} my 鼠标（画布世界坐标 y） */
+  const pullDraw=(mx,my)=>{
+    if(!pullLine||!pullFrom)return;
+    const g=nodeOf(pullFrom);if(!g)return;
+    const c=ringCenter(g);if(!c)return;
+    const r=Number(g.getAttribute('data-r'))||GRAPH_NODE_R_MIN;
+    const dx=mx-c.x,dy=my-c.y;
+    const len=Math.hypot(dx,dy)||1;
+    pullLine.setAttribute('x1',String(c.x+dx/len*r));
+    pullLine.setAttribute('y1',String(c.y+dy/len*r));
+    pullLine.setAttribute('x2',String(mx));
+    pullLine.setAttribute('y2',String(my));
+  };
+  /** 拉线目标：鼠标下非浅影节点（浅影 pointer-events:none 本不可命中，双保险）。
+   * @param {number} cx 屏幕 x
+   * @param {number} cy 屏幕 y
+   * @returns {Element|null} */
+  const pullTargetAt=(cx,cy)=>{
+    const el=document.elementFromPoint(cx,cy);
+    const t=(/** @type {any} */(el));
+    return t&&t.closest?/** @type {Element|null} */(t.closest('.graph-node')):null;
+  };
+  /** 收拾拉线态视觉（橡皮筋＋目标高亮）；不动任何坐标／选中态。 */
+  const pullCleanup=()=>{
+    if(pullLine){try{pullLine.remove()}catch(_e){}pullLine=null}
+    pullHighlight(null,false);
+  };
+  wrap.addEventListener('pointerover',e=>{
+    const pe=(/** @type {PointerEvent} */(e));
+    if(mode)return;   // 拖拽／拉线态不启停悬停（指针捕获期间浏览器也不再派发跨界事件）
+    const t=(/** @type {any} */(e.target));
+    const g=t&&t.closest?/** @type {Element|null} */(t.closest('.graph-node')):null;
+    if(!g||isGhostNode(g)){hoverStop();return}   // 移到空白／浅影：停计时收箭头
+    if(g===hoverNode)return;
+    hoverStop();
+    if(gSel.size>=2)return;   // 多选态（≥2）不启动计时
+    hoverNode=g;
+    hoverX=pe.clientX;hoverY=pe.clientY;
+    const pw=svgPt(hoverX,hoverY);hoverWX=pw.x;hoverWY=pw.y;
+    hoverTimerStart();
+  });
+  wrap.addEventListener('pointerout',e=>{
+    const pe=(/** @type {PointerEvent} */(e));
+    const t=(/** @type {any} */(pe.target));
+    const g=t&&t.closest?/** @type {Element|null} */(t.closest('.graph-node')):null;
+    if(!g)return;
+    if(hoverNode&&g!==hoverNode)return;
+    const rt=(/** @type {any} */(pe.relatedTarget));
+    if(rt&&rt.closest&&rt.closest('.graph-node')===g)return;   // 节点内子元素间移动：不算移出
+    hoverStop();   // 移出节点：计时与箭头一并消失
+  });
+
   wrap.addEventListener('selectstart',e=>e.preventDefault());
   wrap.addEventListener('pointerdown',e=>{
     const pe=(/** @type {PointerEvent} */(e));
@@ -20628,6 +20772,10 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     try{const sel=window.getSelection();if(sel&&sel.removeAllRanges)sel.removeAllRanges()}catch(_e){}
     let node=button===2?null:(e.target.closest&&e.target.closest('.graph-node'));
     if(node&&isGhostNode(node))node=null;   // 浅影不参与选择／拖拽／打开
+    /* 票02：箭头在场时该节点内左键（非 Shift）按下＝拉线接管候选（未拖动仍按原点按语义收场）；先取 id 再 hoverStop */
+    const armCand=node&&button===0&&!pe.shiftKey?String(node.getAttribute('data-id')||''):'';
+    const armedPullId=armCand&&pullArmId&&pullArmId===armCand?pullArmId:'';
+    hoverStop();   // 任何按下都打断悬停计时／收箭头
     moved=false;grpStart=null;boxStart=null;dragState=null;edgeDown=null;
     if(!node){
       const t=/** @type {any} */(e.target);
@@ -20638,6 +20786,14 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
       const sid=node.getAttribute('data-id')||'';   // Shift+点＝切换选中；不进入拖拽、不打开编辑
       if(sid){if(gSel.has(sid))gSel.delete(sid);else gSel.add(sid);selSync()}
       mode=null;nidDrag=null;
+      return;
+    }
+    if(armedPullId&&node){
+      mode='pull';   // 票02：拉线态——不设 dragState／nidDrag，不触发节点拖动与推开，不进撤销栈
+      pullFrom=armedPullId;
+      sx=pe.clientX;sy=pe.clientY;
+      panClear=false;
+      try{wrap.setPointerCapture(pe.pointerId)}catch(_e){}
       return;
     }
     if(node){
@@ -20679,8 +20835,17 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     try{wrap.setPointerCapture(pe.pointerId)}catch(_e){}
   });
   wrap.addEventListener('pointermove',e=>{
-    if(!mode)return;
     const pe=(/** @type {PointerEvent} */(e));
+    if(!mode){   // 票02：静止悬停采样——箭头未出时位移超容差即重置计时；已出则随鼠标实时转向
+      if(hoverNode){
+        const ddx=pe.clientX-hoverX,ddy=pe.clientY-hoverY;
+        hoverX=pe.clientX;hoverY=pe.clientY;
+        const pw=svgPt(hoverX,hoverY);hoverWX=pw.x;hoverWY=pw.y;
+        if(hoverArrow)hoverArrowDraw(hoverNode,hoverWX,hoverWY);
+        else if(Math.abs(ddx)>GRAPH_HOVER_STILL_PX||Math.abs(ddy)>GRAPH_HOVER_STILL_PX)hoverTimerStart();
+      }
+      return;
+    }
     if(mode==='pan'){
       const dx=pe.clientX-sx,dy=pe.clientY-sy;
       if(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)moved=true;
@@ -20706,6 +20871,21 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
       const dx=pt.x-ox,dy=pt.y-oy;
       if(Math.abs(dx)>0.5||Math.abs(dy)>0.5)moved=true;
       applyDragMove(grpStart.map(s=>s.id),dx,dy);
+    }else if(mode==='pull'&&pullFrom){   // 票02：拉线态——越阈值才画橡皮筋；目标高亮随鼠标更新
+      if(!moved){
+        if(Math.abs(pe.clientX-sx)<=THRESH&&Math.abs(pe.clientY-sy)<=THRESH)return;
+        moved=true;
+        if(!pullLine){
+          pullLine=document.createElementNS('http://www.w3.org/2000/svg','line');
+          pullLine.setAttribute('class','graph-pull-line');
+          svg.appendChild(pullLine);
+        }
+      }
+      const pt=svgPt(pe.clientX,pe.clientY);
+      pullDraw(pt.x,pt.y);
+      const tg=pullTargetAt(pe.clientX,pe.clientY);
+      if(!tg)pullHighlight(null,false);
+      else pullHighlight(tg,String(tg.getAttribute('data-id')||'')===pullFrom);
     }
   });
   const endPtr=e=>{
@@ -20716,6 +20896,24 @@ let mode=null; // 'pan' | 'node' | 'nodes' | 'box'
     if(node)node.classList.remove('dragging');
     if(was==='nodes')svg.querySelectorAll('.graph-node.dragging').forEach(g=>g.classList.remove('dragging'));
     mode=null;nidDrag=null;moved=false;dragState=null;
+    if(was==='pull'){   // 票02：拉线态收场——不动坐标／选中态；hook 未挂载＝零副作用取消
+      const from=pullFrom||'';
+      const tgt=pullTargetEl;
+      const tgtId=tgt?String(tgt.getAttribute('data-id')||''):'';
+      pullFrom=null;
+      pullCleanup();
+      if(e.type==='pointercancel')return;   // 系统打断＝纯取消
+      if(!did){try{openCodexEditModal(from)}catch(_e2){}return}   // 未拖动＝原「点按打开编辑」语义保留
+      if(tgt&&tgtId&&tgtId!==from){   // 有效目标（非浅影非自身）：03 关系微浮层接管
+        if(graphPullHooks.done)graphPullHooks.done(from,tgtId);
+        return;
+      }
+      if(!tgt){   // 空白：04 空白新建接管（未挂载＝取消）
+        const pt=svgPt(pe.clientX,pe.clientY);
+        if(graphPullHooks.blank)graphPullHooks.blank(from,pt.x,pt.y);
+      }
+      return;   // 自身＝无效目标：零副作用取消
+    }
     if(was==='box'){
       const bx=boxStart;boxStart=null;panClear=false;
       if(boxRect){try{boxRect.remove()}catch(_e2){}boxRect=null}
