@@ -20900,7 +20900,9 @@ function bindGraph(){
      左键拖空白＝平移；左键点空白／Esc＝清空（票08）；拖任一选中（≥2）＝整组同位移，松手 save() 落书工程态（票01）；
      右键拖任意处＝画布平移（点中节点也只平移）；无 Shift 单节点拖＝只移该点。 */
 /** @type {string|null} */ let mode=null; // 'pan' | 'node' | 'nodes' | 'box' | 'pull'（票02 增拉线态）| 'region'（票07 增区域移动态）
-  let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
+  let sx=0,sy=0,sl0=0,st0=0;   // sx/sy＝按下屏幕坐标、sl0/st0＝起手滚动位（票08：pan Esc 回滚依据）
+  /** @type {string|null} */ let nidDrag=null;   // 票08 补注解（dragAbort 新增引用过 TS7005 基线外新增）
+  let ox=0,oy=0,moved=false;
   /** @type {{id:string,x:number,y:number}[]|null} */ let grpStart=null;
   /** @type {{x:number,y:number}|null} */ let boxStart=null;
   /** @type {SVGRectElement|null} */ let boxRect=null;
@@ -20924,9 +20926,12 @@ function bindGraph(){
   (/** @type {any} */(wrap))._gSelClear=()=>{
     if(mode==='pull'){mode=null;pullFrom=null;pullCleanup();return true}   // 票02：Esc 先收拉线（零副作用，不动多选）
     if(mode==='region'){regionAbort();return true}   // 票07：Esc 收区域移动（与拉线同层级）——整组回起手原位，不落盘不占撤销栈
+    if(mode==='node'||mode==='nodes'){dragAbort();return true}   // 票08：Esc 收节点／多选拖动——回起手原位（含推开者）、弹出途中已压撤销条目，不落盘不占栈
+    if(mode==='pan'){mode=null;wrap.scrollLeft=sl0;wrap.scrollTop=st0;moved=false;panClear=false;return true}   // 票08：Esc 收平移——回起手滚动位（sl0/st0 随画板生长已补偿，恒指原视口）；不触发松手的点空白清选
+    if(mode==='box'){mode=null;if(boxRect){try{boxRect.remove()}catch(_e){}boxRect=null}boxStart=null;moved=false;panClear=false;return true}   // 票08：Esc 收框选——收虚线框即回原状（选中态本就未动，松手不落选）
     const edge=edgeSelClear();if(!gSel.size)return edge;gSel.clear();selSync();return true};
-  /** @type {{ids:Set<string>,start:Record<string,{x:number,y:number}>,allStart:Record<string,{x:number,y:number}>,pushedUndo:boolean,lastGood:Record<string,{x:number,y:number}>|null,changed:boolean,pushedCount:number}|null} */
-  let dragState=null;
+  /** @type {{ids:Set<string>,start:Record<string,{x:number,y:number}>,allStart:Record<string,{x:number,y:number}>,pushedUndo:boolean,redoSnap:{nid:string,map:Record<string,{x:number,y:number}>}[],lastGood:Record<string,{x:number,y:number}>|null,changed:boolean,pushedCount:number}|null} */
+  let dragState=null;   // 票08 增 redoSnap：起手时刻 redo 栈快照——拖拽 Esc 中止弹出途中 undo 条目时一并还原（graphUndoPush 压栈顺带清空了 redo）
   const nodeRadius=(/** @type {string} */ id)=>{
     const g=nodeOf(id);
     const r=g?Number(g.getAttribute('data-r')):NaN;
@@ -21175,6 +21180,24 @@ function bindGraph(){
     regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;
     moved=false;panClear=false;mode=null;
   };
+  /* 票08：节点／多选拖动 Esc 中止——回起手原状、不落盘不占撤销栈。
+     坐标回放＝起手全量布局快照 allStart（含「拖动推开」开启时途中被推开的节点，非仅 st.start 拖动者）；
+     applyDragMove 在首移时已压过一条撤销（pushedUndo），中止须弹出才不占栈——栈顶 map 与 allStart 同引用才弹
+     （防御：拖拽中途他人（如工具栏）再压过条目时不误弹），graphUndoPush 顺带清空的 redo 用起手快照一并回原状。
+     松手点按语义（未拖＝打开编辑）不在此路：Esc 已消费手势，随后的 pointerup 因 mode=null 在 endPtr 首行早退。 */
+  const dragAbort=()=>{
+    const st=dragState;
+    if(st){
+      if(st.pushedUndo){
+        const top=_graphUndoStack[_graphUndoStack.length-1];
+        if(top&&top.map===st.allStart)_graphUndoStack.pop();
+        _graphRedoStack=st.redoSnap.slice();
+      }
+      for(const id of Object.keys(st.allStart)){const o=st.allStart[id];moveNode(id,o.x,o.y)}
+    }
+    svg.querySelectorAll('.graph-node.dragging').forEach(g=>g.classList.remove('dragging'));   // 毯式清 dragging（含 node/nodes 两态起手挂的，与本 svg 内所有来源）
+    mode=null;nidDrag=null;grpStart=null;dragState=null;moved=false;panClear=false;
+  };
   wrap.addEventListener('pointerover',e=>{
     const pe=(/** @type {PointerEvent} */(e));
     if(mode)return;   // 拖拽／拉线态不启停悬停（指针捕获期间浏览器也不再派发跨界事件）
@@ -21245,15 +21268,15 @@ function bindGraph(){
         /** @type {Record<string,{x:number,y:number}>} */
         const start={};
         for(const s of grpStart)start[s.id]={x:s.x,y:s.y};
-        dragState={ids:new Set(grpStart.map(s=>s.id)),start,allStart:graphLayoutSnap(nid),pushedUndo:false,lastGood:null,changed:false,pushedCount:0};
+        dragState={ids:new Set(grpStart.map(s=>s.id)),start,allStart:graphLayoutSnap(nid),pushedUndo:false,redoSnap:_graphRedoStack.slice(),lastGood:null,changed:false,pushedCount:0};
       }else{
         mode='node';
         const pt=svgPt(pe.clientX,pe.clientY);
-        const p=pos[nidDrag]||{x:pt.x,y:pt.y};
+        const dragId=String(nidDrag||'');   // 票08：提前取（nidDrag 补注解后此处不再作索引用，TS2538 根因修）
+        const p=pos[dragId]||{x:pt.x,y:pt.y};
         ox=pt.x-p.x;oy=pt.y-p.y;
         node.classList.add('dragging');
-        const dragId=String(nidDrag||'');
-        dragState={ids:new Set([dragId]),start:{[dragId]:{x:p.x,y:p.y}},allStart:graphLayoutSnap(nid),pushedUndo:false,lastGood:null,changed:false,pushedCount:0};
+        dragState={ids:new Set([dragId]),start:{[dragId]:{x:p.x,y:p.y}},allStart:graphLayoutSnap(nid),pushedUndo:false,redoSnap:_graphRedoStack.slice(),lastGood:null,changed:false,pushedCount:0};
       }
     }else if(button===0&&pe.shiftKey&&(pe.ctrlKey||pe.metaKey)&&!edgeDown){
       mode='region';   // 票07：Ctrl+Shift＋左键空白＝区域移动划框（点在边上不算空白，维持既有边选中口径）
