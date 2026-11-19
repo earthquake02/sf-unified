@@ -20276,7 +20276,7 @@ function vGraph(){
   <button type="button" class="btn sm" data-act="graph-scene-jump" ${gSid?'':'disabled '}title="${gSid?('跳转到写作页该'+unitLabel()):('请先选择'+unitLabel())}">跳转</button></div></div>
   <p class="pd">节点半径按全书提及次数计算，约 310 次封顶到半径 45，与追踪态无关；打开次要后次要只更淡、不另缩。关掉「显示次要设定」后，已有坐标的次要留下浅影占位（同等体积，不能拖、不进框选、点击不打开）；再打开时只把重叠的次要错开到附近空位，主要设定不动。可勾选「拖动时推开其他设定」。画布按内容延伸，拖到边缘会扩展世界，不会把节点切在边上。滚轮缩放 10%–400%；关系图谱内 Ctrl+Z／Ctrl+Y 撤销或重做布局。右键拖任意处平移画面（右键点中节点也只平移）；左键拖空白＝平移、Shift+左键拖空白＝框选、Shift+点＝加减选中、拖任一选中＝整组移动、点空白／Esc＝清空选中；左键挪动未选中节点＝只移该点；点击节点＝编辑条目。</p>
   ${allEntries.length?`<div class="graph-shell">${(entries.length||ghosts.length)?`<div class="graph-wrap" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>`:`<div class="empty">没有可显示的设定。「从不包含」不会出现在关系图谱；要查看「检测到时不包含」的设定，请勾选「显示次要设定」。</div>`}
-  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" name="graphShowNotes" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" name="graphShowMentions" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" name="graphShowMinor" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="打开后，拖动设定会把碰到的其他可见设定或浅影沿接触方向推开；关闭后不能重叠，自己被挡住或找空位"><input type="checkbox" name="graphPushOthers" data-act="graph-toggle-push" ${pushOthers?'checked':''}> 拖动时推开其他设定</label><button type="button" class="btn sm" data-act="graph-spread-overlaps" ${canSpread?'':'disabled '}title="${canSpread?'只把重叠的次要错开到附近空位，主要设定不动':'显示次要设定后，若仍有重叠可点'}">散开重叠</button><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" name="graphShowCo" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0">缩放 ${Math.round(scale*100)}%</span></div></div>
+  <div class="graph-tools"><input type="text" id="graphSearch" class="graph-search" placeholder="搜索名称／别名／标签" aria-label="搜索节点（名称／别名／标签）" title="按名称／别名／标签片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复" value="${esc(S.ui.graphQ||'')}"><span id="graphSearchStat" class="hint" style="margin:0" aria-live="polite"></span><label><input type="checkbox" name="graphShowNotes" data-act="graph-toggle-notes" ${showNotes?'checked':''}> 显示关联注释</label><label><input type="checkbox" name="graphShowMentions" data-act="graph-toggle-mentions" ${showMentions?'checked':''}> 显示提及次数</label><label title="显示追踪为“检测到时不包含”的设定"><input type="checkbox" name="graphShowMinor" data-act="graph-toggle-minor" ${showMinor?'checked':''}> 显示次要设定</label><label title="打开后，拖动设定会把碰到的其他可见设定或浅影沿接触方向推开；关闭后不能重叠，自己被挡住或找空位"><input type="checkbox" name="graphPushOthers" data-act="graph-toggle-push" ${pushOthers?'checked':''}> 拖动时推开其他设定</label><button type="button" class="btn sm" data-act="graph-spread-overlaps" ${canSpread?'':'disabled '}title="${canSpread?'只把重叠的次要错开到附近空位，主要设定不动':'显示次要设定后，若仍有重叠可点'}">散开重叠</button><label title="${coNeedScene?'需先选择'+unitLabel():''}"><input type="checkbox" name="graphShowCo" data-act="graph-toggle-co" ${showCo?'checked':''}> 显示同${unitLabel()}共现${coNeedScene?'<span class="co-hint">需先选择'+unitLabel()+'</span>':''}</label><span class="hint" style="margin:0" id="graphScaleLbl">缩放 ${Math.round(scale*100)}%</span><button type="button" class="btn sm" id="graphFitBtn" ${(entries.length||ghosts.length)?'':'disabled '}title="按全部可见设定＋浅影的已保存坐标缩放平移到一屏全览（留边距，10%–400%）；再点一次回到 100%">适配</button></div></div>
   <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
     <span class="hint"><span style="color:var(--ac)">→</span> 归属／下属 ${hierN} 条</span>
     <span class="hint"><span style="color:var(--ac2)">┆</span> 平级关联 ${linkN} 条</span>
@@ -20655,7 +20655,7 @@ function bindGraph(){
   }else if(S.ui._graphHlId){
     const hid=String(S.ui._graphHlId||'');S.ui._graphHlId=null;if(hid)(/** @type {any} */(wrap))._graphFocus(hid);
   }
-  const scaleLbl=()=>{const el=document.querySelector('.graph-tools .hint');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};
+  const scaleLbl=()=>{const el=document.getElementById('graphScaleLbl');if(el)el.textContent='缩放 '+Math.round(scale*100)+'%'};   // 票06：改按 id 定位——原 .graph-tools .hint 首个命中是搜索统计 graphSearchStat，滚轮缩放会写错元素
   const canvas=wrap.querySelector('.graph-canvas')||svg.parentElement;
   /** @param {{originX:number,originY:number,W:number,H:number}} b @param {{x?:number,y?:number}=} scrollShift */
   const adoptBoard=(b,scrollShift)=>{
@@ -20686,6 +20686,53 @@ function bindGraph(){
       y:originY+(clientY-rect.top+wrap.scrollTop)/scale
     };
   };
+  /* 票06 适配全图：工具栏独立「适配」按钮——按可见节点＋浅影的已保存坐标取包围盒（pos＝relGraphOf().positions，
+     graphComputePos 渲染时已把缺档坐标回写、浅影按构造必有档），缩放平移到留边距的一屏全览，钳制 10%–400%；
+     再点一次回 100%（以视口中心为锚）。纯视图操作：不产生选中态、不写撤销栈、不落盘（缩放仍走 graphScaleSet
+     既有 UI_KEY 持久化，维持现状）；画板先按目标视野扩边（参照 graphBoardFillView 的包住口径）再设滚动，不被钳。 */
+  let fitOn=false;
+  const fitBtn=/** @type {HTMLButtonElement|null} */(document.getElementById('graphFitBtn'));
+  if(fitBtn)fitBtn.addEventListener('click',()=>{
+    const vw=wrap.clientWidth,vh=wrap.clientHeight;
+    if(!vw||!vh||fitBtn.disabled)return;
+    if(fitOn){
+      fitOn=false;
+      const cx=originX+(wrap.scrollLeft+vw/2)/scale,cy=originY+(wrap.scrollTop+vh/2)/scale;
+      const r1=graphBoardGrowTo({originX,originY,W:BW,H:BH},cx-vw/2,cy-vh/2);
+      const r2=graphBoardGrowTo(r1,cx+vw/2,cy+vh/2);   // 100% 目标视野同样先包住再滚：负原点下 applyScale 锚定有固有偏差，直接精设滚动才精确
+      if(r1.grown||r2.grown)adoptBoard(r2);
+      applyScale(1);
+      wrap.scrollLeft=Math.max(0,cx-vw/2-originX);
+      wrap.scrollTop=Math.max(0,cy-vh/2-originY);
+      if(hoverNode&&hoverArrow)hoverArrowDraw(hoverNode,hoverWX,hoverWY);   // 票02：与滚轮同口径重画在场箭头，绝不新建
+      return;
+    }
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,any=false;
+    svg.querySelectorAll('.graph-node').forEach(g=>{
+      const p=graphPosXY(pos,g.getAttribute('data-id')||'');
+      if(!p)return;
+      const r=Number(g.getAttribute('data-r'))||14;
+      const lab=g.classList.contains('ghost')?4:18;   // 浅影只有圆；可见节点上留提及数、下留名称标签余量
+      any=true;
+      if(p.x-r-4<minX)minX=p.x-r-4;
+      if(p.y-r-lab<minY)minY=p.y-r-lab;
+      if(p.x+r+4>maxX)maxX=p.x+r+4;
+      if(p.y+r+lab>maxY)maxY=p.y+r+lab;
+    });
+    if(!any)return;   // 空图（无可见节点＋浅影）：无动作不报错（按钮模板已禁用，双保险）
+    const M=48;   // 每侧留边（CSS px）
+    const availW=Math.max(60,vw-2*M),availH=Math.max(60,vh-2*M);
+    const s=Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,Math.min(availW/Math.max(1,maxX-minX),availH/Math.max(1,maxY-minY))));
+    const tlx=(minX+maxX)/2-vw/(2*s),tly=(minY+maxY)/2-vh/(2*s);
+    const g1=graphBoardGrowTo({originX,originY,W:BW,H:BH},tlx,tly);
+    const g2=graphBoardGrowTo(g1,tlx+vw/s,tly+vh/s);   // g2 链在 g1 之上；grown 只对各自输入计，两次取或
+    if(g1.grown||g2.grown)adoptBoard(g2);
+    applyScale(s);
+    wrap.scrollLeft=Math.max(0,(tlx-originX)*s);
+    wrap.scrollTop=Math.max(0,(tly-originY)*s);
+    fitOn=true;
+    if(hoverNode&&hoverArrow)hoverArrowDraw(hoverNode,hoverWX,hoverWY);   // 票02：缩放后按新 scale 重画在场箭头（与滚轮同口径，绝不新建）
+  });
   const panBy=(/** @type {number} */ dx,/** @type {number} */ dy)=>{
     let nl=sl0-dx,nt=st0-dy;
     const g=graphBoardGrowForPan({originX,originY,W:BW,H:BH},{scrollLeft:nl,scrollTop:nt,clientWidth:wrap.clientWidth,clientHeight:wrap.clientHeight,scale});
