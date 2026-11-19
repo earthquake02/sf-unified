@@ -665,6 +665,7 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-tools .btn:hover{border-color:var(--ac);color:var(--ac)}
 .graph-tools .btn:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--tx3)}
 .graph-marquee{fill:color-mix(in srgb, var(--ac) 10%, transparent); stroke:var(--ac); stroke-width:1; stroke-dasharray:4 3; pointer-events:none}   /* 票05：框选矩形（SVG 画布坐标，随缩放） */
+.graph-region-rect{fill:color-mix(in srgb, var(--blue) 8%, transparent); stroke:var(--blue); stroke-width:1.5; pointer-events:none}   /* graph-drawio-gestures 票07：区域移动矩形（蓝实线＝整组平移意图，区别于框选的强调色虚线） */
 /* graph-drawio-gestures 票02：悬停一级拉线箭头＋拉线态橡皮筋／目标高亮（仅关系图谱加挂这些类；剧情图谱共用壳但代码不触发） */
 .graph-hover-arrow{pointer-events:none}   /* 悬停≥0.8s：节点圆周朝鼠标方位的隐约箭头（屏幕像素尺寸，不随缩放） */
 .graph-hover-arrow path{fill:var(--ac); opacity:.5}
@@ -20794,7 +20795,7 @@ function bindGraph(){
      Shift+左键拖空白＝框选（恢复旧习惯；框选替换选中，追加仍用 Shift+点）；
      左键拖空白＝平移；左键点空白／Esc＝清空（票08）；拖任一选中（≥2）＝整组同位移，松手 save() 落书工程态（票01）；
      右键拖任意处＝画布平移（点中节点也只平移）；无 Shift 单节点拖＝只移该点。 */
-/** @type {string|null} */ let mode=null; // 'pan' | 'node' | 'nodes' | 'box' | 'pull'（票02 增拉线态）
+/** @type {string|null} */ let mode=null; // 'pan' | 'node' | 'nodes' | 'box' | 'pull'（票02 增拉线态）| 'region'（票07 增区域移动态）
   let sx=0,sy=0,sl0=0,st0=0,nidDrag=null,ox=0,oy=0,moved=false;
   /** @type {{id:string,x:number,y:number}[]|null} */ let grpStart=null;
   /** @type {{x:number,y:number}|null} */ let boxStart=null;
@@ -20818,6 +20819,7 @@ function bindGraph(){
   };
   (/** @type {any} */(wrap))._gSelClear=()=>{
     if(mode==='pull'){mode=null;pullFrom=null;pullCleanup();return true}   // 票02：Esc 先收拉线（零副作用，不动多选）
+    if(mode==='region'){regionAbort();return true}   // 票07：Esc 收区域移动（与拉线同层级）——整组回起手原位，不落盘不占撤销栈
     const edge=edgeSelClear();if(!gSel.size)return edge;gSel.clear();selSync();return true};
   /** @type {{ids:Set<string>,start:Record<string,{x:number,y:number}>,allStart:Record<string,{x:number,y:number}>,pushedUndo:boolean,lastGood:Record<string,{x:number,y:number}>|null,changed:boolean,pushedCount:number}|null} */
   let dragState=null;
@@ -21044,6 +21046,31 @@ function bindGraph(){
     if(pullLine){try{pullLine.remove()}catch(_e){}pullLine=null}
     pullHighlight(null,false);
   };
+  /* graph-drawio-gestures 票07：区域移动——Ctrl+Shift＋左键空白划框，框内非浅影节点整组跟手平移。
+     平移非推挤：直接 moveNode（原位＋位移），不走 applyDragMove——途中不查占用／重叠／推开，整组相对位置恒定、框外节点绝不动。
+     浅影不参与（有已存坐标但不可交互，CONTEXT「区域移动」）：坐标保持不动。
+     框住判定＝起手快照（regionOrig＝按下时刻各节点圆心）＋并入后只增不减：矩形与节点都随指针走，按实时位置判
+     会让贴矩形边的节点反复进出集合而抖动，快照＋单调并入彻底消除（节点中途再「进出」矩形不影响已定集合）。
+     松手＝一次 save()＋压一条 graphUndoPush（快照＝起手时刻全量布局，一次 Ctrl+Z 整组回）；Esc＝回原状不落盘不占栈。 */
+  /** @type {{x:number,y:number}|null} */ let regionStart=null;   // 起手点（画布世界坐标）
+  /** @type {Record<string,{x:number,y:number}>} */ let regionOrig={};   // 起手快照：非浅影节点圆心（框住判定＋Esc 回原位依据）
+  /** @type {Set<string>} */ let regionIds=new Set();   // 已框住集合（只增不减）
+  /** @type {Record<string,{x:number,y:number}>|null} */ let regionAll=null;   // 起手全量布局快照（松手压撤销栈；Esc 不压）
+  let regionMovedAny=false;   // 是否真的平移过 ≥1 节点（松手据此决定落盘/压栈；空框＝零副作用）
+  /** @type {SVGRectElement|null} */ let regionRect=null;   // 跟随矩形 <rect class="graph-region-rect">（蓝实线，区别框选虚线）
+  /** 收拾区域移动视觉（矩形＋dragging 光标态）；不动坐标与选中态。 */
+  const regionVisClear=()=>{
+    if(regionRect){try{regionRect.remove()}catch(_e){}regionRect=null}
+    regionIds.forEach(id=>{const g=nodeOf(id);if(g)g.classList.remove('dragging')});
+  };
+  /** 票07：Esc 中止——快照内全部节点回起手原位、清视觉、复位态；不 save 不压撤销栈。
+   * @returns {void} */
+  const regionAbort=()=>{
+    for(const id of Object.keys(regionOrig)){const o=regionOrig[id];moveNode(id,o.x,o.y)}
+    regionVisClear();
+    regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;regionMovedAny=false;
+    moved=false;panClear=false;
+  };
   wrap.addEventListener('pointerover',e=>{
     const pe=(/** @type {PointerEvent} */(e));
     if(mode)return;   // 拖拽／拉线态不启停悬停（指针捕获期间浏览器也不再派发跨界事件）
@@ -21089,12 +21116,12 @@ function bindGraph(){
       const eg=(t&&t.closest)?t.closest('.graph-edge-g'):null;
       if(eg)edgeDown=/** @type {Element} */(eg);
     }
-    if(node&&button===0&&pe.shiftKey){
+    if(node&&button===0&&pe.shiftKey&&!pe.ctrlKey&&!pe.metaKey){
       const sid=node.getAttribute('data-id')||'';   // Shift+点＝切换选中；不进入拖拽、不打开编辑
       if(sid){if(gSel.has(sid))gSel.delete(sid);else gSel.add(sid);selSync()}
       mode=null;nidDrag=null;
       return;
-    }
+    }   // 票07：Ctrl+Shift 点节点不切选中——落入下方普通节点拖动（区域移动起手在节点上不生效，工单07第5条）
     if(armedPullId&&node){
       mode='pull';   // 票02：拉线态——不设 dragState／nidDrag，不触发节点拖动与推开，不进撤销栈
       pullFrom=armedPullId;
@@ -21124,8 +21151,21 @@ function bindGraph(){
         const dragId=String(nidDrag||'');
         dragState={ids:new Set([dragId]),start:{[dragId]:{x:p.x,y:p.y}},allStart:graphLayoutSnap(nid),pushedUndo:false,lastGood:null,changed:false,pushedCount:0};
       }
-    }else if(button===0&&pe.shiftKey){
-      mode='box';   // Shift+左键空白＝框选（替换选中；追加用 Shift+点）
+    }else if(button===0&&pe.shiftKey&&(pe.ctrlKey||pe.metaKey)&&!edgeDown){
+      mode='region';   // 票07：Ctrl+Shift＋左键空白＝区域移动划框（点在边上不算空白，维持既有边选中口径）
+      regionStart=svgPt(pe.clientX,pe.clientY);
+      regionOrig={};regionIds=new Set();regionMovedAny=false;regionRect=null;
+      svg.querySelectorAll('.graph-node').forEach(g=>{
+        if(isGhostNode(g))return;   // 浅影不参与区域移动：已存坐标保持不动
+        const gid=g.getAttribute('data-id')||'';if(!gid)return;
+        const o=pos[gid]||ringCenter(g);
+        if(o)regionOrig[gid]={x:o.x,y:o.y};
+      });
+      regionAll=graphLayoutSnap(nid);   // 起手全量布局快照：松手压一次撤销栈（一次 Ctrl+Z 整组回）
+      panClear=false;
+      sx=pe.clientX;sy=pe.clientY;
+    }else if(button===0&&pe.shiftKey&&!pe.ctrlKey&&!pe.metaKey){
+      mode='box';   // Shift+左键空白＝框选（替换选中；追加用 Shift+点）；票07：Ctrl 同按＝region 接管（点边除外→平移/边选中），不进框选
       boxStart=svgPt(pe.clientX,pe.clientY);
       boxAdd=false;
       panClear=false;
@@ -21165,6 +21205,24 @@ function bindGraph(){
       boxRect.setAttribute('y',String(Math.min(boxStart.y,pt.y)));
       boxRect.setAttribute('width',String(Math.abs(pt.x-boxStart.x)));
       boxRect.setAttribute('height',String(Math.abs(pt.y-boxStart.y)));
+    }else if(mode==='region'&&regionStart){
+      if(Math.abs(pe.clientX-sx)>THRESH||Math.abs(pe.clientY-sy)>THRESH)moved=true;
+      if(!moved)return;   // 未过阈值＝还没起划：零副作用（松手即取消，不清选中不开弹窗）
+      const pt=svgPt(pe.clientX,pe.clientY);
+      if(!regionRect){regionRect=document.createElementNS('http://www.w3.org/2000/svg','rect');regionRect.setAttribute('class','graph-region-rect');svg.appendChild(regionRect)}
+      regionRect.setAttribute('x',String(Math.min(regionStart.x,pt.x)));
+      regionRect.setAttribute('y',String(Math.min(regionStart.y,pt.y)));
+      regionRect.setAttribute('width',String(Math.abs(pt.x-regionStart.x)));
+      regionRect.setAttribute('height',String(Math.abs(pt.y-regionStart.y)));
+      const rx0=Math.min(regionStart.x,pt.x),rx1=Math.max(regionStart.x,pt.x);
+      const ry0=Math.min(regionStart.y,pt.y),ry1=Math.max(regionStart.y,pt.y);
+      for(const id of Object.keys(regionOrig)){   // 框住判定按起手快照；并入后只增不减（票07 注记：防贴边节点随矩形移动反复进出抖动）
+        if(regionIds.has(id))continue;
+        const o=regionOrig[id];if(!o)continue;
+        if(o.x>=rx0&&o.x<=rx1&&o.y>=ry0&&o.y<=ry1){regionIds.add(id);const g=nodeOf(id);if(g)g.classList.add('dragging')}
+      }
+      const rdx=pt.x-regionStart.x,rdy=pt.y-regionStart.y;
+      for(const id of regionIds){const o=regionOrig[id];if(!o)continue;moveNode(id,o.x+rdx,o.y+rdy);regionMovedAny=true}   // 平移非推挤：不走 applyDragMove（无占用/推开/钳制）
     }else if(mode==='node'&&nidDrag&&dragState){
       const pt=svgPt(pe.clientX,pe.clientY);
       const nx=pt.x-ox,ny=pt.y-oy;
@@ -21229,6 +21287,13 @@ function bindGraph(){
       });
       if(onGhost){toast('该设定当前隐藏，开启显示次要设定后再连');return}
       if(graphPullHooks.blank)graphPullHooks.blank(from,pt.x,pt.y);   // 空白：04 空白新建接管（未挂载＝取消）
+      return;
+    }
+    if(was==='region'){
+      const didR=regionMovedAny,allR=regionAll;   // 先取值再复位（此处 mode 已置 null，region 态只剩这些闭包变量）
+      regionVisClear();
+      regionStart=null;regionOrig={};regionIds=new Set();regionAll=null;regionMovedAny=false;
+      if(didR&&allR){graphUndoPush(nid,allR);try{save()}catch(_e2){}}   // 票07：真平移过才收——一次压栈＋一次落盘；空框/未过阈值＝零副作用。pointercancel 同收（位移已成事实则固化，与节点拖动同口径）
       return;
     }
     if(was==='box'){
