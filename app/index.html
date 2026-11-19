@@ -22236,7 +22236,7 @@ function bindPlotGraph(){
   }
   /**
    * @param {number} sc 目标缩放（钳 25%–300%）
-   * @param {number} [cx] 锚点 X（画布世界坐标；省略＝不锚定不补滚动——07 适配按钮精设滚动时用）
+   * @param {number} [cx] 锚点 X（原点相对坐标：(clientX-rect.left+scrollLeft)/scale，不含 originX/originY；省略＝不锚定不补滚动——07 适配按钮精设滚动时用）
    * @param {number} [cy] 锚点 Y（省略＝不锚定）
    */
   const applyScale=(sc,cx,cy)=>{
