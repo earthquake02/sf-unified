@@ -730,6 +730,12 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap .plot-edge.sel{stroke-width:3.2; opacity:1}
 .graph-wrap .plot-edge-g{cursor:pointer}
 .graph-wrap .plot-edge-hit{pointer-events:stroke}
+/* plot-graph-cards 03（规格 Q11/Q12）：悬停全文浮层——HTML 层贴卡片下方（fixed 定位、rAF 逐帧贴锚卡），
+   区别于 SVG 内嵌文本＝屏上固定字号不随缩放（字号/限宽由 JS 常量 PLOT_POP_* 控制）；
+   pointer-events:none＝点击穿底不跳转（跳转仍走双击／「打开写作」）、在场不挡拉线/拖点等后续手势 */
+.plot-full-pop{position:fixed; z-index:89; box-sizing:border-box; padding:8px 11px; background:var(--bg2); border:1px solid var(--ac); border-radius:10px; box-shadow:0 10px 28px rgba(0,0,0,.3); pointer-events:none; line-height:1.65; color:var(--tx2); word-break:break-all}
+.plot-full-pop .pfp-t{margin:0 0 3px; font-weight:600; color:var(--tx)}
+.plot-full-pop .pfp-i{margin:0}
 .graph-tools .btn.on{outline:2px solid var(--ac); outline-offset:1px}
 .c-rel-top{display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:12px}
 .c-rel-intro{flex:1; min-width:180px; font-size:12.5px; color:var(--tx2); line-height:1.55; margin:0}
@@ -19630,6 +19636,15 @@ const PLOT_CARD_GAP_X=48;
 const PLOT_CARD_GAP_Y=44;
 const PLOT_BOARD_PAD_X_C=Math.max(GRAPH_BOARD_PAD_X,PLOT_CARD_HW+14);
 const PLOT_BOARD_PAD_Y_C=Math.max(GRAPH_BOARD_PAD_Y,PLOT_CARD_HH+14);
+/* plot-graph-cards 03（规格 Q11/Q12）：悬停三层时序与全文浮层参数——时长/字号/限宽全部常量化，实现后可调。
+   时序链：全文浮层 0.5s（本票）＜ 拉线箭头 0.8s（04 落地挂载，时序位已预留）＜ 邻居高亮 1.5s（07 落地挂载）；
+   三档都从「静止悬停同一张卡」起算，鼠标移开＝定时器全撤＋浮层即消（bindPlotGraph 悬停链）。 */
+const PLOT_HOVER_POP_MS=500;    // 全文浮层弹出延时（本票）
+const PLOT_HOVER_ARROW_MS=800;  // 拉线箭头起手延时（04 挂载位：暂仅定档不接逻辑）
+const PLOT_HOVER_NB_MS=1500;    // 邻居高亮延时（07 挂载位：暂仅定档不接逻辑）
+const PLOT_POP_FONT_PX=13;      // 浮层屏上固定字号（世界内容随缩放、浮层不随，规格 Q11）
+const PLOT_POP_MAXW_PX=360;     // 浮层限宽（摘要 ≤200 字多行可容纳、不滚动，规格 Q12 裁定）
+const PLOT_POP_GAP_PX=8;        // 浮层与卡片上下间距
 /**
  * 关系图谱网格下限（自动铺点用；沿用原 cols／宽高公式）。
  * @param {number} n0
@@ -21784,6 +21799,75 @@ function plotCardExit(fx,fy,tx,ty,hw,hh){
   if(dy>1e-9)t=Math.min(t,hh/dy);else if(dy<-1e-9)t=Math.min(t,-hh/dy);
   return {x:fx+dx*t,y:fy+dy*t};
 }
+/* plot-graph-cards 03（规格 Q11/Q12）：悬停全文浮层——贴卡片下方的 HTML 层（避免 SVG 内嵌文本）。
+   标题＋引子完整文本＝01 plotLeafIntro 投影链命中的那一份（小节摘要→节拍首条→章梗概）；屏上固定字号
+   （PLOT_POP_FONT_PX，不随缩放）、限宽不滚动（PLOT_POP_MAXW_PX）；贴卡片下方、不跟鼠标走（rAF 逐帧
+   贴锚卡，平移/缩放/拖点跟随，下方放不下翻上方）。pointer-events:none＝点击穿底不跳转（跳转仍走双击／
+   「打开写作」）、在场不挡拉线等后续手势；锚卡脱离 DOM（重渲/切页/切书/切卷/删叶）rAF 自毁。
+   三层时序见 PLOT_HOVER_* 常量（0.5s＜0.8s＜1.5s，04/07 落地挂载）。 */
+/** @type {{el:HTMLElement,raf:number}|null} */
+let _plotFullPop=null;
+/** 收掉剧情全文浮层（幂等）：停 rAF／摘 DOM；不动任何数据、不拦任何事件。 */
+function plotFullPopClose(){
+  const p=_plotFullPop;_plotFullPop=null;
+  if(!p)return;
+  if(p.raf&&typeof cancelAnimationFrame==='function')cancelAnimationFrame(p.raf);
+  try{p.el.remove()}catch(_e){}
+}
+/**
+ * 全文浮层内容（纯函数，供冒烟直测）：标题＋引子全文；无引子＝只标题（卡片「无引子同高占位」同语言，不造哨兵文本）。
+ * @param {any} leaf 目录叶（plotVisibleLeaves 投影）
+ * @returns {string} 浮层 innerHTML
+ */
+function plotFullPopHTML(leaf){
+  const title=String(leaf&&leaf.title||'').replace(/[\r\n\t]+/g,' ').replace(/\s{2,}/g,' ').trim()||'（未命名）';
+  const intro=plotLeafIntro(leaf);
+  return '<p class="pfp-t">'+esc(title)+'</p>'+(intro?'<p class="pfp-i">'+esc(intro)+'</p>':'');
+}
+/**
+ * 打开全文浮层（bindPlotGraph 悬停 PLOT_HOVER_POP_MS 定时器入口）。
+ * @param {string} nid 书 id
+ * @param {string} leafId 锚卡（目录叶）id
+ * @returns {void}
+ */
+function plotFullPopOpen(nid,leafId){
+  const id=String(leafId||'');if(!nid||!id)return;
+  const leaf=plotVisibleLeaves(nid,plotCurActId(nid)).find(l=>l.id===id);
+  if(!leaf)return;
+  const wrap=/** @type {HTMLElement|null} */(document.querySelector('.graph-wrap[data-plot="1"]'));
+  const nodeEl=wrap&&wrap.querySelector('svg .graph-node[data-id="'+CSS.escape(id)+'"]');
+  if(!wrap||!nodeEl)return;
+  plotFullPopClose();   // 校验全过才收旧开新（失败开层不误伤在场浮层）
+  const pop=document.createElement('div');
+  pop.className='plot-full-pop';
+  pop.innerHTML=plotFullPopHTML(leaf);
+  pop.style.fontSize=PLOT_POP_FONT_PX+'px';   // 屏上固定字号（常量化可调）
+  pop.style.maxWidth=PLOT_POP_MAXW_PX+'px';   // 限宽：摘要 ≤200 字多行可容纳、不滚动
+  /** @type {{el:HTMLElement,raf:number}} */
+  const st={el:pop,raf:0};
+  const place=()=>{
+    const bg=nodeEl.querySelector('.plot-card-bg');
+    if(!bg){plotFullPopClose();return}
+    const r=bg.getBoundingClientRect();   // 卡片实际屏上盒＝随平移/缩放/拖点实时变，直接取渲染盒免手算变换
+    const vw=window.innerWidth||document.documentElement.clientWidth||1200,vh=window.innerHeight||document.documentElement.clientHeight||800;
+    const pw=pop.offsetWidth||PLOT_POP_MAXW_PX,ph=pop.offsetHeight||80;
+    let left=Math.max(8,Math.min(r.left+r.width/2-pw/2,vw-pw-8));   // 水平：对卡居中，钳视口
+    let top=r.bottom+PLOT_POP_GAP_PX;   // 贴卡片下方、不跟鼠标走
+    if(top+ph>vh-8)top=Math.max(8,r.top-PLOT_POP_GAP_PX-ph);   // 下方放不下翻卡片上方
+    pop.style.left=Math.round(left)+'px';pop.style.top=Math.round(top)+'px';
+  };
+  const tick=()=>{
+    if(_plotFullPop!==st)return;
+    if(pop.isConnected===false||nodeEl.isConnected===false||wrap.isConnected===false){plotFullPopClose();return}   // 重渲/切视图/删叶＝销毁
+    place();
+    if(_plotFullPop!==st)return;   // place 防御性收场（卡面元素丢失）
+    st.raf=requestAnimationFrame(tick);   // 逐帧贴卡：平移/缩放/拖点都不离位
+  };
+  _plotFullPop=st;
+  (document.body||document.documentElement).appendChild(pop);
+  place();
+  if(typeof requestAnimationFrame==='function')st.raf=requestAnimationFrame(tick);
+}
 /** 剧情图谱视图（plot-graph-cards 01 起：节点＝目录叶方形卡片，引子只读投影，ADR 0008）。 */
 function vPlotGraph(){
   const n=curNovel();if(!n)return needNovel();
@@ -22109,6 +22193,28 @@ function bindPlotGraph(){
   };
   wrap.addEventListener('pointerup',endPtr);
   wrap.addEventListener('pointercancel',endPtr);
+  /* plot-graph-cards 03（规格 Q11/Q12）：悬停三层时序链——静止悬停同一张卡起算：≥0.5s 弹全文浮层（本票，
+     PLOT_HOVER_POP_MS）；0.8s 拉线箭头（04 落地时在同一悬停链追加槽位，PLOT_HOVER_ARROW_MS 已定档）；
+     1.5s 邻居高亮（07 挂载位，PLOT_HOVER_NB_MS）。换卡/移出画布＝定时器全撤＋浮层即消；
+     浮层 pointer-events:none，在场不挡后续手势（「浮层偏移让位」＝贴卡下方留 GAP、点击穿底不跳转）。 */
+  let hovId='';
+  let hovTimer=0;
+  const hovReset=()=>{
+    if(hovTimer){clearTimeout(hovTimer);hovTimer=0}
+    hovId='';
+    plotFullPopClose();   // 幂等：未开浮层时空收无副作用
+  };
+  wrap.addEventListener('pointerover',(/** @type {PointerEvent} */ e)=>{
+    const t=/** @type {any} */(e.target);
+    const node=t&&t.closest?t.closest('.graph-node'):null;
+    const id=node?String(node.getAttribute('data-id')||''):'';
+    if(id===hovId)return;   // 卡内子元素（文字/色带/角标）间移动＝同卡不重置，时序链不被刷新打断
+    hovReset();
+    if(!id)return;   // 移到空白/边上＝悬停作废（浮层已收）
+    hovId=id;
+    hovTimer=setTimeout(()=>{hovTimer=0;if(hovId===id)plotFullPopOpen(nid,id)},PLOT_HOVER_POP_MS);
+  });
+  wrap.addEventListener('pointerleave',hovReset);   // 鼠标移开画布＝全部即消
 }
 if(!(/** @type {any} */(window))._plotLeafDragBound){
   (/** @type {any} */(window))._plotLeafDragBound=true;
