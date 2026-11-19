@@ -711,8 +711,17 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-wrap svg.nb-on .graph-edges .graph-edge-g:not(.nb-lit){opacity:var(--nb-dim)}
 .graph-wrap svg.nb-on .graph-edges .nb-lit{filter:drop-shadow(0 0 2px var(--ac2))}   /* 相连边轻描边（柔光） */
 /* plot-graph-mvp：剧情图谱（复用 .graph-shell／.graph-wrap 壳；独立数据与入口） */
-.graph-wrap .graph-node.plot-focus .graph-ring{stroke:var(--ac); stroke-width:3.6}
-.graph-wrap .graph-node.plot-focus .graph-label{fill:var(--ac); font-weight:700}
+/* plot-graph-cards 01（ADR 0008）：方形卡片——rect 主体＋左 4px 色带（章深／小节浅）＋标题/引子 tspan 切行；
+   底色随明暗主题（全部走既有 CSS 变量）；卡片与文字＝世界内容随缩放（不反补偿） */
+.graph-wrap .plot-card .plot-card-bg{fill:var(--bg2); stroke:var(--line); stroke-width:1.5}
+.graph-wrap .plot-card .plot-card-band{pointer-events:none}
+.graph-wrap .plot-card.plot-card-ch .plot-card-band{fill:var(--ac)}
+.graph-wrap .plot-card.plot-card-sc .plot-card-band{fill:color-mix(in srgb, var(--ac) 45%, var(--bg2))}
+.graph-wrap .plot-card .plot-card-title{font-size:12.5px; font-weight:600; fill:var(--tx); pointer-events:none}
+.graph-wrap .plot-card .plot-card-intro{font-size:10.5px; fill:var(--tx3); pointer-events:none}
+.graph-wrap .plot-card.plot-card-ext .plot-card-bg{stroke-dasharray:6 4}   /* 窗外叶（钉住/拖入）：虚线边框（旧圆形用强调色区分，卡片化改用描边语言） */
+.graph-wrap .graph-node.plot-focus .plot-card-bg{stroke:var(--ac); stroke-width:2.8}
+.graph-wrap .graph-node.plot-focus .plot-card-title{fill:var(--ac)}
 .graph-wrap .plot-badge{font-size:10px; font-weight:700; fill:var(--bg); stroke:none; pointer-events:none}
 .graph-wrap .plot-badge-bg{fill:var(--ac2); opacity:.92; pointer-events:none}
 .graph-wrap .plot-edge-cause{stroke:var(--ac); stroke-width:2; fill:none; opacity:.9; marker-end:url(#sfPlotCauseArrow)}
@@ -19599,6 +19608,17 @@ const GRAPH_BOARD_MIN_W=1000;
 const GRAPH_BOARD_MIN_H=560;
 const PLOT_BOARD_MIN_W=900;
 const PLOT_BOARD_MIN_H=520;
+/* plot-graph-cards 01（ADR 0008）：剧情卡片统一固定尺寸（世界单位，规格 Q10「实现可调」）。
+   标题 ≤2 行＋引子 ≤3 行截断省略、无引子同高占位；节点 data-r 语义＝半宽（旧圆半径退役）。
+   铺点步长＝卡片尺寸＋缝；画板边距取「共用边距」与「半宽高＋余量」的较大者，保证拖到边不裁卡。 */
+const PLOT_CARD_W=220;
+const PLOT_CARD_H=96;
+const PLOT_CARD_HW=110;
+const PLOT_CARD_HH=48;
+const PLOT_CARD_GAP_X=48;
+const PLOT_CARD_GAP_Y=44;
+const PLOT_BOARD_PAD_X_C=Math.max(GRAPH_BOARD_PAD_X,PLOT_CARD_HW+14);
+const PLOT_BOARD_PAD_Y_C=Math.max(GRAPH_BOARD_PAD_Y,PLOT_CARD_HH+14);
 /**
  * 关系图谱网格下限（自动铺点用；沿用原 cols／宽高公式）。
  * @param {number} n0
@@ -19610,14 +19630,22 @@ function graphGridBoardSize(n0){
   return {W:Math.max(GRAPH_BOARD_MIN_W,cols*130),H:Math.max(GRAPH_BOARD_MIN_H,Math.ceil(n/cols)*160+120),cols};
 }
 /**
- * 剧情图谱网格下限（铺点仍走 plotEnsurePositions，此处只算画板下限）。
+ * 剧情铺点列数（卡片步长网格；plotEnsurePositions 与 plotGridBoardSize 共用同一口径，避免两处漂移）。
+ * @param {number} n
+ * @returns {number}
+ */
+function plotGridCols(n){
+  return Math.max(3,Math.ceil(Math.sqrt(Math.max(1,n)*2.2)));
+}
+/**
+ * 剧情图谱网格下限（铺点仍走 plotEnsurePositions，此处只算画板下限；间距按卡片步长）。
  * @param {number} n0
  * @returns {{W:number,H:number,cols:number}}
  */
 function plotGridBoardSize(n0){
   const n=Math.max(1,n0|0);
-  const cols=Math.max(4,Math.ceil(Math.sqrt(n*1.4)));
-  return {W:Math.max(PLOT_BOARD_MIN_W,cols*180+80),H:Math.max(PLOT_BOARD_MIN_H,Math.ceil(n/cols)*120+140),cols};
+  const cols=plotGridCols(n);
+  return {W:Math.max(PLOT_BOARD_MIN_W,cols*(PLOT_CARD_W+PLOT_CARD_GAP_X)+160),H:Math.max(PLOT_BOARD_MIN_H,Math.ceil(n/cols)*(PLOT_CARD_H+PLOT_CARD_GAP_Y)+160),cols};
 }
 /**
  * @param {any} pos
@@ -21492,17 +21520,16 @@ function plotVisibleLeaves(nid,actId){
   for(const id of dragIns){const L=resolve(String(id));if(L){L.dragged=true;byId.set(L.id,L)}}
   return [...byId.values()];
 }
-/** 首次／换卷：只给尚无坐标的叶铺网格（已有坐标不重排）
+/** 首次／换卷：只给尚无坐标的叶铺网格（已有坐标不重排；步长＝卡片尺寸＋缝，plot-graph-cards 01）
  * @param {string} nid @param {any[]} leaves @returns {Record<string,{x:number,y:number}>} */
 function plotEnsurePositions(nid,leaves){
   const st=plotGraphOf(nid);
-  const n0=Math.max(1,leaves.length);
-  const cols=Math.max(4,Math.ceil(Math.sqrt(n0*1.4)));
+  const cols=plotGridCols(leaves.length);
   let added=false;
   leaves.forEach((/** @type {any} */ leaf,/** @type {number} */ i)=>{
     const p=st.positions[leaf.id];
     if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))return;
-    st.positions[leaf.id]={x:90+(i%cols)*170,y:90+Math.floor(i/cols)*110};
+    st.positions[leaf.id]={x:PLOT_CARD_HW+20+(i%cols)*(PLOT_CARD_W+PLOT_CARD_GAP_X),y:PLOT_CARD_HH+30+Math.floor(i/cols)*(PLOT_CARD_H+PLOT_CARD_GAP_Y)};
     added=true;
   });
   if(added)save();
@@ -21640,6 +21667,69 @@ function plotEdgeDel(nid,a,b,type){
   if(st.edges.length!==before){save();return true}
   return false;
 }
+/* ---------- plot-graph-cards 01（ADR 0008）：剧情卡片——引子只读投影＋卡片文字切行＋边框求交 ---------- */
+/** 剧情卡片引子＝目录叶文本的只读投影，优先级：小节摘要 → 小节节拍首条 → 章梗概（章交接记忆）→ 空。
+ *  取数走既有内存态（场景边车已并入 S.data.scenes、章 json 的 handoff 已并入 S.data.chapters），只读、不落盘。
+ * @param {any} leaf
+ * @returns {string} */
+function plotLeafIntro(leaf){
+  const flat=(/** @type {any} */ s)=>String(s==null?'':s).replace(/[\r\n\t]+/g,' ').replace(/\s{2,}/g,' ').trim();
+  if(!leaf)return '';
+  if(leaf.kind==='scene'){
+    const sc=(S.data.scenes||[]).find((/** @type {any} */ x)=>x&&x.id===leaf.sceneId);
+    if(sc){
+      const sum=flat(sc.summary);
+      if(sum)return sum;
+      const bs=Array.isArray(sc.beats)?sc.beats:/** @type {any[]} */([]);
+      const b0=bs.length?flat(bs[0]&&bs[0].text):'';
+      if(b0)return b0;
+    }
+  }
+  const ch=(S.data.chapters||[]).find((/** @type {any} */ x)=>x&&x.id===leaf.chapterId);
+  return ch&&ch.handoff?flat(ch.handoff.summary):'';
+}
+/** 卡片文字按估宽切行（CJK≈1em、ASCII≈0.55em；SVG 无自动换行，tspan 手工切行）。
+ *  超出 maxLines 时末行回退给省略号腾位后以「…」收口；返回行数组（空文本＝空数组）。
+ * @param {string} text @param {number} emPerLine 每行可容宽度（em） @param {number} maxLines
+ * @returns {string[]} */
+function plotCardWrapText(text,emPerLine,maxLines){
+  const t=String(text==null?'':text).replace(/[\r\n\t]+/g,' ').replace(/\s{2,}/g,' ').trim();
+  if(!t)return [];
+  const emW=(/** @type {string} */ ch)=>((ch.codePointAt(0)||0)>0x2E80?1:0.55);
+  const chars=[...t];
+  /** @type {string[]} */ const lines=[];
+  let i=0;
+  while(i<chars.length&&lines.length<maxLines){
+    let w=0,end=i;
+    while(end<chars.length){
+      const cw=emW(chars[end]);
+      if(w+cw>emPerLine)break;
+      w+=cw;end++;
+    }
+    if(end===i)end=i+1;   // 防御：单字符超宽也至少装一个，绝不死循环
+    if(lines.length===maxLines-1&&end<chars.length){
+      let w2=w,e2=end;   // 仍有剩余文本：末行回退给「…」（按 1em 计）腾位
+      while(e2>i&&w2+1>emPerLine){e2--;w2-=emW(chars[e2]);}
+      lines.push(chars.slice(i,e2).join('')+'…');
+    }else{
+      lines.push(chars.slice(i,end).join(''));
+    }
+    i=end;
+  }
+  return lines;
+}
+/** 边端点＝两卡片中心连线与本卡片矩形边框的最近交点（无极浮动，规格 Q9／ADR 0008）：
+ *  从 from 中心 (fx,fy) 指向 to 中心 (tx,ty)，取半宽 hw／半高 hh 的矩形边框出点；中心重合时退化为中心本身。
+ * @param {number} fx @param {number} fy @param {number} tx @param {number} ty @param {number} hw @param {number} hh
+ * @returns {{x:number,y:number}} */
+function plotCardExit(fx,fy,tx,ty,hw,hh){
+  const dx=tx-fx,dy=ty-fy;
+  let t=1;
+  if(dx>1e-9)t=Math.min(t,hw/dx);else if(dx<-1e-9)t=Math.min(t,-hw/dx);
+  if(dy>1e-9)t=Math.min(t,hh/dy);else if(dy<-1e-9)t=Math.min(t,-hh/dy);
+  return {x:fx+dx*t,y:fy+dy*t};
+}
+/** 剧情图谱视图（plot-graph-cards 01 起：节点＝目录叶方形卡片，引子只读投影，ADR 0008）。 */
 function vPlotGraph(){
   const n=curNovel();if(!n)return needNovel();
   const nid=n.id;
@@ -21650,7 +21740,7 @@ function vPlotGraph(){
   const scale=plotScaleOf(nid);
   const n0=Math.max(1,leaves.length);
   const grid=plotGridBoardSize(n0);
-  const board=graphBoardFromPos(leaves,pos,{minW:grid.W,minH:grid.H});
+  const board=graphBoardFromPos(leaves,pos,{minW:grid.W,minH:grid.H,padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});   // plot-graph-cards 01：边距包住整卡（半宽高＋余量），不被 viewBox 裁切
   const W=board.W,H=board.H,originX=board.originX,originY=board.originY;
   const dW=Math.round(W*scale),dH=Math.round(H*scale);
   const focusId=S.ui._plotFocusId?String(S.ui._plotFocusId):'';
@@ -21663,12 +21753,15 @@ function vPlotGraph(){
   const svgEdges=(st.edges||[]).map((/** @type {any} */ ed)=>{
     const a=pos[ed.a],b=pos[ed.b];
     if(!a||!b)return '';
+    /* plot-graph-cards 01（规格 Q9）：端点＝中心连线与两卡片边框的最近交点，箭头贴卡片边；透明命中线同端点 */
+    const ea=plotCardExit(a.x,a.y,b.x,b.y,PLOT_CARD_HW,PLOT_CARD_HH);
+    const eb=plotCardExit(b.x,b.y,a.x,a.y,PLOT_CARD_HW,PLOT_CARD_HH);
     const both=vis.has(ed.a)&&vis.has(ed.b);
     const cls=ed.type==='relate'?'plot-edge plot-edge-relate':'plot-edge plot-edge-cause';
     const dim=both?'':' dim';
     return `<g class="plot-edge-g" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}">
-      <line class="${cls}${dim}" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>
-      <line class="plot-edge-hit" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="16" fill="none"/>
+      <line class="${cls}${dim}" data-a="${esc(ed.a)}" data-b="${esc(ed.b)}" data-etype="${ed.type==='relate'?'relate':'cause'}" x1="${ea.x}" y1="${ea.y}" x2="${eb.x}" y2="${eb.y}"/>
+      <line class="plot-edge-hit" x1="${ea.x}" y1="${ea.y}" x2="${eb.x}" y2="${eb.y}" stroke="transparent" stroke-width="16" fill="none"/>
     </g>`;
   }).join('');
   /* 票03 角标；01 先按窗内目录序算好，画布上可先不显数字到 03——为减跳变，01 即画角标 */
@@ -21678,16 +21771,21 @@ function vPlotGraph(){
   leaves.filter(l=>l.external).forEach(l=>{if(!ordMap.has(l.id))ordMap.set(l.id,++extOrd)});
   const svgNodes=leaves.map(leaf=>{
     const p=pos[leaf.id]||{x:80,y:80};
-    const r=leaf.kind==='chapter'?18:15;
-    const col=leaf.external?'var(--ac2)':'var(--ac)';
     const focused=focusId&&focusId===leaf.id;
     const badgeN=ordMap.get(leaf.id)||0;
-    const bx=p.x+r-2,by=p.y-r+2;
-    const badge=badgeN?`<circle class="plot-badge-bg" cx="${bx}" cy="${by}" r="9"/><text class="plot-badge" x="${bx}" y="${by+3.5}" text-anchor="middle">${badgeN}</text>`:'';
-    const pinMark=leaf.pinned?`<text x="${p.x-r-2}" y="${p.y-r+4}" font-size="11" fill="var(--warn)" pointer-events="none">📌</text>`:'';
-    return `<g class="graph-node${focused?' plot-focus':''}" data-id="${esc(leaf.id)}" data-kind="${leaf.kind}" data-r="${r}">
-      <circle class="graph-ring" cx="${p.x}" cy="${p.y}" r="${r}" fill="${col}22" stroke="${col}" stroke-width="2"/>
-      <text class="graph-label" x="${p.x}" y="${p.y+r+14}" text-anchor="middle" font-size="11" fill="var(--tx2)" pointer-events="none">${esc(leaf.title)}</text>
+    /* plot-graph-cards 01（规格 Q1/Q10/Q11/Q13）：统一固定卡片，全部子元素以卡中心为原点、g 上 translate 定位——
+       拖动只改 transform；标题 ≤2 行、引子 ≤3 行（无引子同高占位＝行槽固定不回流）；文字＝世界内容随缩放 */
+    const titleLines=plotCardWrapText(leaf.title,15.5,2);
+    const introLines=plotCardWrapText(plotLeafIntro(leaf),18.5,3);
+    const tsp=(/** @type {string[]} */ ls,/** @type {number} */ y0,/** @type {number} */ lh)=>ls.map((/** @type {string} */ s,/** @type {number} */ i)=>`<tspan x="${-PLOT_CARD_HW+14}" y="${y0+i*lh}">${esc(s)}</tspan>`).join('');
+    const bx=-PLOT_CARD_HW,by=-PLOT_CARD_HH;   // 角标骑卡左上角（规格 Q13：角标左上）
+    const badge=badgeN?`<circle class="plot-badge-bg" cx="${bx}" cy="${by}" r="9.5"/><text class="plot-badge" x="${bx}" y="${by+3.5}" text-anchor="middle">${badgeN}</text>`:'';
+    const pinMark=leaf.pinned?`<text class="plot-pin" x="${PLOT_CARD_HW-10}" y="${-PLOT_CARD_HH+15}" text-anchor="end" font-size="11" fill="var(--warn)" pointer-events="none">📌</text>`:'';
+    return `<g class="graph-node plot-card${leaf.kind==='chapter'?' plot-card-ch':' plot-card-sc'}${leaf.external?' plot-card-ext':''}${focused?' plot-focus':''}" data-id="${esc(leaf.id)}" data-kind="${leaf.kind}" data-r="${PLOT_CARD_HW}" data-rh="${PLOT_CARD_HH}" transform="translate(${p.x},${p.y})">
+      <rect class="plot-card-bg" x="${-PLOT_CARD_HW}" y="${-PLOT_CARD_HH}" width="${PLOT_CARD_W}" height="${PLOT_CARD_H}" rx="7"/>
+      <rect class="plot-card-band" x="${-PLOT_CARD_HW}" y="${-PLOT_CARD_HH+2}" width="4" height="${PLOT_CARD_H-4}"/>
+      <text class="plot-card-title">${tsp(titleLines,-25,16)}</text>
+      <text class="plot-card-intro">${tsp(introLines,7,14)}</text>
       ${badge}${pinMark}
     </g>`;
   }).join('');
@@ -21763,22 +21861,21 @@ function bindPlotGraph(){
   const moveNode=(/** @type {string} */ id,/** @type {number} */ x,/** @type {number} */ y)=>{
     const p=pos[id]||(pos[id]={x,y});
     p.x=x;p.y=y;
-    const grown=graphBoardGrowTo({originX,originY,W:BW,H:BH},p.x,p.y);
+    const grown=graphBoardGrowTo({originX,originY,W:BW,H:BH},p.x,p.y,{padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});   // plot-graph-cards 01：扩板包住整卡
     if(grown.grown)adoptBoard(grown,{x:grown.shiftX,y:grown.shiftY});
     const g=nodeOf(id);if(!g)return;
-    const r=Number(g.getAttribute('data-r'))||15;
-    const c=g.querySelector('circle.graph-ring');
-    if(c){c.setAttribute('cx',String(p.x));c.setAttribute('cy',String(p.y))}
-    const lab=g.querySelector('text.graph-label');
-    if(lab){lab.setAttribute('x',String(p.x));lab.setAttribute('y',String(p.y+r+14))}
-    const badgeBg=g.querySelector('circle.plot-badge-bg');
-    const badgeTx=g.querySelector('text.plot-badge');
-    const bx=p.x+r-2,by=p.y-r+2;
-    if(badgeBg){badgeBg.setAttribute('cx',String(bx));badgeBg.setAttribute('cy',String(by))}
-    if(badgeTx){badgeTx.setAttribute('x',String(bx));badgeTx.setAttribute('y',String(by+3.5))}
-    /* 同步相连边端点（票02） */
-    svg.querySelectorAll('.graph-edges .plot-edge-g[data-a="'+CSS.escape(id)+'"] line').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x1',String(p.x));ln.setAttribute('y1',String(p.y))});
-    svg.querySelectorAll('.graph-edges .plot-edge-g[data-b="'+CSS.escape(id)+'"] line').forEach((/** @type {any} */ ln)=>{ln.setAttribute('x2',String(p.x));ln.setAttribute('y2',String(p.y))});
+    g.setAttribute('transform','translate('+p.x+','+p.y+')');   // 卡片子元素全部以卡中心为原点，只改 g 变换即整体随动（角标/钉标/文字零逐个同步）
+    /* 同步相连边端点（票02；plot-graph-cards 01：两端按「中心连线×卡片边框最近交点」重算） */
+    svg.querySelectorAll('.graph-edges .plot-edge-g[data-a="'+CSS.escape(id)+'"],.graph-edges .plot-edge-g[data-b="'+CSS.escape(id)+'"]').forEach((/** @type {any} */ eg)=>{
+      const a=pos[eg.getAttribute('data-a')||''],b=pos[eg.getAttribute('data-b')||''];
+      if(!a||!b)return;
+      const ea=plotCardExit(a.x,a.y,b.x,b.y,PLOT_CARD_HW,PLOT_CARD_HH);
+      const eb=plotCardExit(b.x,b.y,a.x,a.y,PLOT_CARD_HW,PLOT_CARD_HH);
+      eg.querySelectorAll('line').forEach((/** @type {any} */ ln)=>{
+        ln.setAttribute('x1',String(ea.x));ln.setAttribute('y1',String(ea.y));
+        ln.setAttribute('x2',String(eb.x));ln.setAttribute('y2',String(eb.y));
+      });
+    });
   };
   const setFocus=(/** @type {string} */ id)=>{
     S.ui._plotFocusId=id||null;
