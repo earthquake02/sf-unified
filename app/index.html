@@ -20500,6 +20500,51 @@ function graphRelPopOpen(from,to){
   setTimeout(()=>{if(_graphRelPop===st&&noteIn){try{noteIn.focus()}catch(_e3){}}},0);
 }
 graphPullHooks.done=(from,to)=>{graphRelPopOpen(from,to)};
+/* graph-drawio-gestures 票04：空白快建——双击空白／拉线松手空白共用入口（挂 graphPullHooks.blank）。
+   打开既有新建设定草稿弹窗（openCodexCreateDraft）并记住触发世界坐标：草稿首次物化（codexLiveFlush 新建分支
+   →graphCreatePlace）时落点写入该书布局 relGraphOf().positions，随同一次 save() 落盘 关系图谱.json；
+   未物化（空开空关／只读拦下）关闭＝零副作用。拉线场景（from 非空）物化关闭后自动追加关系微浮层
+   （方向＝起点→新词条，graphRelPopOpen）；此时 Esc／点空白只取消关系，词条保留（创建已在弹窗中确认过）。 */
+/** @type {{x:number,y:number,from:string,nid:string,createdId:string}|null} */
+let _graphCreateAt=null;
+/**
+ * 空白快建入口（graphPullHooks.blank 挂载；from 空串＝双击空白，非空＝拉线松手空白）。
+ * @param {string} from 拉线起点节点 id（空串＝双击空白入口）
+ * @param {number} x 触发点（画布世界坐标 x）
+ * @param {number} y 触发点（画布世界坐标 y）
+ * @returns {void}
+ */
+function graphBlankCreateOpen(from,x,y){
+  if(!S||!S.ui||!S.ui.novelId||S.ui.view!=='graph')return;
+  const mr=document.getElementById('modalRoot');
+  if(mr&&mr.classList.contains('show'))return;   // 已有弹窗在场不叠加
+  if(roReason()){roToast();return}
+  _graphCreateAt={x,y,from:String(from||''),nid:S.ui.novelId,createdId:''};
+  openCodexCreateDraft({type:'other'});   // 与设定集「＋ 新条目」同款空白草稿（预填仅类型，用户输入才物化）
+}
+graphPullHooks.blank=(from,x,y)=>{graphBlankCreateOpen(from,x,y)};
+/**
+ * 票04：草稿首次物化回调（codexLiveFlush 新建分支挂）——落点写入该书布局（graphComputePos 对已存
+ * 坐标原样采用，节点即落在触发点），随 codexLiveFlush 同次 save() 落盘；非图谱空白快建挂起＝零作用。
+ * @param {string} id 新词条 id
+ * @returns {void}
+ */
+function graphCreatePlace(id){
+  const st=_graphCreateAt;
+  if(!st||st.createdId||!S||!S.ui||S.ui.novelId!==st.nid)return;
+  st.createdId=id;
+  relGraphOf(st.nid).positions[id]={x:st.x,y:st.y};
+}
+/** 票04：关窗收尾（closeModal 末尾 setTimeout 调用，待 codex-rel-graph 等关窗后跳转/重渲完成再弹浮层）——
+    未物化＝仅清挂起零副作用；拉线场景自动追加关系微浮层（起点→新词条）。 */
+function graphCreateFinish(){
+  const st=_graphCreateAt;
+  if(!st)return;
+  _graphCreateAt=null;
+  if(!st.createdId)return;
+  if(!S||!S.ui||S.ui.novelId!==st.nid||S.ui.view!=='graph')return;
+  if(st.from)graphRelPopOpen(st.from,st.createdId);
+}
 /** 关系图谱画布交互绑定（渲染后一次性）：搜索高亮、缩放、多选、节点拖动／推开、
  *  票02 增补静止悬停一级拉线箭头与拉线态（mode='pull'）；剧情图谱走 bindPlotGraph 独立绑定，互不影响。 */
 function bindGraph(){
@@ -21094,6 +21139,22 @@ function bindGraph(){
     }
     if(was==='pan'&&!did&&panClear){
       panClear=false;
+      /* 票04：双击空白＝空白快建（剧情图谱 pointerup pe.detail>=2 同思路，与 pointer 流天然共存：
+         单击平移/清选中不受影响，未拖动＝零平移副作用）。点在边上（edgeDown 非空）＝既有选中边，不算空白；
+         浅影 pointer-events:none 穿透探不到，沿用票03 松手浅影的几何命中判定——落在浅影上不算空白。 */
+      if(pe.detail>=2&&!edgeDown){
+        const pt=svgPt(pe.clientX,pe.clientY);
+        let onGhost=false;
+        svg.querySelectorAll('.graph-node.ghost').forEach(g=>{
+          if(onGhost)return;
+          const c=ringCenter(g);if(!c)return;
+          const r=Number(g.getAttribute('data-r'))||0;
+          const dx=pt.x-c.x,dy=pt.y-c.y;
+          if(dx*dx+dy*dy<=r*r)onGhost=true;
+        });
+        if(!onGhost&&graphPullHooks.blank)graphPullHooks.blank('',pt.x,pt.y);   // 与拉线松手空白共用入口（from 空＝非拉线场景）
+        return;
+      }
       gSel.clear();selSync();
       edgeSelSet(edgeDown);
       edgeDown=null;
@@ -23040,6 +23101,7 @@ function codexLiveFlush(sync){
     const root=$('#modalRoot'); if(root)root.dataset.codexLiveId=made.id;
     const h2=root&&root.querySelector('.modal>h2'); if(h2)h2.textContent='编辑设定：'+made.name;
     try{codexRelRefresh()}catch(_e){}
+    try{graphCreatePlace(made.id)}catch(_e2){}   // 票04：图谱空白快建挂起中＝落点写入该书布局（随本次 save() 落盘）；未挂起＝零作用
   }else{
     const tgt=S.data.codexEntries.find(x=>x.id===_codexLiveId&&x.novelId===nid&&!isSharedEntry(x));
     if(!tgt){_codexLiveDirty=false;return false}
@@ -25323,7 +25385,7 @@ function openModal(html,onOpen,opt){selBarHide();const r=$('#modalRoot');r.inner
   r.onclick=e=>{if(e.target!==r||!r.classList.contains('show'))return;if(r._sfGuard)void modalAskClose();else closeModal()};
   if(typeof onOpen==='function')try{onOpen()}catch(e){}
 }
-function closeModal(){const _wasCodex=!!$('#c-name');try{codexLiveFlush(true)}catch(_e){}codexLiveClear();$('#modalRoot').classList.remove('show');$('#modalRoot').innerHTML='';S.ui.orgCandidate=null;S.ui._fixCand=null;S.ui._imp=null;S.ui._skillEdit=null;S.ui._entryFig=null;S.ui._charCand=null;S.ui._charSrc=null;S.ui._charPending=null;S.ui._charPick=null;S.ui._charMode=null;S.ui._charRunAsk=null;S.ui._charTypes=null;S.ui._coverStaging='';S.ui._packImp=null;S.ui._cxPackImp=null;S.ui._styCand=null;if(S.ui._hoAbort){S.ui._hoAbort.abort();S.ui._hoAbort=null}if(S.ui._fxAbort){S.ui._fxAbort.abort();S.ui._fxAbort=null}if(S.ui._cxAbort){S.ui._cxAbort.abort();S.ui._cxAbort=null}if(S.ui._styAbort){S.ui._styAbort.abort();S.ui._styAbort=null}wxSplitFz=null;selCodexFz=null;if(_wasCodex)render()}   // 票49：关窗=弃设定包导入预检计划（取消零写入）；外观票04：关窗=弃条目配图暂存（保存才落库）；E：关窗=真放弃交接记忆生成（S10 核验 M6）；S13：关窗=放弃修订候选并中止生成；S14：关窗=放弃导入（零写入）；S15：关窗=放弃角色提取（候选与外发源一并清零，零提交）；票04：关窗清提取范围与分段档（_charPick/_charMode/_charRunAsk，不按书记忆）；S19：关窗=弃封面暂存（保存才落库）；S20：关窗=弃整包暂存（零写入）；S21：关窗=弃画像候选并中止学习（确认前零生效）；票08：关窗=弃拆分切点冻结（取消零写入）；票37：关窗=弃「建设定」冻结态（取消零写入）
+function closeModal(){const _wasCodex=!!$('#c-name');try{codexLiveFlush(true)}catch(_e){}codexLiveClear();$('#modalRoot').classList.remove('show');$('#modalRoot').innerHTML='';S.ui.orgCandidate=null;S.ui._fixCand=null;S.ui._imp=null;S.ui._skillEdit=null;S.ui._entryFig=null;S.ui._charCand=null;S.ui._charSrc=null;S.ui._charPending=null;S.ui._charPick=null;S.ui._charMode=null;S.ui._charRunAsk=null;S.ui._charTypes=null;S.ui._coverStaging='';S.ui._packImp=null;S.ui._cxPackImp=null;S.ui._styCand=null;if(S.ui._hoAbort){S.ui._hoAbort.abort();S.ui._hoAbort=null}if(S.ui._fxAbort){S.ui._fxAbort.abort();S.ui._fxAbort=null}if(S.ui._cxAbort){S.ui._cxAbort.abort();S.ui._cxAbort=null}if(S.ui._styAbort){S.ui._styAbort.abort();S.ui._styAbort=null}wxSplitFz=null;selCodexFz=null;if(_wasCodex)render();setTimeout(graphCreateFinish,0)}   // 票04：关窗收图谱空白快建挂起（未物化＝零副作用清挂起；拉线场景延时弹关系微浮层，待 codex-rel-graph 关窗跳转/重渲先完成）；票49：关窗=弃设定包导入预检计划（取消零写入）；外观票04：关窗=弃条目配图暂存（保存才落库）；E：关窗=真放弃交接记忆生成（S10 核验 M6）；S13：关窗=放弃修订候选并中止生成；S14：关窗=放弃导入（零写入）；S15：关窗=放弃角色提取（候选与外发源一并清零，零提交）；票04：关窗清提取范围与分段档（_charPick/_charMode/_charRunAsk，不按书记忆）；S19：关窗=弃封面暂存（保存才落库）；S20：关窗=弃整包暂存（零写入）；S21：关窗=弃画像候选并中止学习（确认前零生效）；票08：关窗=弃拆分切点冻结（取消零写入）；票37：关窗=弃「建设定」冻结态（取消零写入）
 function confirmModal(title,body,actLabel,act,extra='',actClass='danger',opt){
   let html=`<h2>${esc(title)}</h2><p style="color:var(--tx2);line-height:1.7">${body}</p>
   <div class="foot"><button class="btn" onclick="closeModal()">取消</button><button class="btn ${actClass}" data-act="${act}" ${extra}>${esc(actLabel)}</button></div>`;
