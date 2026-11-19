@@ -671,6 +671,20 @@ details.fold[open] summary{margin-bottom:8px; color:var(--tx)}
 .graph-pull-line{stroke:var(--ac2); stroke-width:1.8; stroke-dasharray:6 4; opacity:.75; pointer-events:none}   /* 拉线态橡皮筋虚线（起点圆周→鼠标） */
 .graph-wrap .graph-node.pull-hit .graph-ring{stroke:var(--ac); stroke-width:3.6}   /* 拉线悬停：有效目标描边 */
 .graph-wrap .graph-node.pull-bad .graph-ring{stroke:var(--tx3); stroke-width:2.4; stroke-dasharray:4 3}   /* 拉线悬停：自身＝无效目标样式 */
+/* graph-drawio-gestures 票03：关系微浮层——拉线松手在目标旁弹的 HTML 层（fixed 贴节点；视觉沿用 c-rel 弹层/chips 语言） */
+.graph-rel-pop{position:fixed; z-index:90; width:min(250px,92vw); box-sizing:border-box; display:flex; flex-direction:column; gap:8px; padding:10px; background:var(--bg2); border:1px solid var(--ac); border-radius:10px; box-shadow:0 10px 28px rgba(0,0,0,.3); font-size:12.5px}
+.graph-rel-pop .grp-hd{display:flex; align-items:baseline; gap:5px; margin:0; color:var(--tx2); font-size:12px; overflow:hidden; white-space:nowrap}
+.graph-rel-pop .grp-hd b{color:var(--tx); font-weight:600; overflow:hidden; text-overflow:ellipsis}
+.graph-rel-pop .grp-chips{display:flex; flex-wrap:wrap; gap:4px}
+.graph-rel-pop .grp-chips button{appearance:none; border:1px solid var(--line); background:transparent; color:var(--tx2); border-radius:99px; padding:4px 9px; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap}
+.graph-rel-pop .grp-chips button.on{background:color-mix(in srgb,var(--ac) 18%,transparent); border-color:var(--ac); color:var(--on-tx, var(--ac2))}
+.graph-rel-pop .grp-note{width:100%; box-sizing:border-box; font:inherit; font-size:12.5px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--tx)}
+.graph-rel-pop .grp-note:focus{outline:none; border-color:var(--ac)}
+.graph-rel-pop .grp-hint{margin:0; font-size:11px; color:var(--tx3)}
+.graph-rel-pop .grp-ask{display:flex; flex-direction:column; gap:8px; margin:0; font-size:12.5px; line-height:1.6; color:var(--tx2)}
+.graph-rel-pop .grp-ask label{display:flex; gap:6px; align-items:center; font-size:12px; color:var(--tx3); cursor:pointer}
+.graph-rel-pop .grp-ask label input{width:auto}
+.graph-rel-pop .grp-ask .row{display:flex; justify-content:flex-end; gap:6px}
 .graph-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 8px}
 .graph-head .pt{margin:0;flex:0 1 auto}
 .graph-scene-pick{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;max-width:100%}
@@ -20351,6 +20365,141 @@ function cdxHighlightEntry(id){
    未挂载＝零副作用取消。done(from,to)＝松手在有效目标；blank(from,x,y)＝松手在空白（x,y 为画布世界坐标）。 */
 /** @type {{done:((from:string,to:string)=>void)|null,blank:((from:string,x:number,y:number)=>void)|null}} */
 const graphPullHooks={done:null,blank:null};
+/* graph-drawio-gestures 票03：关系微浮层——接管 graphPullHooks.done（拉线松手在有效目标旁弹 HTML 浮层）。
+   chips：关联（默认预选）／归属·A为父／归属·B为父（A＝拉线起点 from；A为父＝codexRelApply kind 'child'、
+   B为父＝kind 'parent'，落库方向以 codexRelApply 实现为准）；注释输入占位「甲→乙：类型」、纯文本兼容（显示侧 graphNoteTypeLabel
+   既有解析；数据模型注释只挂关联 connections——归属带注释＝忽略并提示，不补建关联边）。
+   回车确认＝复用 codexRelTryAdd 查重链＋codexRelApply 落库：TryAdd 挂起「额外创建」确认而编辑弹窗不在场时，
+   浮层内接管同一确认（文案/「不再提示」一致）；注释走 codexRelSetNote。Esc／点空白＝取消零副作用。
+   浮层 fixed 定位、rAF 逐帧贴目标节点（缩放/平移/拖点跟随）；目标节点脱离 DOM（重渲/切视图）即自动销毁，
+   不阻塞图谱其他交互（收浮层不拦事件传播）。 */
+/** @type {{el:HTMLElement,raf:number,key:((ev:KeyboardEvent)=>void)|null,out:((ev:PointerEvent)=>void)|null}|null} */
+let _graphRelPop=null;
+/** 收掉关系微浮层（幂等）：撤监听/停 rAF/摘 DOM；不动任何数据。 */
+function graphRelPopClose(){
+  const p=_graphRelPop;_graphRelPop=null;
+  if(!p)return;
+  if(p.raf&&typeof cancelAnimationFrame==='function')cancelAnimationFrame(p.raf);
+  try{p.el.remove()}catch(_e){}
+  if(p.key)document.removeEventListener('keydown',p.key,true);
+  if(p.out)document.removeEventListener('pointerdown',p.out,true);
+}
+/**
+ * 打开关系微浮层（graphPullHooks.done 挂载入口）。
+ * @param {string} from 拉线起点节点 id（chips 里的 A）
+ * @param {string} to 松手目标节点 id（chips 里的 B，浮层贴它旁边）
+ * @returns {void}
+ */
+function graphRelPopOpen(from,to){
+  graphRelPopClose();
+  const nid=S.ui&&S.ui.novelId;
+  const ea=(S.data.codexEntries||[]).find((/** @type {any} */ x)=>x.id===from&&x.novelId===nid&&!isSharedEntry(x));
+  const eb=(S.data.codexEntries||[]).find((/** @type {any} */ x)=>x.id===to&&x.novelId===nid&&!isSharedEntry(x));
+  if(!ea||!eb||from===to)return;
+  const wrap=/** @type {HTMLElement|null} */(document.querySelector('.graph-wrap'));
+  const nodeEl=wrap&&wrap.querySelector('svg .graph-node[data-id="'+CSS.escape(to)+'"]');
+  if(!wrap||!nodeEl)return;
+  let kind='link';
+  const an=String(ea.name||'未命名'),bn=String(eb.name||'未命名');
+  const pop=document.createElement('div');
+  pop.className='graph-rel-pop';
+  pop.innerHTML=`<p class="grp-hd">连接关系：<b>${esc(an)}</b><span>→</span><b>${esc(bn)}</b></p>
+    <div class="grp-chips">
+      <button type="button" class="on" data-kind="link">关联</button>
+      <button type="button" data-kind="child">归属·${esc(an)}为父</button>
+      <button type="button" data-kind="parent">归属·${esc(bn)}为父</button>
+    </div>
+    <input type="text" class="grp-note" placeholder="${esc(an)}→${esc(bn)}：类型">
+    <p class="grp-hint">回车确认 · Esc／点空白取消</p>`;
+  /** @type {{el:HTMLElement,raf:number,key:((ev:KeyboardEvent)=>void)|null,out:((ev:PointerEvent)=>void)|null}} */
+  const st={el:pop,raf:0,key:null,out:null};
+  const chips=Array.prototype.slice.call(pop.querySelectorAll('.grp-chips button'));
+  const noteIn=/** @type {HTMLInputElement|null} */(pop.querySelector('.grp-note'));
+  const setKind=(/** @type {string} */ k)=>{kind=k;chips.forEach(c=>c.classList.toggle('on',String(c.getAttribute('data-kind')||'')===k))};
+  chips.forEach(c=>c.addEventListener('click',()=>setKind(String(c.getAttribute('data-kind')||'link'))));
+  const requery=()=>{   // 确认视图换内容后重取输入框（无则空）
+    const n2=pop.querySelector('.grp-note');return n2?/** @type {HTMLInputElement} */(n2):noteIn;
+  };
+  const confirmAdd=()=>{
+    const inp=requery();
+    const noteRaw=String(inp&&inp.value||'').trim();
+    const useNote=kind==='link'?noteRaw:'';   // 注释只挂关联 connections（数据模型；归属带注释＝忽略）
+    if(kind!=='link'&&noteRaw)toast('注释仅「关联」关系支持，已忽略');
+    const label=codexRelKindLabel(kind);
+    const kindsNow=codexRelKindsBetween(ea,eb);
+    const already=kindsNow.includes(label);   // 与 codexRelTryAdd 同一判据：已存在＝只提示不落库（注释也不写，编辑弹窗管）
+    codexRelTryAdd(from,to,kind);
+    const ask=$('#c-rel-ask');
+    if(_relPending&&!(ask&&!ask.hidden)){   // TryAdd 挂起「额外创建」确认而既有确认框（挂编辑弹窗内）不在场：浮层内接管
+      const others=kindsNow.filter(k=>k!==label);
+      const p=_relPending;_relPending=null;
+      pop.innerHTML=`<div class="grp-ask">
+        <p style="margin:0">已存在「${esc(others.join('、'))}」关系，是否额外创建「${esc(label)}」？</p>
+        <label><input type="checkbox" class="grp-mute"> 不再提示</label>
+        <div class="row"><button type="button" class="btn sm" data-x="cancel">取消</button><button type="button" class="btn sm pri" data-x="ok">确认</button></div>
+      </div>`;
+      const okBtn=pop.querySelector('[data-x="ok"]'),noBtn=pop.querySelector('[data-x="cancel"]');
+      if(okBtn)okBtn.addEventListener('click',()=>{
+        const mu=pop.querySelector('.grp-mute');
+        if(mu&&/** @type {HTMLInputElement} */(mu).checked){codexRelMuteSet(true);save()}
+        codexRelApply(from,to,kind);
+        if(useNote)codexRelSetNote(from,to,useNote);
+        graphRelPopClose();try{render()}catch(_e2){}
+      });
+      if(noBtn)noBtn.addEventListener('click',()=>graphRelPopClose());   // 取消＝零副作用（TryAdd 未写任何数据）
+      return;
+    }
+    if(_relPending){_relPending.note=useNote;graphRelPopClose();return}   // 既有确认框在场：注释随 pending 走 codex-rel-dup-ok 链
+    graphRelPopClose();
+    if(!already&&useNote)codexRelSetNote(from,to,useNote);   // 直落路径补注释（已存在＝不写，避免给既有边意外改注）
+    try{render()}catch(_e2){}   // 已落库（或「已存在」纯提示）：走既有重渲路径即时出新边；滚动由 render 快照恢复
+  };
+  if(noteIn)noteIn.addEventListener('keydown',ev=>{
+    if(ev.key!=='Enter'||ev.isComposing||ev.keyCode===229)return;   // IME 回车不确认
+    ev.preventDefault();
+    confirmAdd();
+  });
+  st.key=ev=>{   // Esc：先于图谱多选 Esc 等消费（capture），只收浮层
+    if(ev.key!=='Escape')return;
+    ev.preventDefault();ev.stopPropagation();
+    graphRelPopClose();
+  };
+  document.addEventListener('keydown',st.key,true);
+  st.out=ev=>{   // 点浮层外任意处＝取消（不拦传播：图谱其他交互照常进行）
+    const t=/** @type {any} */(ev.target);
+    if(t&&t.nodeType===1&&pop.contains(/** @type {Node} */(t)))return;
+    graphRelPopClose();
+  };
+  document.addEventListener('pointerdown',st.out,true);
+  const place=()=>{
+    const ring=nodeEl.querySelector('circle.graph-ring')||nodeEl.querySelector('circle');
+    if(!ring){graphRelPopClose();return}
+    const cx=Number(ring.getAttribute('cx'))||0,cy=Number(ring.getAttribute('cy'))||0;
+    const r=Number(nodeEl.getAttribute('data-r'))||14;
+    const rect=wrap.getBoundingClientRect();
+    const sc=Number(wrap.dataset.scale)||1,ox=Number(wrap.dataset.ox)||0,oy=Number(wrap.dataset.oy)||0;
+    const sx=rect.left+(cx-ox)*sc-wrap.scrollLeft,downY=rect.top+(cy-oy)*sc-wrap.scrollTop+r*sc+12;
+    const vw=(window.innerWidth||document.documentElement.clientWidth||1200),vh=(window.innerHeight||document.documentElement.clientHeight||800);
+    const pw=pop.offsetWidth||250,ph=pop.offsetHeight||130;
+    let left=Math.max(8,Math.min(sx-pw/2,vw-pw-8));
+    let top=downY;
+    if(top+ph>vh-8)top=Math.max(8,downY-2*r*sc-ph-24);   // 下方放不下改放节点上方
+    pop.style.left=Math.round(left)+'px';pop.style.top=Math.round(top)+'px';
+  };
+  const tick=()=>{
+    if(_graphRelPop!==st)return;
+    if(pop.isConnected===false||nodeEl.isConnected===false||wrap.isConnected===false){graphRelPopClose();return}   // 重渲/切视图＝销毁
+    place();
+    if(_graphRelPop!==st)return;   // place 防御性收场（ring 丢失）
+    st.raf=requestAnimationFrame(tick);   // 逐帧跟随：平移/缩放/拖点都贴住目标
+  };
+  _graphRelPop=st;
+  (document.body||document.documentElement).appendChild(pop);
+  place();
+  if(typeof requestAnimationFrame==='function')st.raf=requestAnimationFrame(tick);
+  setTimeout(()=>{if(_graphRelPop===st&&noteIn){try{noteIn.focus()}catch(_e3){}}},0);
+}
+graphPullHooks.done=(from,to)=>{graphRelPopOpen(from,to)};
 /** 关系图谱画布交互绑定（渲染后一次性）：搜索高亮、缩放、多选、节点拖动／推开、
  *  票02 增补静止悬停一级拉线箭头与拉线态（mode='pull'）；剧情图谱走 bindPlotGraph 独立绑定，互不影响。 */
 function bindGraph(){
@@ -20909,11 +21058,17 @@ function bindGraph(){
         if(graphPullHooks.done)graphPullHooks.done(from,tgtId);
         return;
       }
-      if(!tgt){   // 空白：04 空白新建接管（未挂载＝取消）
-        const pt=svgPt(pe.clientX,pe.clientY);
+      if(!tgt){
+        /* 票03：松手在浅影＝无效目标（浅影 pointer-events:none 被 elementFromPoint 穿透落到此分支）——
+           提示后取消，不得落进 04 的空白新建入口 */
+        const gh=(typeof document.elementsFromPoint==='function'?document.elementsFromPoint(pe.clientX,pe.clientY):[])
+          .filter(el=>el&&el.closest&&el.closest('.graph-node.ghost'));
+        if(gh.length){toast('该设定当前隐藏，开启显示次要设定后再连');return}
+        const pt=svgPt(pe.clientX,pe.clientY);   // 空白：04 空白新建接管（未挂载＝取消）
         if(graphPullHooks.blank)graphPullHooks.blank(from,pt.x,pt.y);
+        return;
       }
-      return;   // 自身＝无效目标：零副作用取消
+      toast('不能与自己建立关系');   // 自身＝无效目标（票03 补提示，文案与 codexRelTryAdd 一致）：零副作用取消
     }
     if(was==='box'){
       const bx=boxStart;boxStart=null;panClear=false;
@@ -22670,7 +22825,9 @@ if(typeof document!=='undefined'&&!document._codexRelOutBound){
     codexRelHidePop();
   });
 }
-let _relPick=null,_relPending=null;
+let _relPick=null;
+/** @type {{fromId:string,toId:string,kind:string,note?:string}|null} */   // 票03：note＝图谱微浮层捎带的关联注释（随 dup-ok 确认落库）
+let _relPending=null;
 function codexRelPickHTML(kind,typeFilter,q){
   const nid=S.ui.novelId;
   const self=_codexLiveId;
@@ -26688,7 +26845,7 @@ document.addEventListener('click',async e=>{
   case'codex-rel-dup-ok':{
     e.stopPropagation();
     const mute=$('#c-rel-dup-mute'); if(mute&&mute.checked){codexRelMuteSet(true);save()}
-    if(_relPending){const p=_relPending;_relPending=null;codexRelApply(p.fromId,p.toId,p.kind)}
+    if(_relPending){const p=_relPending;_relPending=null;codexRelApply(p.fromId,p.toId,p.kind);if(p.note)codexRelSetNote(p.fromId,p.toId,String(p.note))}   // 票03：图谱微浮层捎带的注释随确认落库
     else codexRelHidePop();
     break}
   case'codex-rel-dup-cancel':{
