@@ -22477,7 +22477,7 @@ function bindPlotGraph(){
     hovTimer=setTimeout(()=>{hovTimer=0;if(hovId===id)plotFullPopOpen(nid,id)},PLOT_HOVER_POP_MS);
     hovTimer2=setTimeout(()=>{   // 04：同卡悬停 ≥0.8s 出拉线箭头并武装按下接管（0.5s 浮层在场照常起——浮层 pointer-events:none 让位不挡）
       hovTimer2=0;
-      if(hovId===id&&!mode&&!_plotEdgePop){hovArrowDraw(nodeOf(id),hovWX,hovWY);pullArmId=id}
+      if(hovId===id&&!mode&&!linkMode&&!_plotEdgePop){hovArrowDraw(nodeOf(id),hovWX,hovWY);pullArmId=id}   // 04复核：linkMode 拉边态下不出箭头（此时按下走 linktap 选端点，箭头所见非所为）
     },PLOT_HOVER_ARROW_MS);
   });
   wrap.addEventListener('pointerleave',hovReset);   // 鼠标移开画布＝全部即消
