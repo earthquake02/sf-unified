@@ -20432,7 +20432,7 @@ function graphRelPopOpen(from,to){
     const ask=$('#c-rel-ask');
     if(_relPending&&!(ask&&!ask.hidden)){   // TryAdd 挂起「额外创建」确认而既有确认框（挂编辑弹窗内）不在场：浮层内接管
       const others=kindsNow.filter(k=>k!==label);
-      const p=_relPending;_relPending=null;
+      _relPending=null;
       pop.innerHTML=`<div class="grp-ask">
         <p style="margin:0">已存在「${esc(others.join('、'))}」关系，是否额外创建「${esc(label)}」？</p>
         <label><input type="checkbox" class="grp-mute"> 不再提示</label>
@@ -21054,21 +21054,26 @@ function bindGraph(){
       pullCleanup();
       if(e.type==='pointercancel')return;   // 系统打断＝纯取消
       if(!did){try{openCodexEditModal(from)}catch(_e2){}return}   // 未拖动＝原「点按打开编辑」语义保留
-      if(tgt&&tgtId&&tgtId!==from){   // 有效目标（非浅影非自身）：03 关系微浮层接管
+      if(tgt&&(!tgtId||tgtId===from)){toast('不能与自己建立关系');return}   // 自身（既有判定，优先于浅影）＝无效目标（票03 补提示，文案与 codexRelTryAdd 一致）：零副作用取消
+      if(tgt){   // 有效目标（非浅影非自身）：03 关系微浮层接管
         if(graphPullHooks.done)graphPullHooks.done(from,tgtId);
         return;
       }
-      if(!tgt){
-        /* 票03：松手在浅影＝无效目标（浅影 pointer-events:none 被 elementFromPoint 穿透落到此分支）——
-           提示后取消，不得落进 04 的空白新建入口 */
-        const gh=(typeof document.elementsFromPoint==='function'?document.elementsFromPoint(pe.clientX,pe.clientY):[])
-          .filter(el=>el&&el.closest&&el.closest('.graph-node.ghost'));
-        if(gh.length){toast('该设定当前隐藏，开启显示次要设定后再连');return}
-        const pt=svgPt(pe.clientX,pe.clientY);   // 空白：04 空白新建接管（未挂载＝取消）
-        if(graphPullHooks.blank)graphPullHooks.blank(from,pt.x,pt.y);
-        return;
-      }
-      toast('不能与自己建立关系');   // 自身＝无效目标（票03 补提示，文案与 codexRelTryAdd 一致）：零副作用取消
+      /* 票03：松手在浅影＝几何命中（浅影 pointer-events:none，elementFromPoint/elementsFromPoint 均穿透探不到）——
+         松手点经 svgPt 逆变换为世界坐标，对渲染层浅影集合（bindGraph 同源画法：.graph-node.ghost 的 ring cx/cy＋data-r 即实际半径）
+         按半径做距离判定：命中＝提示后取消，不得落进 04 的空白新建入口；未命中＝空白分支 */
+      const pt=svgPt(pe.clientX,pe.clientY);
+      let onGhost=false;
+      svg.querySelectorAll('.graph-node.ghost').forEach(g=>{
+        if(onGhost)return;
+        const c=ringCenter(g);if(!c)return;
+        const r=Number(g.getAttribute('data-r'))||0;
+        const dx=pt.x-c.x,dy=pt.y-c.y;
+        if(dx*dx+dy*dy<=r*r)onGhost=true;
+      });
+      if(onGhost){toast('该设定当前隐藏，开启显示次要设定后再连');return}
+      if(graphPullHooks.blank)graphPullHooks.blank(from,pt.x,pt.y);   // 空白：04 空白新建接管（未挂载＝取消）
+      return;
     }
     if(was==='box'){
       const bx=boxStart;boxStart=null;panClear=false;
