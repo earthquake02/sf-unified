@@ -19130,7 +19130,7 @@ const GRAPH_NODE_GAP=6;
 const GRAPH_UNDO_MAX=60;
 /* graph-drawio-gestures 票02（规格决策 10）：悬停手势参数集中定义，便于调整。 */
 const GRAPH_HOVER_L1_MS=800;   // 一级拉线箭头：静止悬停触发时长（毫秒，用户指定）
-const GRAPH_HOVER_STILL_PX=3;  // 「静止」判定容差（屏幕像素）：位移超过即重置悬停计时
+const GRAPH_HOVER_STILL_PX=3;  // 「静止」判定容差（屏幕像素）：距静止锚点累计位移超过即重置悬停计时
 const GRAPH_HOVER_ARROW_PX=22; // 拉线箭头屏幕尺寸（画布缩放下恒定，按 1/scale 反算）
 /**
  * @param {number} total 全书累计提及次数
@@ -20533,7 +20533,7 @@ function bindGraph(){
     const cy=(e.clientY-rect.top+wrap.scrollTop)/scale;
     const next=scale*(e.deltaY<0?1.12:1/1.12);
     applyScale(next,cx,cy);
-    if(hoverNode)hoverArrowDraw(hoverNode,hoverWX,hoverWY);   // 票02：缩放后按新 scale 重画悬停箭头（屏幕像素尺寸恒定）
+    if(hoverNode&&hoverArrow)hoverArrowDraw(hoverNode,hoverWX,hoverWY);   // 票02：缩放后按新 scale 重画悬停箭头（只重画在场箭头，绝不新建——计时未满不出箭头）
   },{passive:false});
 
   /* codex-graph-ux 票05＋手势回改：图谱多选——Shift+点节点＝切换选中；
@@ -20639,7 +20639,7 @@ function bindGraph(){
 
   /* graph-drawio-gestures 票02：悬停拉线框架（仅此闭包；剧情图谱 bindPlotGraph 独立，零影响）。
      静止悬停 ≥GRAPH_HOVER_L1_MS 于非浅影节点出一级拉线箭头（圆心→鼠标方位、随移动实时转向、
-     低透明度、屏幕像素尺寸）；指针位移超静止容差即重置计时；移出节点／任何 pointerdown 即收。
+     低透明度、屏幕像素尺寸）；指针距静止锚点累计位移超容差即重置计时（锚点随重置更新）；移出节点／任何 pointerdown 即收。
      多选态（gSel≥2）与浅影不启动计时（触发时再核一次防竞态）。
      箭头在场时于该节点内左键（非 Shift）pointerdown＋拖动＝拉线态（mode='pull'）：橡皮筋虚线
      （起点圆周→鼠标）、目标高亮；不设 dragState，故不触发节点拖动／推开、不进布局撤销栈。
@@ -20647,7 +20647,8 @@ function bindGraph(){
      （04 接管，未挂载＝取消）；自身／Esc／pointercancel＝零副作用取消。未拖动的按下＝原点按语义。 */
   /** @type {number|null} */ let hoverT=null;
   /** @type {Element|null} */ let hoverNode=null;   // 当前悬停节点（计时／箭头归属）
-  let hoverX=0,hoverY=0;    // 上次采样鼠标（屏幕坐标：静止判定基准）
+  let hoverX=0,hoverY=0;    // 上次采样鼠标（屏幕坐标）
+  let hoverAX=0,hoverAY=0;  // 静止锚点（屏幕坐标）：计时启动时采样，距锚累计位移超容差才重置（防高报告率设备逐事件 ≤3px 慢移漏判）
   let hoverWX=0,hoverWY=0;  // 上次采样鼠标（画布世界坐标：箭头方位）
   /** @type {Element|null} */ let hoverArrow=null;  // 一级拉线箭头 <g class="graph-hover-arrow">
   let pullArmId='';         // 箭头所属节点 id：在场时该节点 pointerdown 转拉线
@@ -20684,9 +20685,10 @@ function bindGraph(){
     }
     hoverArrow.setAttribute('transform','translate('+ax+','+ay+') rotate('+ang+') scale('+(1/Math.max(0.0001,scale))+')');
   };
-  /** 启动／重启静止悬停计时；到点核态（拖拽中／多选态不出）后画箭头并武装拉线接管。 */
+  /** 启动／重启静止悬停计时（锚点重取当前采样）；到点核态（拖拽中／多选态不出）后画箭头并武装拉线接管。 */
   const hoverTimerStart=()=>{
     if(hoverT!=null)clearTimeout(hoverT);
+    hoverAX=hoverX;hoverAY=hoverY;   // 静止锚点＝计时启动采样：按累计位移判静止
     hoverT=setTimeout(()=>{
       hoverT=null;
       if(!hoverNode||mode||gSel.size>=2)return;
@@ -20836,13 +20838,12 @@ function bindGraph(){
   });
   wrap.addEventListener('pointermove',e=>{
     const pe=(/** @type {PointerEvent} */(e));
-    if(!mode){   // 票02：静止悬停采样——箭头未出时位移超容差即重置计时；已出则随鼠标实时转向
+    if(!mode){   // 票02：静止悬停采样——箭头未出时距静止锚点累计位移超容差才重置计时（锚点随重置更新）；已出则随鼠标实时转向
       if(hoverNode){
-        const ddx=pe.clientX-hoverX,ddy=pe.clientY-hoverY;
         hoverX=pe.clientX;hoverY=pe.clientY;
         const pw=svgPt(hoverX,hoverY);hoverWX=pw.x;hoverWY=pw.y;
         if(hoverArrow)hoverArrowDraw(hoverNode,hoverWX,hoverWY);
-        else if(Math.abs(ddx)>GRAPH_HOVER_STILL_PX||Math.abs(ddy)>GRAPH_HOVER_STILL_PX)hoverTimerStart();
+        else if(Math.abs(hoverX-hoverAX)>GRAPH_HOVER_STILL_PX||Math.abs(hoverY-hoverAY)>GRAPH_HOVER_STILL_PX)hoverTimerStart();
       }
       return;
     }
