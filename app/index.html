@@ -15033,6 +15033,20 @@ document.addEventListener('keydown',e=>{
   if(k==='z'&&!e.shiftKey){e.preventDefault();graphUndo();return}
   if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();graphRedo()}
 });
+/* plot-graph-cards 05：剧情图谱视图独立布局撤销分发——独立监听，只认 view==='plot-graph'，与上方
+   关系图谱监听（只认 view==='graph'）按视图互斥不打照面：graphUndo/graphRedo 分支与原监听零改动、
+   行为逐字节不变（view!=='plot-graph' 时本监听即刻 return，不 preventDefault、不触任何栈）。
+   守卫同款：焦点在搜索框／表单／弹窗时不接管（正文撤销不受影响——正文编辑自管，两栈各自视图各自用，
+   切视图不清栈，口径同关系图谱现行行为）。 */
+document.addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey)||e.altKey)return;
+  if(!(S&&S.ui&&S.ui.view==='plot-graph'))return;
+  const t=/** @type {any} */(e.target);
+  if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable],#modalRoot,#askRoot'))return;
+  const k=String(e.key||'').toLowerCase();
+  if(k==='z'&&!e.shiftKey){e.preventDefault();plotUndo();return}
+  if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();plotRedo()}
+});
 document.addEventListener('click',e=>{   // 点空白收菜单（菜单项与两个开菜单按钮除外）
   if(!document.getElementById('popMenu'))return;
   if(e.target.closest&&(e.target.closest('#popMenu')||e.target.closest('[data-act="node-menu"],[data-act="hot-menu"]')))return;
@@ -21452,6 +21466,85 @@ function plotGraphOf0(d,nid){
 }
 /** @param {string} nid */
 function plotGraphOf(nid){return plotGraphOf0(S.data,nid)}
+/* ---------- plot-graph-cards 05（规格 Q3，术语「关系图谱布局撤销」剧情同口径段）：剧情图谱独立布局
+   撤销栈——会话态、不落盘，参照关系图谱 graphUndoPush/graphUndo/graphRedo 同款三件但 plot 命名空间
+   独立实现、独立栈（与 _graphUndoStack/_graphRedoStack 互不互串，切视图不清栈、按书 nid 隔离，口径
+   同关系图谱现行行为）。落栈范围：拖点（bindPlotGraph 起手快照、松手真拖过才压一次）、区域移动
+   （07 落地后在松手收口同口径并入——松手＝一次 plotUndoPush＋一次 save）；边（plotEdgeAdd/Del）、
+   钉住／放入（plotPinToggle/plotBringIn）、首开重铺（plotGraphRelayoutCards，见其注释「不进任何撤销栈」）
+   一律不调 plotUndoPush、也不清 redo 栈。回退／重做回放后走既有 save() 落盘路径（书根 剧情图谱.json），
+   节奏同拖点松手。上限复用 GRAPH_UNDO_MAX（两图同款 60）。 */
+/** @type {{nid:string,map:Record<string,{x:number,y:number}>}[]} */
+let _plotUndoStack=[];
+/** @type {{nid:string,map:Record<string,{x:number,y:number}>}[]} */
+let _plotRedoStack=[];
+/**
+ * @param {string} nid
+ * @returns {Record<string,{x:number,y:number}>}
+ */
+function plotLayoutSnap(nid){
+  const st=plotGraphOf(nid);
+  /** @type {Record<string,{x:number,y:number}>} */
+  const out={};
+  const src=st&&st.positions&&typeof st.positions==='object'?st.positions:null;
+  if(!src)return out;
+  for(const id of Object.keys(src)){
+    const p=src[id];
+    if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
+      out[id]={x:p.x,y:p.y};
+  }
+  return out;
+}
+/** 整体替换本书剧情布局（撤销／重做回放）；原位清键再赋值保引用稳定（bindPlotGraph 闭包持有 positions
+ * 引用不脱钩——同 graphLayoutApply 口径）。
+ * @param {string} nid
+ * @param {Record<string,{x:number,y:number}>} snap
+ */
+function plotLayoutApply(nid,snap){
+  const st=plotGraphOf(nid);
+  if(!st)return;
+  const mem=st.positions;
+  for(const id of Object.keys(mem))delete mem[id];
+  if(snap&&typeof snap==='object'){
+    for(const id of Object.keys(snap)){
+      const p=snap[id];
+      if(p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y))
+        mem[id]={x:p.x,y:p.y};
+    }
+  }
+}
+/**
+ * @param {string} nid
+ * @param {Record<string,{x:number,y:number}>} snap
+ */
+function plotUndoPush(nid,snap){
+  _plotUndoStack.push({nid,map:snap});
+  if(_plotUndoStack.length>GRAPH_UNDO_MAX)_plotUndoStack.shift();
+  _plotRedoStack=[];
+}
+function plotUndo(){
+  const nid=S&&S.ui&&S.ui.novelId;
+  const top=_plotUndoStack.length?_plotUndoStack[_plotUndoStack.length-1]:null;
+  if(!top||!nid||top.nid!==nid){if(typeof toast==='function')toast('没有可撤销的操作');return}
+  _plotUndoStack.pop();
+  _plotRedoStack.push({nid,map:plotLayoutSnap(nid)});
+  plotLayoutApply(nid,top.map);
+  try{save()}catch(_e){}   // 回退走既有落盘路径（剧情图谱.json），节奏同拖点松手
+  if(typeof render==='function')render();
+  if(typeof toast==='function')toast('已撤销一步布局');
+}
+function plotRedo(){
+  const nid=S&&S.ui&&S.ui.novelId;
+  const top=_plotRedoStack.length?_plotRedoStack[_plotRedoStack.length-1]:null;
+  if(!top||!nid||top.nid!==nid){if(typeof toast==='function')toast('没有可重做的操作');return}
+  _plotRedoStack.pop();
+  _plotUndoStack.push({nid,map:plotLayoutSnap(nid)});
+  if(_plotUndoStack.length>GRAPH_UNDO_MAX)_plotUndoStack.shift();
+  plotLayoutApply(nid,top.map);
+  try{save()}catch(_e){}   // 重做同走既有落盘路径
+  if(typeof render==='function')render();
+  if(typeof toast==='function')toast('已重做一步布局');
+}
 /** 序列化本书剧情图谱；无有效数据返回 null（不落空文件）
  * @param {any} d @param {string} nid */
 function plotGraphSerializeOf0(d,nid){
@@ -21513,7 +21606,7 @@ function plotGraphNormalizeOne(raw,nid){
  * 按目录顺序（卷→章→章内小节，口径同 actsOf/chaptersOf/scenesOf 的 sort 序）把本书 positions 里
  * 全部现存条目重排进卡片步长网格（plotGridSlotOf 同公式，产物与新鲜首铺同形）；edges 与 pins 原样
  * 不动——钉住节点也重铺到新位置、钉态存于 pins 不丢；目录里已不存在的孤儿 id 追加在网格尾部
- * （图谱不渲染、不静默丢档）。无栈时代（05 票前）不进任何撤销栈；空 positions 零动作。
+ * （图谱不渲染、不静默丢档）。首开重铺不进剧情布局撤销栈（05 口径：重铺是格式迁移非手势操作）；空 positions 零动作。
  * @param {any} st 归一后的本书剧情图谱工程态（原位改写 positions）
  * @param {any[]} acts @param {any[]} chapters @param {any[]} scenes
  * @returns {number} 重排条目数 */
@@ -22208,6 +22301,7 @@ function bindPlotGraph(){
   wrap.addEventListener('contextmenu',(/** @type {Event} */ e)=>e.preventDefault());
   let mode=/** @type {string|null} */(null),nidDrag=/** @type {string|null} */(null),moved=false;
   let sx=0,sy=0,sl0=0,st0=0,ox=0,oy=0;
+  let dragSnap=/** @type {Record<string,{x:number,y:number}>|null} */(null);   // 05：拖点起手全量布局快照（松手真拖过才压栈；点按/拉线不动它恒为 null）
   const THRESH=4;
   /* plot-graph-cards 04（规格 Q2）：悬停拉线——同卡悬停 ≥PLOT_HOVER_ARROW_MS 出箭头并武装按下接管；
      拉线态橡皮筋＋目标高亮（pull-hit/pull-bad）。剧情版无浅影（窗外叶也是可交互卡）、无多选态分支（剧情无多选）。 */
@@ -22328,6 +22422,7 @@ function bindPlotGraph(){
         return;
       }
       mode='node';
+      dragSnap=plotLayoutSnap(nid);   // 05：起手时刻全量布局快照（一次 Ctrl+Z 整组回；区域移动 07 落地时在松手收口同口径并入）
       const pt=svgPt(pe.clientX,pe.clientY);
       const p=pos[nidDrag]||{x:pt.x,y:pt.y};
       ox=pt.x-p.x;oy=pt.y-p.y;moved=false;
@@ -22394,6 +22489,7 @@ function bindPlotGraph(){
   const endPtr=(/** @type {PointerEvent} */ e)=>{
     if(!mode)return;
     const was=mode;let id=nidDrag;const did=moved;
+    const snap0=dragSnap;dragSnap=null;   // 05：快照只在 node 收场消费一次，其余收场一律作废（防旧快照泄漏到下次拖动）
     if(id){const g=nodeOf(id);if(g)g.classList.remove('dragging')}
     mode=null;nidDrag=null;moved=false;
     if(was==='pull'){   // 04：拉线态收场——不动坐标／选中态；剧情版无空白快建（Q15 双击空白无操作）
@@ -22426,6 +22522,7 @@ function bindPlotGraph(){
         plotOpenWriting(leaf||{id,kind:'scene',novelId:nid});
       }
     }else if(was==='node'&&id&&did){
+      if(snap0)plotUndoPush(nid,snap0);   // 05：拖点＝一次压栈（快照＝起手时刻全量布局）＋一次落盘；pointercancel 同收（位移已成事实则固化，与关系图谱区域移动同口径）
       save();   // 拖点落工程态
     }else if(was==='edgesel'&&!did&&edgeDown){
       selectEdge(edgeDown.a,edgeDown.b,edgeDown.type);
