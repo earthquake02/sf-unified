@@ -20699,7 +20699,7 @@ function bindGraph(){
       fitOn=false;
       const cx=originX+(wrap.scrollLeft+vw/2)/scale,cy=originY+(wrap.scrollTop+vh/2)/scale;
       const r1=graphBoardGrowTo({originX,originY,W:BW,H:BH},cx-vw/2,cy-vh/2);
-      const r2=graphBoardGrowTo(r1,cx+vw/2,cy+vh/2);   // 100% 目标视野同样先包住再滚：负原点下 applyScale 锚定有固有偏差，直接精设滚动才精确
+      const r2=graphBoardGrowTo(r1,cx+vw/2,cy+vh/2);   // 100% 目标视野同样先包住再精设滚动：applyScale 锚定公式吃的是「原点相对坐标」（wheel 传的 cx 即此系、自洽精确），这里的 cx/cy 是真世界坐标（含 origin），直接喂锚定参数会错位 origin×(1−old)，故绕开锚定、直接精设滚动
       if(r1.grown||r2.grown)adoptBoard(r2);
       applyScale(1);
       wrap.scrollLeft=Math.max(0,cx-vw/2-originX);
@@ -20784,7 +20784,9 @@ function bindGraph(){
     const cx=(e.clientX-rect.left+wrap.scrollLeft)/scale;
     const cy=(e.clientY-rect.top+wrap.scrollTop)/scale;
     const next=scale*(e.deltaY<0?1.12:1/1.12);
+    const before=scale;
     applyScale(next,cx,cy);
+    if(scale!==before)fitOn=false;   // 票06裁定：滚轮等外部缩放一变＝偏离适配视图，fitOn 即灭（下次点「适配」＝重新适配而非回 100%）；钳边界上 scale 不动则不灭
     if(hoverNode&&hoverArrow)hoverArrowDraw(hoverNode,hoverWX,hoverWY);   // 票02：缩放后按新 scale 重画悬停箭头（只重画在场箭头，绝不新建——计时未满不出箭头）
   },{passive:false});
 
