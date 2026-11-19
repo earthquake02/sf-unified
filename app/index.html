@@ -14102,7 +14102,8 @@ const GUIDE_GROUPS = [
         from: "04 · 提示词与 AI 服务",
         steps: [
           "打开「设置 → AI 服务」。",
-          "选服务商与模型，填入接口密钥（密钥只存本机，只发给你配置的服务商）。",
+          "选服务商与模型，填入接口密钥（密钥只存本机，只发给你配置的服务商）；协议可留「自动识别」，由程序按 Base 与模型名判断。",
+          "想省事就点「推荐」一键导入名单（如 OpenCode Go：Base 填 https://opencode.ai/inference/go，模型填 gemini-4-argon），协议跟着补好；密钥仍要自己填。",
           "点「测试连接」；通了再回写作页试一次助手。",
           "若暂时不连网，仍可改目录与设定，只是 AI 相关按钮会不可用。",
         ],
@@ -14355,7 +14356,8 @@ const GUIDE_GROUPS = [
         from: "03 · 设定",
         steps: [
           "打开资源栏「设定集」，点顶部「关系图谱」或「剧情图谱」。",
-          "关系图谱：节点＝设定；拖移、搜索、多选（Shift）按工具栏说明操作；点节点可编条目。",
+          "关系图谱：节点＝设定；拖移、搜索、多选（Shift）按工具栏说明操作，拖动会把碰到的设定推开；点节点可编条目。",
+          "关掉「显示次要设定」时，已有坐标的次要设定会留浅影占位；重新打开若仍挤在一起，点「散开重叠」错开。关系线标签贴在线上，悬停可见完整的「甲→乙 类型」。",
           "剧情图谱：节点＝当前卷目录叶（有小节只铺小节，无小节铺章）；边请手拉「导致／相关」；双击或「打开写作」跳正文。",
           "图谱内不改正文；剧情图谱 MVP 不做搜索／多选。",
         ],
@@ -23568,12 +23570,12 @@ function devPreviewCopy(json){
 
 /* ---------- 视图：设置 ---------- */
 function vUpdates(){
-  /* 设置→更新：V1.6 在上（2026-11-18）；V1.5（2026-11-18）、V1.4（2026-10-30）完整保留于下；V1.1–V1.3 历史卡按先生 2026-10-30 指示删除 */
+  /* 设置→更新：V1.6 在上（2026-11-19）；V1.5（2026-11-18）、V1.4（2026-10-30）完整保留于下；V1.1–V1.3 历史卡按先生 2026-10-30 指示删除 */
   return `<div class="page">
   <div class="card">
     <h2 class="upd-title">故事工坊 V1.6</h2>
-    <p class="upd-meta">2026-11-18</p>
-    <p class="upd-intro">这一版把写作页的撤销和排版补齐了：撤销不再弄丢章标题，副驾里「采用」写入的内容也可以撤回；当前章可以一键整理空段落和段首空格；外观能调节正文段间距；工具栏去掉了「正文段落」，「消除格式」会同时清掉行内样式，并退出引用、把小标题降回正文。设定集漏斗可按追踪类别筛选，关系图谱不再画出「从不包含」的设定，勾选也改成了跟外观走的整行光点。AI 服务从单项 OpenAI 兼容扩展到 OpenAI、Anthropic、Google 三条协议，OpenCode Go 的 Gemini 4 Argon 可直接填 Base 与模型名。</p>
+    <p class="upd-meta">2026-11-19</p>
+    <p class="upd-intro">这一版把写作页的撤销和排版补齐了：撤销不再弄丢章标题，副驾里「采用」写入的内容也可以撤回；当前章可以一键整理空段落和段首空格；外观能调节正文段间距；工具栏去掉了「正文段落」，「消除格式」会同时清掉行内样式，并退出引用、把小标题降回正文。设定集漏斗可按追踪类别筛选，勾选也改成了跟外观走的整行光点。关系图谱不再画出「从不包含」的设定：次要设定关掉后留浅影占位，拖动会把碰到的设定推开，节点大小按全书提及次数计，关系线标签贴在外露线段上、缩放不胀大，画布按内容延伸、大书关次要不再卡。AI 服务从单项 OpenAI 兼容扩展到 OpenAI、Anthropic、Google 三条协议，OpenCode Go 的 Gemini 4 Argon 可直接填 Base 与模型名；推荐名单一键导入会给已有行补上缺的协议，Base 换成新地址后协议自动回到「自动识别」。</p>
 
     <details class="upd-group" open>
       <summary><span class="upd-g-title">撤销</span><span class="upd-g-count">2 项</span></summary>
@@ -23599,9 +23601,11 @@ function vUpdates(){
     </details>
 
     <details class="upd-group" open>
-      <summary><span class="upd-g-title">AI 服务</span><span class="upd-g-count">1 项</span></summary>
+      <summary><span class="upd-g-title">AI 服务</span><span class="upd-g-count">3 项</span></summary>
       <div class="upd-body"><ul>
         <li><strong>三条协议</strong>：AI 服务可选 OpenAI（Chat Completions）、Anthropic（Messages）或 Google（Gemini），也可自动识别。OpenCode Go 填 <code>https://opencode.ai/inference/go</code>，模型填 <code>gemini-4-argon</code>，不必手拼上游路径。推荐名单可一键导入 Base／模型／协议（不写 Key）。</li>
+        <li><strong>推荐导入补协议</strong>：点「推荐」或「填入推荐」导入名单时，命中的已有行（Base 逐字一致）会补上空着的协议；你手选过的协议、已填 Key 的行一律不动。</li>
+        <li><strong>换 Base 回自动识别</strong>：把某行的 Base 改成新地址（换了 host）后，协议会自动切回「自动识别」，避免拿旧协议去请求新端点。</li>
       </ul></div>
     </details>
 
@@ -23611,6 +23615,17 @@ function vUpdates(){
         <li><strong>图谱按追踪显示</strong>：关系图谱不再画出「从不包含」的设定；「检测到时不包含」默认隐藏，勾选工具栏「显示次要设定」后才出现。</li>
         <li><strong>筛选追踪类别</strong>：设定漏斗里的「全局」换成「显示追踪类别」。停在这一行约 0.3 秒，或直接点击，会从侧面弹出四个追踪类型开关；取消筛选会把四类重新全选。</li>
         <li><strong>整行光点勾选</strong>：开关键改成整行可点的光点，颜色跟当前外观方案的强调色走。</li>
+      </ul></div>
+    </details>
+
+    <details class="upd-group" open>
+      <summary><span class="upd-g-title">关系图谱</span><span class="upd-g-count">5 项</span></summary>
+      <div class="upd-body"><ul>
+        <li><strong>次要设定浅影占位</strong>：关掉「显示次要设定」后，已有坐标的次要设定会留下浅影占位（同等体积，不能拖、不进框选）；重新打开只把重叠的次要错开，主要设定不动，仍挤在一起可点「散开重叠」再让一次。</li>
+        <li><strong>拖动推开与节点大小</strong>：「拖动时推开其他设定」默认开启（记住本机选择），拖动会把碰到的设定沿接触方向推开；节点大小改为按全书提及次数计算，约 310 次封顶到半径 45。</li>
+        <li><strong>画布按内容延伸</strong>：关闭「显示次要设定」不再把画外节点裁掉；画布按可见节点与浅影的坐标包住内容，拖到边缘会继续扩展。</li>
+        <li><strong>关系线标签贴线</strong>：关联注释标签锚在两端圆周之间的外露线段上，不再压进设定圈；线上只写关系类型，完整「甲→乙 类型」悬停可见，放不下时默认隐藏、悬停或选中该边再显示；字号固定在屏上约 10px，缩放不胀大。</li>
+        <li><strong>关次要不再卡</strong>：关闭「显示次要设定」时整图重算明显变快，大书也不会被共现统计拖住。</li>
       </ul></div>
     </details>
   </div>
