@@ -13238,6 +13238,11 @@ function snipCardDirty(){
   const s=S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel);
   return !!(ta&&s&&String(ta.value)!==String(s.content||''));
 }
+/** 输入去抖（snip-card-nomode 02）：停顿约 700ms 自动落定，连续输入期间不写盘（非每键一次）。 @returns {void} */
+function snipInput(){
+  if(snipTimer)clearTimeout(snipTimer);
+  snipTimer=setTimeout(()=>{snipTimer=null;snipCommit()},700);
+}
 /** 落定（保存唯一写入口；自动腿＝去抖／点框外，动作前兜底＝切换／收起／标记／插入／复制，删除除外）：
     只改正文（标题不经手）；空＝放弃保留原文并提示；只读＝roToast 拒绝并回退已存原文、不写盘；
     非空且与已存不同才写内存并走既有 save() 节律。不重建面板、不换卡体——点击目标行原地保留。 @returns {void} */
@@ -28748,6 +28753,7 @@ document.addEventListener('click',e=>{
 /* ---------- 输入类事件 ---------- */
 document.addEventListener('input',e=>{
   if(e.target.id==='codexSearch'){S.ui.codexSearch=e.target.value;clearTimeout(window._csT);window._csT=setTimeout(()=>{render();$('#codexSearch').focus();const i=$('#codexSearch');i.setSelectionRange(i.value.length,i.value.length)},350)}
+  if(/** @type {any} */(e.target).id==='rsn-c'){snipInput();return}   // 无模式卡身：输入停顿约 0.7s 自动落定（去抖，非每键写盘）
   if(e.target.id==='rsnSearch'){S.ui.snipQ=e.target.value;resSnipFilterApply()}   // 票23：片段搜索输入即筛（零重建零写入）
   if(e.target.id==='rsnCdxSearch'){S.ui.codexQ=e.target.value;resCdxFilterApply()}   // 票38：设定搜索输入即筛（同片段口径；零重建零写入）
   if(e.target.id==='rsChatSearch'){S.ui.chatQ=e.target.value;resChatFilterApply()}   // 票57：会话搜索输入即筛（同口径零重建零写入；范围＝获准的请求/结果/标题文本）
