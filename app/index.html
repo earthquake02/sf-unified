@@ -2243,6 +2243,7 @@ async function stFlush(force,beacon,onProg){
     ST.writing=false;
     if(pageShown)stFlushPageDone();
     if(ST.pending&&!roReason())stFlush();
+    try{pubCurBook()}catch(_e){}   // quick-follow：写盘投影后统一发布主窗当前书（新建/删除/导入/boot 四类入口的 choke 点）
   }
 }
 /* 断连/超时后的对账（复核 F5＋回验 N1/N2）：把「本轮实际尝试写的**每个**文件」都与盘上内容逐字比对——
@@ -13424,6 +13425,26 @@ try{
     if(pp&&typeof pp==='object')quickPingMerge(pp);
   });
 }catch(e){}
+/* quick-follow 票：主窗当前书发布（QUICK_PING 反向桥的正向补充）——把 S.ui.novelId 的目录名写
+   localStorage[MAIN_BOOK_KEY]，速记窗（同源同 WebView2 数据目录，localStorage 共享）弹出时据此对齐目标书。
+   挂点：switchNovel（切书）与 export-ms（导出成稿切书）显式调；新建/删除/导入（均 save()）与 boot
+   （stBoot/stBootVerify→stFlush(true)）经 stFlush 收尾统一调——新书目录名由写盘投影 g3Name 才登记进
+   ST.paths，只有 stFlush 里拿得到（choke 论证链见 tools/sim_quick_follow_book.mjs A6/A7）。 */
+const MAIN_BOOK_KEY='sf-main-book';
+/** 把主窗当前书（S.ui.novelId）的目录名发布到 localStorage[MAIN_BOOK_KEY]，供同源速记窗弹出时跟随。
+ * 无当前书或 ST.paths 无此 id 时移除该键（速记窗回退旧口径：粘滞键→mtime）；值未变不重复写（幂等，storage 事件零噪音）。
+ * localStorage 异常与一切缺态静默（跟随是尽力而为，绝不影响主流程）。
+ * @returns {void} */
+function pubCurBook(){
+  try{
+    if(typeof S==='undefined'||!S||!S.ui)return;
+    const nid=S.ui.novelId||'';
+    const dir=(nid&&typeof ST!=='undefined'&&ST&&ST.paths)?String(ST.paths.get(nid)||''):'';
+    if(!dir){try{localStorage.removeItem(MAIN_BOOK_KEY)}catch(_e){}return}
+    let cur=null;try{cur=localStorage.getItem(MAIN_BOOK_KEY)}catch(_e){}
+    if(cur!==dir){try{localStorage.setItem(MAIN_BOOK_KEY,dir)}catch(_e){}}
+  }catch(_e){}
+}
 /* 速记体验重做票04：点外提交（capture 阶段，先于派发 click）——就地输入浮层与编辑表单；
    Esc 取消编辑。均为会话瞬态交互，零 save 决策在各自函数内。 */
 document.addEventListener('mousedown',e=>{
@@ -14669,6 +14690,7 @@ function switchNovel(id){
   S.ui.novelId=id||null;S.ui.sceneId=null;S.ui.graphSceneId=undefined;S.ui.chatId=null;S.ui.cpDraft='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui.codexCat='';S.ui.snipQ='';S.ui.res=null;S.ui.resNarrow=true;S.ui._grManualDraft='';S.ui._grFxScene=null;S.ui._styCal=null;S.ui._styCalDraft=null;S.ui.sbSel=[];S.ui._tagBatch=null;S.ui._tagBatchRetry=[];
   if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}
   S.ui._styCalToken=(S.ui._styCalToken||0)+1;
+  pubCurBook();   // quick-follow：切书即发布主窗当前书（速记窗弹出跟随）
 }
 /* 旧哈希收口（写作体验票60／决策票#05「旧入口兼容」）：旧 `#/<view>` 一律按决策表解析到新入口，
    有书/无书两态。新五页与图谱中央宽视图（graph）为现行视图名，不在此表（原样进入）；
@@ -27891,7 +27913,7 @@ document.addEventListener('click',async e=>{
       if(!txt){toast('还没有场景');break}
       copyText((label?label+'\n':'')+txt);toast('已复制'+scenes.length+'条摘要');
     }break}
-  case'export-ms':{if(id&&S.data.novels.some(x=>x.id===id)){S.ui.novelId=id;S.ui.res=null;S.ui.resNarrow=true;S.ui.snipQ='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui._styCal=null;S.ui._styCalDraft=null;if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}S.ui._styCalToken=(S.ui._styCalToken||0)+1}openExportMsModal();break}   // S21 复核 N-1：切入目标书同款清校准瞬态；票21：切书清资源选项；票38 复核 L1：导出成稿切书同批清片段/设定查询（不留上一本书的幽灵查询）
+  case'export-ms':{if(id&&S.data.novels.some(x=>x.id===id)){S.ui.novelId=id;S.ui.res=null;S.ui.resNarrow=true;S.ui.snipQ='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui._styCal=null;S.ui._styCalDraft=null;if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}S.ui._styCalToken=(S.ui._styCalToken||0)+1;pubCurBook()}openExportMsModal();break}   // S21 复核 N-1：切入目标书同款清校准瞬态；票21：切书清资源选项；票38 复核 L1：导出成稿切书同批清片段/设定查询（不留上一本书的幽灵查询）
   case'ms-all':case'ms-none':{$$('#ms-tree [data-ms]').forEach(c=>{c.checked=act==='ms-all'});syncMsTree();break}
   case'ms-do':doExportMs();break;
   /* Codex */

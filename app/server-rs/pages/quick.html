@@ -92,6 +92,7 @@
   var FORCE=document.getElementById('force');
   var PING_KEY='sf-quick-ping';
   var BOOK_KEY='sf-quick-book';
+  var MAIN_BOOK_KEY='sf-main-book';   // quick-follow：主窗发布的当前书目录名（无当前书时主窗删键）
   var books=[],bookIdx=0;
   var st=null;            // {dir,path,hash,id,title,createdAt,rev}
   var timer=null,busy=false,queued=false,conflict=false,resetWhenIdle=false;
@@ -138,6 +139,15 @@
     BOOK.className='';
     BOOK.title='点击切换目标书（共 '+books.length+' 本）';
   }
+  /* 选书优先级（quick-follow 票）：主窗当前书 sf-main-book（在书列表命中才用）→ 本窗手动粘滞
+     sf-quick-book（点击切书写入，作兜底）→ 项目.json mtime 最新（旧口径）。纯函数便于仿真断言。 */
+  function pickBookIdx(list){
+    var idx=-1;
+    try{var m=localStorage.getItem(MAIN_BOOK_KEY)||'';if(m)idx=list.findIndex(function(b){return b.dir===m})}catch(e){}
+    if(idx<0){try{var q=localStorage.getItem(BOOK_KEY)||'';if(q)idx=list.findIndex(function(b){return b.dir===q})}catch(e){}}
+    if(idx<0){var best=-1,bi=0;list.forEach(function(b,i){if(b.mtime>best){best=b.mtime;bi=i}});idx=list.length?bi:0}
+    return idx;
+  }
   function loadBooks(){
     setState('载入…');
     return api('GET','/api/fs/list?path=').then(function(r){
@@ -156,14 +166,7 @@
         }).catch(function(){return null});
       })).then(function(rows){
         books=rows.filter(Boolean);
-        var want='';try{want=localStorage.getItem(BOOK_KEY)||''}catch(e){}
-        var idx=books.findIndex(function(b){return b.dir===want});
-        if(idx<0){
-          var best=-1,bi=0;
-          books.forEach(function(b,i){if(b.mtime>best){best=b.mtime;bi=i}});
-          idx=books.length?bi:0;
-        }
-        bookIdx=idx;
+        bookIdx=pickBookIdx(books);
         renderBook();
         if(!books.length){
           HINT.innerHTML='数据文件夹里还没有作品。请先在主窗口新建一部小说，再回来速记。';
@@ -185,23 +188,34 @@
     NOTE.disabled=!books.length;
     setState(books.length?'自动保存':'');
   }
-  /* 每次打开窗口＝新起一条：挂起的写/删先在途落定再清纸（旧条已存不清）。
+  /* 每次打开窗口＝新起一条：挂起的写/删先在途落定到原书（已开始记录的那条绝不悄悄改道）再清纸对齐；
+     冲突未决一律不动。quick-follow 票：清纸后新起一条前按主窗键对齐目标书（见 followMainBook）。
      2026-10-23 复验修复竞态：旧版 save() 后同步 resetEntry() 把 st 置空，在途写回回调对 null 赋 hash 抛错、
      busy 永卡 true（此窗再也存不了），冲突态还静默丢弃未存文本。现经 resetWhenIdle＋settle() 落定后清纸。 */
   window.__sfQuickNew=function(){
     if(timer){clearTimeout(timer);timer=null}
     if(conflict)return;                          // 冲突未决：保留文本与冲突条，等作者处置
     resetWhenIdle=true;
-    if(busy)return;                              // 在途写回：落定后由 settle() 清纸
-    if(NOTE.value.trim()||st){save();return}     // 有挂起的写/删：先落定，settle() 再清纸
-    resetWhenIdle=false;resetEntry();            // 无事可存：直接新起一条
+    if(busy)return;                              // 在途写回：落定后由 settle() 清纸对齐
+    if(NOTE.value.trim()||st){save();return}     // 有挂起的写/删：先落定到原书，settle() 再清纸对齐
+    resetWhenIdle=false;resetEntry();followMainBook();   // 无事可存：直接新起一条并对齐主窗当前书
   };
-  /* 一次写回链彻底落定（busy 解除）的统一收尾：有排队续存优先，再执行推迟的切书/清纸。 */
+  /* 一次写回链彻底落定（busy 解除）的统一收尾：有排队续存优先，再执行推迟的切书/清纸对齐。 */
   function settle(){
     busy=false;
     if(queued){queued=false;save();return}
     if(switchAfterSettle){switchBook();return}
-    if(resetWhenIdle){resetWhenIdle=false;resetEntry()}
+    if(resetWhenIdle){resetWhenIdle=false;resetEntry();followMainBook()}
+  }
+  /* 弹出对齐主窗当前书（quick-follow 票）：只在清纸后的安全时机调（新起一条前），绝不改动在途条目。
+     主窗键指向书列表外的书＝主窗刚新建了书、本窗列表过期——轻量重载列表再对齐（loadBooks 内含 pickBookIdx）；
+     主窗键缺失/不命中则 pickBookIdx 落到粘滞键或 mtime（手动切书在当次窗口存续期经粘滞键续命）。 */
+  function followMainBook(){
+    if(!books.length){loadBooks();return}
+    var m='';try{m=localStorage.getItem(MAIN_BOOK_KEY)||''}catch(e){}
+    if(m&&!books.some(function(b){return b.dir===m})){loadBooks();return}
+    var idx=pickBookIdx(books);
+    if(idx!==bookIdx){bookIdx=idx;renderBook()}
   }
   /* 切书同样要等写回落定（2026-10-23 同批复验修复：旧版点击即切，409 重试会把条建进新书、回调对空 st 抛错卡死） */
   var switchAfterSettle=false;
