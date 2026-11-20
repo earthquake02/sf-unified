@@ -14755,7 +14755,7 @@ function nav(v,params={}){S.ui.view=v;Object.assign(S.ui,params);S.ui.view=viewF
    场景焦点、会话选择与副驾草稿、资源选项与开合、片段/设定/会话搜索与标签与预览、
    审稿闭环草稿与目标场景、批量勾选与重试批次、文风校准瞬态＋作废在途校准（token 挡迟到响应）。 */
 function switchNovel(id){
-  S.ui.novelId=id||null;S.ui.sceneId=null;S.ui.graphSceneId=undefined;S.ui.chatId=null;S.ui.cpDraft='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui.codexCat='';S.ui.snipQ='';S.ui.res=null;S.ui.resNarrow=true;S.ui._grManualDraft='';S.ui._grFxScene=null;S.ui._styCal=null;S.ui._styCalDraft=null;S.ui.sbSel=[];S.ui._tagBatch=null;S.ui._tagBatchRetry=[];
+  S.ui.novelId=id||null;S.ui.sceneId=null;S.ui.graphSceneId=undefined;S.ui.chatId=null;S.ui.cpDraft='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui.codexCat='';S.ui.snipQ='';S.ui.snipSel=null;snipCommitCancel();S.ui.res=null;S.ui.resNarrow=true;S.ui._grManualDraft='';S.ui._grFxScene=null;S.ui._styCal=null;S.ui._styCalDraft=null;S.ui.sbSel=[];S.ui._tagBatch=null;S.ui._tagBatchRetry=[];
   if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}
   S.ui._styCalToken=(S.ui._styCalToken||0)+1;
   pubCurBook();   // quick-follow：切书即发布主窗当前书（速记窗弹出跟随）
