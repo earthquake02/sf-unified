@@ -13181,7 +13181,7 @@ function resSnipCardHTML(s){
     const tt=String(s.title==null?'':s.title)||resSnipMain(s);
     head=`<div class="res-snip-card-head" data-act="rsn-pick" data-id="${s.id}" aria-expanded="true" title="收起词条"><span class="res-snip-card-title" title="${esc(tt)}">${esc(tt)}</span>${done?'<span class="res-snip-card-chip">已完成</span>':''}${resSnipActHTML(s)}</div>`;
   }
-  return `<div class="res-snip-card" data-detail="${s.id}">${head}<div class="res-snip-card-body" data-ftext="1">${esc(s.content||'')}</div></div>`;
+  return `<div class="res-snip-card" data-detail="${s.id}" data-id="${s.id}">${head}<div class="res-snip-card-body" data-ftext="1">${esc(s.content||'')}</div></div>`;
 }
 /** 编辑表单（票04，本票保留待 02 原位编辑迁移；读路径词条卡编辑入口已置灰，本函数当前不可达）：只改正文（标题不经手——自动命名保留）；点外＝自动保存（空＝放弃）、Esc＝取消、保存＝显式落盘。
  * @param {{id:string,content?:string}} s */
