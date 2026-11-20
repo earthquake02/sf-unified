@@ -80,7 +80,6 @@ body{background:var(--bg); color:var(--tx); font-family:var(--ui-font); font-siz
 .res-snip-ic[disabled]{opacity:.38; cursor:not-allowed}
 .res-snip-ic[disabled]:hover{background:none; color:var(--tx2)}
 .res-snip-ic.danger:hover{color:var(--err)}
-.res-snip-ic.pri{color:var(--ac2)}
 .res-snip-card-body{white-space:pre-wrap; overflow-wrap:anywhere; max-height:min(42vh,340px); overflow-y:auto; padding:6px 9px; font-size:12.5px; line-height:1.75; color:var(--tx)}
 .res-snip.done .res-snip-card-body{color:var(--tx2)}
 /* 无模式卡身（snip-card-nomode 01）：卡身永远是同一个可编辑内容框（无只读块／无编辑态两套 DOM）；
@@ -13031,20 +13030,22 @@ function resCodexHTML(n){
   return graph+search+groups+mgBar+`<div class="res-empty" id="rsnCdxNone"${noneShow?'':' hidden'}>没有匹配的设定条目</div>`;
 }
 /* 片段面板（票22／决策票#05）：条目＝单行「有标题显标题，否则正文开头」＋次行创建日期（既定 UTC
-   截断口径，缺记录「—」）；选中在该条目下方展开预览，提供「复制全文／编辑」——编辑为面板内表单，
-   明确保存才落盘。列表只取本书片段（novelId 过滤，不串书）；选择/预览/复制只存会话瞬态
-   （S.ui.snipSel，不入 UI_KEY、不触发 save()；再点同条收起词条卡）；片段 tags 原样保留，不经场景标签模型。
+   截断口径，缺记录「—」）；选中后原位长成词条卡（无模式：卡身永远是可编辑内容框）。列表只取本书片段
+   （novelId 过滤，不串书）；选择/复制只存会话瞬态（S.ui.snipSel，不入 UI_KEY；再点同条收起词条卡）；
+   片段 tags 原样保留，不经场景标签模型。
    票25：灵感速记并入本面板（面板内入口＋保存后立即在列表可见，自动带「灵感」标签、归当前书）。
    票23／U07：搜索范围＝标题＋正文＋标签三字段（不增字段、不跨书）；输入即筛、清空还原、查询瞬态。
    片段深化票01：两层生命周期——片段 frontmatter 可选键 `status`（仅 done 落键＝已完成，缺省＝待处理，
    读侧非 done 归缺省）；列表分「待处理（默认展开）／已完成（默认折叠）」两组，组头计数（查询期「匹配数/总数」），
-   折叠记忆按书持久化（snipCollapsed，循票10/11 cdxCollapsed 口径）；操作行一键「标记已完成/恢复待处理」
+   折叠记忆按书持久化（snipCollapsed，循票10/11 cdxCollapsed 口径）；卡头一键「标记已完成/恢复待处理」
    （走既有 save() 节律，diff 只写该片段文件）。
    速记体验重做票04：极简列表——条目只显正文一行（无日期/标题展示；数据层标题保留供文件名与 @引用），
-   点选才展开操作行（插入正文/复制全文/编辑/删除/标记；读路径票01 起改为原位词条卡：卡头＝标题＋一行五图标、卡身＝全文；
-   票02 起编辑为卡身原位换 textarea：边框点亮、同框同高、Esc 取消／点外自动保存／清空放弃／Ctrl⌘+Enter 显式保存）；「✦ 速记片段」按钮与居中弹窗退役，
-   空白处一键点击＝就地输入浮层（点击处定位）；列表区 66.6% 滚动帽保底部 ≥1/3 恒可点空白；
-   点空白时「已完成」必收起（记忆回默认）、「待处理」保持原折叠态；待处理删除二次确认、已完成直接删。 */
+   点选才原位长成词条卡（卡头＝标题＋四枚常驻图标、卡身＝可编辑内容框；无只读态／无编辑态）；
+   「✦ 速记片段」按钮与居中弹窗退役，空白处一键点击＝就地输入浮层（点击处定位）；
+   列表区 66.6% 滚动帽保底部 ≥1/3 恒可点空白；点空白时「已完成」必收起（记忆回默认）、「待处理」保持原折叠态。
+   无模式卡身（snip-card-nomode 01／02／03）：选中即聚焦文尾；改稿停手约 0.7s 去抖自动写入，点内容框外
+   （含卡头与卡外）立即落定；清空＝放弃保留原文并提示；只读拒绝并回退已存原文、不假成功；
+   删除点垃圾桶直接删、文件移入回收站（不二次确认）；卡片无 footer 提示文字。 */
 /** 条目主行显示文本（票04）：只显正文（空白归一；超长由 CSS 单行省略号截断），不显标题/日期。
  * @param {{content?:string}} s @returns {string} */
 function resSnipMain(s){return String(s.content==null?'':s.content).replace(/\s+/g,' ').trim()||'（空片段）'}
@@ -13113,7 +13114,7 @@ function resSnipFilterApply(){
     let vis=false,total=0,match=0;
     g.querySelectorAll('.res-snip').forEach(/** @param {any} it */ it=>{
       total++;
-      const row=it.querySelector('.res-snip-row')||it.querySelector('.res-snip-card');   // 读路径词条卡（票01）：选中条目无预览行，卡片带同一 data-id
+      const row=it.querySelector('.res-snip-row')||it.querySelector('.res-snip-card');   // 无模式词条卡：选中条目无预览行，卡片带同一 data-id
       const s=row&&S.data.snippets.find(/** @param {any} x */ x=>x.id===row.dataset.id);
       const hit=!!s&&resSnipHit(s,q);
       if(q&&hit)match++;
@@ -13126,8 +13127,9 @@ function resSnipFilterApply(){
   });
   const em=$('#rsnNone');if(em)em.hidden=any||!q;
 }
-/** 片段面板列表（票04／读路径票01）：搜索＋两层分组（66.6% 滚动帽）＋恒留 ≥1/3 空白（rsn-blank＝空白即输入）＋就地输入浮层；
-    未选中条目只显正文一行（resSnipMain）；选中后预览行不再渲染，原位长成词条卡（resSnipCardHTML＝卡头标题＋图标行＋卡身全文）。
+/** 片段面板列表（票04／无模式卡身 snip-card-nomode 01）：搜索＋两层分组（66.6% 滚动帽）＋恒留 ≥1/3 空白
+    （rsn-blank＝空白即输入）＋就地输入浮层；未选中条目只显正文一行（resSnipMain）；选中后预览行不再渲染，
+    原位长成词条卡（resSnipCardHTML＝卡头标题＋四枚常驻图标＋永远可编辑的内容框）。
     @param {{id:string}} n 当前作品 */
 function resSnippetsHTML(n){
   const list=S.data.snippets.filter(/** @param {any} s */ s=>s.novelId===n.id);
@@ -13144,7 +13146,7 @@ function resSnippetsHTML(n){
     return `<div class="res-snip-group" data-layer="${L.id}"${gHid?' hidden':''}>`+head+items.map(/** @param {any} s */ s=>{
       const on=!!sel&&sel.id===s.id,hid=folded||!!q&&!resSnipHit(s,q);
       let h=`<div class="res-item res-snip${on?' on':''}${s.status==='done'?' done':''}"${hid?' hidden':''}>`;
-      /* 读路径词条卡（票01／A3）：选中后预览行不再渲染，原位长成词条卡（卡头＝标题＋图标行，卡身＝全文）；未选中才是单行省略行。 */
+      /* 无模式词条卡（snip-card-nomode 01）：选中后预览行不再渲染，原位长成词条卡（卡头＝标题＋四枚常驻图标，卡身＝可编辑内容框）；未选中才是单行省略行。 */
       h+=on?resSnipCardHTML(s):`<button type="button" class="res-snip-row" data-act="rsn-pick" data-id="${s.id}" aria-expanded="false"><span class="rt">${esc(resSnipMain(s))}</span></button>`;
       return h+'</div>';
     }).join('')+`</div>`;
@@ -13235,7 +13237,7 @@ function snipFocusCard(){
 /** 内容框是否有未落定改动（后台文件更新防吞稿：选中条两处都不动，绝不用旧稿盖新盘）。 @returns {boolean} */
 function snipCardDirty(){
   const ta=$('#rsn-c');
-  const s=S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel);
+  const s=S.data&&Array.isArray(S.data.snippets)?S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel):null;
   return !!(ta&&s&&String(ta.value)!==String(s.content||''));
 }
 /** 输入去抖（snip-card-nomode 02）：停顿约 700ms 自动落定，连续输入期间不写盘（非每键一次）。 @returns {void} */
@@ -13249,7 +13251,7 @@ function snipInput(){
 function snipCommit(){
   snipCommitCancel();
   const ta=$('#rsn-c');
-  const s=S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel);
+  const s=S.data&&Array.isArray(S.data.snippets)?S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel):null;
   if(!ta||!s)return;
   const v=String(ta.value);
   if(!v.trim()){ta.value=String(s.content||'');toast('内容为空，未保存');return}   // 清空＝放弃保留原文
@@ -13416,7 +13418,7 @@ function renderResPanel(){
 /* 片段深化票03：托盘快记窗落盘感知——两窗同源（同服务端口、同 WebView2 数据目录，localStorage 共享），
    快记窗每次写/删片段文件后写 QUICK_PING 键，本窗（含主窗隐藏常驻态）经 storage 事件增量重扫该书片段目录：
    新文件按「本次打开读到」入文件账本（ST.files），保证主窗下次写盘把它纳入比对、不误删；
-   他方更新既有文件：仅当该片段未处于编辑态时同步内存与账本（两处同进同退，避免投影把旧稿写回）；
+   他方更新既有文件：仅当该片段内容框无未落定改动时同步内存与账本（两处同进同退，避免投影把旧稿写回）；
    删除：按 ping 的 id 移出内存与账本。重扫只做片段目录，不整场 snapshot、零 save、零打戳。 */
 const QUICK_PING='sf-quick-ping';
 /** @param {any} pp 快记窗 ping：{dir, path, id, del} */
@@ -14753,9 +14755,10 @@ function nav(v,params={}){S.ui.view=v;Object.assign(S.ui,params);S.ui.view=viewF
 /* 体验修补票02：切书瞬态清理的单一来源。旧 #novelSel change 分支承担的清理随侧栏删除迁入此函数，
    由现行切书入口 novel-open 调用（测试亦以本函数为等价切书入口）。跨书瞬态一次清尽：
    场景焦点、会话选择与副驾草稿、资源选项与开合、片段/设定/会话搜索与标签与预览、
-   审稿闭环草稿与目标场景、批量勾选与重试批次、文风校准瞬态＋作废在途校准（token 挡迟到响应）。 */
+   审稿闭环草稿与目标场景、批量勾选与重试批次、文风校准瞬态＋作废在途校准（token 挡迟到响应）。
+   片段选中态清前先经 snipCommit() 落定内容框改动（与点外/切换同口径：空放弃、只读拒绝回退），防切书丢稿。 */
 function switchNovel(id){
-  S.ui.novelId=id||null;S.ui.sceneId=null;S.ui.graphSceneId=undefined;S.ui.chatId=null;S.ui.cpDraft='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui.codexCat='';S.ui.snipQ='';S.ui.snipSel=null;snipCommitCancel();S.ui.res=null;S.ui.resNarrow=true;S.ui._grManualDraft='';S.ui._grFxScene=null;S.ui._styCal=null;S.ui._styCalDraft=null;S.ui.sbSel=[];S.ui._tagBatch=null;S.ui._tagBatchRetry=[];
+  S.ui.novelId=id||null;S.ui.sceneId=null;S.ui.graphSceneId=undefined;S.ui.chatId=null;S.ui.cpDraft='';S.ui.codexQ='';S.ui.chatQ='';S.ui.chatFnF='';S.ui.chatPrev=null;S.ui.codexCat='';S.ui.snipQ='';snipCommit();S.ui.snipSel=null;S.ui.res=null;S.ui.resNarrow=true;S.ui._grManualDraft='';S.ui._grFxScene=null;S.ui._styCal=null;S.ui._styCalDraft=null;S.ui.sbSel=[];S.ui._tagBatch=null;S.ui._tagBatchRetry=[];
   if(S.ui._styCalAbort){S.ui._styCalAbort.abort();S.ui._styCalAbort=null}
   S.ui._styCalToken=(S.ui._styCalToken||0)+1;
   pubCurBook();   // quick-follow：切书即发布主窗当前书（速记窗弹出跟随）
