@@ -19217,7 +19217,7 @@ function graphLegacyWatch(){
 function graphLayoutMem(nid){
   return relGraphOf(nid).positions;
 }
-/** 关系图谱滚轮缩放范围（仅关系图谱；剧情图谱仍用 0.25–3）。 */
+/** 两图统一滚轮缩放范围（关系图谱与剧情图谱同用 10%–400%；plot-graph-cards 08 起剧情图谱并入）。 */
 const GRAPH_SCALE_MIN=0.1;
 const GRAPH_SCALE_MAX=4;
 /** 节点半径：14 + min(31, 全书提及×0.1)，下限 14、上限 45（约 310 次封顶）。 */
@@ -21771,12 +21771,12 @@ function plotScaleOf(nid){
   if(!S.ui.plotGraphScale||typeof S.ui.plotGraphScale!=='object')S.ui.plotGraphScale={};
   let sc=Number(S.ui.plotGraphScale[nid]);
   if(!Number.isFinite(sc)||sc<=0)sc=1;
-  return Math.min(3,Math.max(0.25,sc));
+  return Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,sc));   // 08：两图统一 10%–400%（原 0.25–3）
 }
 /** @param {string} nid @param {number} sc */
 function plotScaleSet(nid,sc){
   if(!S.ui.plotGraphScale||typeof S.ui.plotGraphScale!=='object')S.ui.plotGraphScale={};
-  S.ui.plotGraphScale[nid]=Math.min(3,Math.max(0.25,sc));
+  S.ui.plotGraphScale[nid]=Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,sc));   // 08：两图统一 10%–400%（原 0.25–3）
 }
 /** 打开叶对应写作正文（图谱内不改正文）
  * @param {any} leaf */
@@ -22195,9 +22195,9 @@ function vPlotGraph(){
   <span class="hint" style="margin:0">当前卷：${esc(actLab)} · 叶节点 ${leaves.length}</span>
   <button type="button" class="btn sm" data-act="plot-open-write" ${focusId?'':'disabled '}title="打开当前聚焦叶的写作正文">打开写作</button>
   </div>
-  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）兜底；悬停卡片 0.8s 出拉线箭头，按下拖到目标卡松手弹「导致／相关」二选一（回车确认，Esc／点空白取消）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。工具栏可按标题搜索节点（命中高亮并滚入视野、Enter 循环、清空恢复；引子不参与）。工具栏「适配」＝按可见卡片已存坐标包围盒一屏全览（留边距，再点回 100%）；Ctrl+Shift＋左键空白划框＝区域移动：框内卡片整组跟手平移、松手落盘并进撤销栈（起手在卡片上不生效）；悬停卡片 ≥1.5s 触发邻居高亮：相连边与对端卡片保持亮度＋轻描边、其余淡出，移开立即恢复（与搜索高亮并存时临时优先）；任意拖拽进行中（拖点、平移、拉线、区域移动）Esc＝中止回原状，不落盘不占撤销栈。MVP 无多选。</p>
+  <p class="pd">叶节点＝当前卷目录叶（有小节只铺小节，无小节铺章）。滚轮缩放 10%–400%（与关系图谱一致）；右键拖平移；左键拖节点记坐标；单击聚焦；双击或「打开写作」跳转正文（图谱内不改正文）。工具栏「拉导致／相关」后依次点两端建边（再点同钮或点空白退出）兜底；悬停卡片 0.8s 出拉线箭头，按下拖到目标卡松手弹「导致／相关」二选一（回车确认，Esc／点空白取消）；点中边后「删边」可点。不按目录自动串链。可「引入叶」或从故事板时间轴拖入窗外叶；钉住跨卷常驻；断边可「拉入对端」。角标＝窗内目录序（不可手调）。工具栏可按标题搜索节点（命中高亮并滚入视野、Enter 循环、清空恢复；引子不参与）。工具栏「适配」＝按可见卡片已存坐标包围盒一屏全览（留边距，再点回 100%）；Ctrl+Shift＋左键空白划框＝区域移动：框内卡片整组跟手平移、松手落盘并进撤销栈（起手在卡片上不生效）；悬停卡片 ≥1.5s 触发邻居高亮：相连边与对端卡片保持亮度＋轻描边、其余淡出，移开立即恢复（与搜索高亮并存时临时优先）；任意拖拽进行中（拖点、平移、拉线、区域移动）Esc＝中止回原状，不落盘不占撤销栈。MVP 无多选。</p>
   ${leaves.length?`<div class="graph-shell"><div class="graph-wrap" data-plot="1" data-nid="${esc(nid)}" data-bw="${W}" data-bh="${H}" data-ox="${originX}" data-oy="${originY}" data-scale="${scale}"><div class="graph-canvas" style="width:${dW}px;height:${dH}px;min-width:${dW}px;min-height:${dH}px"><svg width="${W}" height="${H}" viewBox="${originX} ${originY} ${W} ${H}">${marker}<g class="graph-edges">${svgEdges}</g><g class="graph-nodes">${svgNodes}</g></svg></div></div>
-  <div class="graph-tools"><input type="text" id="plotSearch" class="graph-search" placeholder="搜索节点标题" aria-label="搜索剧情叶节点（仅标题）" title="按节点标题片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复（引子不参与）" value="${esc(S.ui.plotQ||'')}"><span id="plotSearchStat" class="hint" style="margin:0" aria-live="polite"></span><span class="hint" style="margin:0" id="plotScaleLbl">缩放 ${Math.round(scale*100)}%</span><button type="button" class="btn sm" id="plotFitBtn" ${leaves.length?'':'disabled '}title="按可见卡片的已保存坐标缩放平移到一屏全览（留边距，25%–300%）；再点一次回到 100%">适配</button><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
+  <div class="graph-tools"><input type="text" id="plotSearch" class="graph-search" placeholder="搜索节点标题" aria-label="搜索剧情叶节点（仅标题）" title="按节点标题片段搜索：命中高亮并滚入视野，Enter 循环多命中；清空恢复（引子不参与）" value="${esc(S.ui.plotQ||'')}"><span id="plotSearchStat" class="hint" style="margin:0" aria-live="polite"></span><span class="hint" style="margin:0" id="plotScaleLbl">缩放 ${Math.round(scale*100)}%</span><button type="button" class="btn sm" id="plotFitBtn" ${leaves.length?'':'disabled '}title="按可见卡片的已保存坐标缩放平移到一屏全览（留边距，10%–400%）；再点一次回到 100%">适配</button><span class="hint" style="margin:0">实线＝导致 · 虚线＝相关</span>
   <button type="button" class="btn sm" data-act="plot-link-cause" title="进入拉导致边：依次单击两个叶节点">拉导致</button>
   <button type="button" class="btn sm" data-act="plot-link-relate" title="进入拉相关边：依次单击两个叶节点">拉相关</button>
   <button type="button" class="btn sm danger" data-act="plot-edge-del" title="选中边后可删除" disabled>删边</button>
@@ -22235,13 +22235,13 @@ function bindPlotGraph(){
     if(filled.W!==BW||filled.H!==BH)adoptBoard(filled);
   }
   /**
-   * @param {number} sc 目标缩放（钳 25%–300%）
+   * @param {number} sc 目标缩放（钳 10%–400%，两图统一）
    * @param {number} [cx] 锚点 X（原点相对坐标：(clientX-rect.left+scrollLeft)/scale，不含 originX/originY；省略＝不锚定不补滚动——07 适配按钮精设滚动时用）
    * @param {number} [cy] 锚点 Y（省略＝不锚定）
    */
   const applyScale=(sc,cx,cy)=>{
     const old=scale;
-    scale=Math.min(3,Math.max(0.25,sc));
+    scale=Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,sc));   // 08：两图统一 10%–400%（原 0.25–3）
     plotScaleSet(nid,scale);
     graphApplyBoard(wrap,svg,canvas,{originX,originY,W:BW,H:BH},scale);
     if(cx!=null&&cy!=null){
@@ -22358,7 +22358,7 @@ function bindPlotGraph(){
   },{passive:false});
   /* plot-graph-cards 07（规格 Q6；术语「适配全图」，参照 bindGraph 票06 适配按钮模式）：按可见卡片已存坐标
      （pos＝plotEnsurePositions 真源，渲染时缺档已回写）取包围盒（含整卡半宽高＋余量；卡片无外置标签，不留
-     标签分支），缩放平移到留边距的一屏全览，钳制 25%–300%（10%–400% 放宽归 08 票）；再点一次回 100%
+     标签分支），缩放平移到留边距的一屏全览，钳制 10%–400%（plot-graph-cards 08 与关系图谱统一）；再点一次回 100%
      （以视口中心为锚）。纯视图操作：不产生选中态、不写布局撤销栈、不落盘（缩放仍走 plotScaleSet 既有
      S.ui.plotGraphScale 持久化，维持现状）；画板先按目标视野扩边（graphBoardGrowTo 带 plot 卡片边距，
      参照 graphBoardFillView 的包住口径）再精设滚动，不被钳——applyScale 锚定公式吃「原点相对坐标」，此处
@@ -22395,7 +22395,7 @@ function bindPlotGraph(){
     if(!any)return;   // 空图：无动作不报错（按钮模板已禁用，双保险）
     const M=48;   // 每侧留边（CSS px）
     const availW=Math.max(60,vw-2*M),availH=Math.max(60,vh-2*M);
-    const s=Math.min(3,Math.max(0.25,Math.min(availW/Math.max(1,maxX-minX),availH/Math.max(1,maxY-minY))));
+    const s=Math.min(GRAPH_SCALE_MAX,Math.max(GRAPH_SCALE_MIN,Math.min(availW/Math.max(1,maxX-minX),availH/Math.max(1,maxY-minY))));   // 08：两图统一 10%–400%（原 0.25–3）
     const tlx=(minX+maxX)/2-vw/(2*s),tly=(minY+maxY)/2-vh/(2*s);
     const g1=graphBoardGrowTo({originX,originY,W:BW,H:BH},tlx,tly,{padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});
     const g2=graphBoardGrowTo(g1,tlx+vw/s,tly+vh/s,{padX:PLOT_BOARD_PAD_X_C,padY:PLOT_BOARD_PAD_Y_C});
