@@ -67,12 +67,8 @@ body{background:var(--bg); color:var(--tx); font-family:var(--ui-font); font-siz
 .res-snip.on>.res-snip-row{background:color-mix(in srgb, var(--ac) 10%, transparent)}
 .res-snip .rt{display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .res-snip.done>.res-snip-row .rt{color:var(--tx3)}
-.res-snip-detail{padding:4px 4px 8px; border-top:1px dashed var(--line)}
-.res-snip-act{display:flex; flex-wrap:wrap; gap:6px}
-.res-snip-confirm{display:flex; align-items:center; gap:6px; color:var(--err); font-size:12px}
-.res-snip-edit textarea{width:100%; min-height:64px; background:var(--bg3); border:1px solid var(--line); border-radius:8px; color:var(--tx); font:inherit; font-size:12.5px; padding:6px 8px; resize:vertical}
 /* 读路径词条卡（snip-panel-fulltext 01／方案 A3）：选中后预览行退役，原位长成词条卡＝卡头（标题＋一行图标）＋卡身全文。
-   卡身超高内部滚动（约 42vh 封顶，不顶开列表）；卡左 2px 金色细边标识选中；编辑入口本票置灰（02 原位编辑迁移）。 */
+   卡身超高内部滚动（约 42vh 封顶，不顶开列表）；卡左 2px 金色细边标识选中。 */
 .res-snip-card{border:1px solid var(--line); border-left:2px solid var(--ac); border-radius:8px; background:var(--bg); overflow:hidden; margin:2px 0 4px}
 .res-snip-card-head{display:flex; align-items:center; gap:4px; padding:4px 5px; border-bottom:1px dashed var(--line); cursor:pointer; min-width:0}
 .res-snip-card-head:hover{background:var(--bg3)}
@@ -84,10 +80,19 @@ body{background:var(--bg); color:var(--tx); font-family:var(--ui-font); font-siz
 .res-snip-ic[disabled]{opacity:.38; cursor:not-allowed}
 .res-snip-ic[disabled]:hover{background:none; color:var(--tx2)}
 .res-snip-ic.danger:hover{color:var(--err)}
+.res-snip-ic.pri{color:var(--ac2)}
 .res-snip-card-head.confirm{cursor:default; color:var(--err); font-size:12px}
 .res-snip-card-head.confirm:hover{background:none}
 .res-snip-card-body{white-space:pre-wrap; overflow-wrap:anywhere; max-height:min(42vh,340px); overflow-y:auto; padding:6px 9px; font-size:12.5px; line-height:1.75; color:var(--tx)}
 .res-snip.done .res-snip-card-body{color:var(--tx2)}
+/* 原位编辑（snip-panel-fulltext 02）：卡边框点亮为 --ac；卡身阅读块原位换 textarea（同框同位同高、下限 96px、可纵向拉伸），无第二个内容框；
+   编辑态卡头不可点收起（防误触丢稿）；卡头 tabindex 聚焦态不显蓝框。 */
+.res-snip-card.editing{border-color:var(--ac)}
+.res-snip-card.editing .res-snip-card-head{cursor:default}
+.res-snip-card.editing .res-snip-card-head:hover{background:none}
+textarea.res-snip-card-body{display:block; width:100%; min-height:96px; box-sizing:border-box; margin:0; border:0; border-radius:0 0 8px 8px; outline:none; resize:vertical; background:var(--bg); color:var(--tx); font:inherit; font-size:12.5px; line-height:1.75; padding:6px 9px; max-height:none; overflow-y:auto}
+.res-snip.done .res-snip-card.editing textarea.res-snip-card-body{color:var(--tx2)}
+.res-snip-card-head[tabindex]:focus{outline:none}
 /* 票23：片段搜索框（输入即筛，只切 hidden 不重建面板 DOM）与空结果提示 */
 .res-snip-search{padding:0 4px 8px}
 .res-snip-search input{padding:5px 9px; font-size:12.5px}
@@ -13042,8 +13047,8 @@ function resCodexHTML(n){
    折叠记忆按书持久化（snipCollapsed，循票10/11 cdxCollapsed 口径）；操作行一键「标记已完成/恢复待处理」
    （走既有 save() 节律，diff 只写该片段文件）。
    速记体验重做票04：极简列表——条目只显正文一行（无日期/标题展示；数据层标题保留供文件名与 @引用），
-   点选才展开操作行（插入正文/复制全文/编辑/删除/标记；读路径票01 起改为原位词条卡：卡头＝标题＋一行五图标、卡身＝全文，
-   编辑入口暂置灰留待 02 原位编辑迁移）；「✦ 速记片段」按钮与居中弹窗退役，
+   点选才展开操作行（插入正文/复制全文/编辑/删除/标记；读路径票01 起改为原位词条卡：卡头＝标题＋一行五图标、卡身＝全文；
+   票02 起编辑为卡身原位换 textarea：边框点亮、同框同高、Esc 取消／点外自动保存／清空放弃／Ctrl⌘+Enter 显式保存）；「✦ 速记片段」按钮与居中弹窗退役，
    空白处一键点击＝就地输入浮层（点击处定位）；列表区 66.6% 滚动帽保底部 ≥1/3 恒可点空白；
    点空白时「已完成」必收起（记忆回默认）、「待处理」保持原折叠态；待处理删除二次确认、已完成直接删。 */
 /** 条目主行显示文本（票04）：只显正文（空白归一；超长由 CSS 单行省略号截断），不显标题/日期。
@@ -13152,42 +13157,42 @@ function resSnippetsHTML(n){
   }).join('');
   return `<div class="res-snip-wrap" id="rsnWrap">`+search+`<div class="res-snip-scroll">`+groups+`<div class="res-empty" id="rsnNone"${hits.length?' hidden':''}>没有匹配的片段</div></div><div class="res-snip-blank" data-act="rsn-blank" title="点击记录片段">点击记录片段</div><div class="res-snip-quick" id="rsnQuick" hidden><textarea id="rsnQkTxt" placeholder="输入内容……" aria-label="记一条片段"></textarea></div></div>`;
 }
-/** 片段操作图标行（票01 读路径词条卡卡头内）：插入正文/复制全文/编辑/删除/标记已完成（或恢复待处理）。
+/** 片段操作图标行（票01 读路径词条卡卡头内；票02 编辑入口已恢复）：插入正文/复制全文/编辑/删除/标记已完成（或恢复待处理）。
     文案沿用现行操作行（插入落点规则、删除回收站说明、完成／恢复换组说明原样搬运）；图标为 lucide 线风 SVG。
-    待处理删除需二次确认（S.ui.snipDel 确认态，卡头整体换确认文案），已完成删除直接删。
-    编辑入口本票置灰（02 原位编辑迁移后启用）。 @param {{id:string,status?:string}} s */
+    待处理删除需二次确认（S.ui.snipDel 确认态，卡头整体换确认文案），已完成删除直接删。 @param {{id:string,status?:string}} s */
 function resSnipActHTML(s){
   const dis=S.ui.view!=='editor'||!scenesOf(S.ui.novelId).length;   // 写作页且本书有景才有可插位置（render 顺序上 renderRes 先于 vEditor 兜底选景，这里不依赖 S.ui.sceneId 当时是否已落位）
   const tip=dis?'插入正文需要先进入写作页并打开某个场景':'把片段插入正文：有选区替换选区、否则插到光标处；无光标则插到'+unitLabel()+'末尾（会有提示）';
   const done=s.status==='done',tglTip=done?'恢复为待处理（回到「待处理」组）':'标记为已完成（收进「已完成」组）';
   const delTip=done?'删除该片段（直接删；文件移入回收站）':'删除该片段（需确认；文件移入回收站）';
-  const editTip='编辑将在后续版本迁移';
   return `<button type="button" class="res-snip-ic" data-act="rsn-insert" data-id="${s.id}"${dis?' disabled':''} title="${esc(tip)}" aria-label="${esc(tip)}">${uiFigOf('corner-down-right')}</button>`
     +`<button type="button" class="res-snip-ic" data-act="rsn-copy" data-id="${s.id}" title="复制全文" aria-label="复制全文">${uiFigOf('copy')}</button>`
-    +`<button type="button" class="res-snip-ic" data-act="rsn-edit" data-id="${s.id}" disabled title="${esc(editTip)}" aria-label="${esc(editTip)}">${uiFigOf('edit')}</button>`
+    +`<button type="button" class="res-snip-ic" data-act="rsn-edit" data-id="${s.id}" title="编辑片段正文（就在这张卡里改）" aria-label="编辑片段正文（就在这张卡里改）">${uiFigOf('edit')}</button>`
     +`<button type="button" class="res-snip-ic danger" data-act="rsn-del" data-id="${s.id}" title="${esc(delTip)}" aria-label="${esc(delTip)}">${uiFigOf('trash')}</button>`
     +`<button type="button" class="res-snip-ic" data-act="rsn-tgl" data-id="${s.id}" title="${esc(tglTip)}" aria-label="${esc(tglTip)}">${uiFigOf(done?'revoke':'ok')}</button>`;
 }
-/** 读路径词条卡（票01／方案 A3）：选中后预览行不再渲染，原位长成词条卡＝卡头（标题＋一行图标）＋卡身全文。
-    点卡头空白＝收起（rsn-pick 同条再点语义）；卡头内图标各自 data-act，事件委托按最近 data-act 分流、天然不冒泡成收起。
+/** 读路径词条卡（票01／方案 A3；票02 原位编辑）：选中后预览行不再渲染，原位长成词条卡＝卡头＋卡身。
+    阅读态：卡头＝标题（省略号）＋一行五图标，点卡头空白＝收起（rsn-pick 同条再点语义；卡头 tabindex 可 Tab 聚焦、Enter/Space 收起）；卡身＝全文块（内滚帽）。
+    编辑态（S.ui.snipEdit）：卡边框点亮为 --ac，卡头＝标题＋取消／保存（无 rsn-pick，点空白不收起），卡身原位换 textarea（同框同高、下限 96px、resize:vertical）。
     删除确认态（S.ui.snipDel）卡头换「删除这条片段？删除／不删」；已完成片段带小徽且卡身正文降一档色（CSS）。
     @param {{id:string,title?:string,content?:string,status?:string}} s */
 function resSnipCardHTML(s){
-  const done=s.status==='done';
+  const done=s.status==='done',editing=!!S.ui.snipEdit;
+  const tt=String(s.title==null?'':s.title)||resSnipMain(s);
   let head;
   if(S.ui.snipDel===s.id){
     head=`<div class="res-snip-card-head confirm">删除这条片段？<button type="button" class="res-snip-ic danger" data-act="rsn-del-ok" data-id="${s.id}" title="确认删除（文件移入回收站）" aria-label="确认删除（文件移入回收站）">${uiFigOf('trash')}</button><button type="button" class="res-snip-ic" data-act="rsn-del-no" title="不删" aria-label="不删">${uiFigOf('x')}</button></div>`;
+  }else if(editing){
+    head=`<div class="res-snip-card-head" title="编辑中"><span class="res-snip-card-title" title="${esc(tt)}">${esc(tt)}</span>${done?'<span class="res-snip-card-chip">已完成</span>':''}`
+      +`<button type="button" class="res-snip-ic" data-act="rsn-cancel" title="取消编辑（Esc，未保存改动丢弃）" aria-label="取消编辑（Esc，未保存改动丢弃）">${uiFigOf('x')}</button>`
+      +`<button type="button" class="res-snip-ic pri" data-act="rsn-save" data-id="${s.id}" title="保存（点外也会自动保存）" aria-label="保存（点外也会自动保存）">${uiFigOf('save')}</button></div>`;
   }else{
-    const tt=String(s.title==null?'':s.title)||resSnipMain(s);
-    head=`<div class="res-snip-card-head" data-act="rsn-pick" data-id="${s.id}" aria-expanded="true" title="收起词条"><span class="res-snip-card-title" title="${esc(tt)}">${esc(tt)}</span>${done?'<span class="res-snip-card-chip">已完成</span>':''}${resSnipActHTML(s)}</div>`;
+    head=`<div class="res-snip-card-head" data-act="rsn-pick" data-id="${s.id}" role="button" tabindex="0" aria-expanded="true" title="收起词条"><span class="res-snip-card-title" title="${esc(tt)}">${esc(tt)}</span>${done?'<span class="res-snip-card-chip">已完成</span>':''}${resSnipActHTML(s)}</div>`;
   }
-  return `<div class="res-snip-card" data-detail="${s.id}" data-id="${s.id}">${head}<div class="res-snip-card-body" data-ftext="1">${esc(s.content||'')}</div></div>`;
-}
-/** 编辑表单（票04，本票保留待 02 原位编辑迁移；读路径词条卡编辑入口已置灰，本函数当前不可达）：只改正文（标题不经手——自动命名保留）；点外＝自动保存（空＝放弃）、Esc＝取消、保存＝显式落盘。
- * @param {{id:string,content?:string}} s */
-function resSnipEditHTML(s){
-  return `<div class="res-snip-edit"><textarea id="rsn-c" rows="4" aria-label="编辑片段正文">${esc(s.content||'')}</textarea>
-    <div class="res-snip-act" style="margin-top:6px"><button class="btn sm" data-act="rsn-cancel">取消</button><button class="btn sm pri" data-act="rsn-save" data-id="${s.id}">保存</button></div></div>`;
+  const body=editing
+    ?`<textarea id="rsn-c" class="res-snip-card-body" data-ftext="1" aria-label="编辑片段正文" style="height:${Math.max(Number(S.ui.snipEditH)||0,96)}px">${esc(s.content||'')}</textarea>`
+    :`<div class="res-snip-card-body" data-ftext="1">${esc(s.content||'')}</div>`;
+  return `<div class="res-snip-card${editing?' editing':''}" data-detail="${s.id}" data-id="${s.id}">${head}${body}</div>`;
 }
 /* 速记体验重做票04：点空白时「已完成」必收起＝折叠记忆回默认（「与默认相反才落键」口径下回默认＝删键），
    「待处理」保持原折叠态；零 save（纯本机 UI 记忆，uiStateSaveSoon 去抖落 UI_KEY）。 */
@@ -13237,16 +13242,44 @@ function snipQuickSave(){
 }
 /** 就地输入取消：清文本收浮层（零写入）。 */
 function snipQuickCancel(){const box=$('#rsnQuick'),ta=$('#rsnQkTxt');if(box)box.hidden=true;if(ta)ta.value=''}
-/** 编辑点外＝自动保存（票04）：非空落盘（保留原文换行）、改空＝放弃保留原文；与 rsn-save 同口径只改正文。 */
+/** 进入原位编辑（票02）：先实测阅读块高度（下限 96px）存入瞬态 S.ui.snipEditH，再切编辑态并聚焦输入框（光标落文尾）。
+ * @param {{id:string}} s */
+function snipEditBegin(s){
+  const view=$('#resPanel .res-snip-card-body[data-ftext]');
+  S.ui.snipEditH=view?Math.max(Number(view.offsetHeight)||0,96):96;
+  S.ui.snipSel=s.id;S.ui.snipEdit=true;S.ui.snipDel=null;renderResPanel();
+  const ta=$('#rsn-c');
+  if(ta){ta.focus();try{const n=ta.value.length;ta.setSelectionRange(n,n)}catch(_e){}}
+}
+/** 显式保存（票02；rsn-save 与 Ctrl/⌘+Enter 同口径）：只改正文（标题不经手）；空＝放弃保留原文并提示；只读 roToast 拒绝、保留编辑态不假成功。
+ * @param {{id:string}} s */
+function snipSaveDo(s){
+  const c=String($('#rsn-c')?$('#rsn-c').value:'');
+  if(!c.trim()){S.ui.snipEdit=false;S.ui.snipEditH=0;renderResPanel();toast('内容为空，未保存');return}   // 空内容不落盘
+  if(roReason()){roToast();return}   // 只读：明确拒绝保存，保留编辑态不假成功
+  Object.assign(s,{content:c});
+  save();S.ui.snipEdit=false;S.ui.snipEditH=0;renderResPanel();toast('片段已保存');
+}
+/** 原位编辑落定后只重建该张词条卡（票02：mousedown capture 阶段提交时，整列重渲染会移除随后 click 的目标行，
+   导致「点他条先落定再切换」的 click 丢失；只换卡体则同行其它条目与点击目标原地保留）。卡已不在（如被删）回退整列渲染。 */
+function snipRefreshEditingCard(){
+  const card=$('#resPanel .res-snip-card.editing');
+  const s=S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel);
+  if(card&&s){card.outerHTML=resSnipCardHTML(s);return}
+  renderResPanel();
+}
+/** 编辑点外＝自动保存（票04／票02）：非空落盘（保留原文换行）、改空＝放弃保留原文并提示；只读安静收起不假成功；与 snipSaveDo 同口径只改正文。 */
 function snipEditCommit(){
   if(!S.ui.snipEdit)return;
   const ta=$('#rsn-c');
-  const v=ta?ta.value.trim():'';
+  const v=ta?ta.value:'';
   const s=S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel);
-  S.ui.snipEdit=false;
-  if(!v||!s||roReason()){renderResPanel();return}   // 空/找不到/只读＝放弃不落盘（只读安静收起，不假成功）
-  Object.assign(s,{content:ta.value});
-  save();renderResPanel();
+  S.ui.snipEdit=false;S.ui.snipEditH=0;
+  if(!s){renderResPanel();return}
+  if(!v.trim()){snipRefreshEditingCard();toast('内容为空，未保存');return}   // 清空＝放弃保留原文
+  if(roReason()){snipRefreshEditingCard();return}   // 只读＝放弃不落盘（安静收起，不假成功）
+  Object.assign(s,{content:v});
+  save();snipRefreshEditingCard();
 }
 /** 删除片段（票04）：内存移除＋save() 走投影删除腿（文件进数据夹回收站，可回溯）。 @param {any} s */
 function snipRemove(s){S.data.snippets=S.data.snippets.filter(/** @param {any} x */ x=>x!==s);save();S.ui.snipSel=null;S.ui.snipDel=null;renderResPanel();toast('已删除（文件移入回收站）')}
@@ -13489,22 +13522,40 @@ function pubCurBook(){
     if(cur!==dir){try{localStorage.setItem(MAIN_BOOK_KEY,dir)}catch(_e){}}
   }catch(_e){}
 }
-/* 速记体验重做票04：点外提交（capture 阶段，先于派发 click）——就地输入浮层与编辑表单；
-   Esc 取消编辑。均为会话瞬态交互，零 save 决策在各自函数内。 */
+/* 速记体验重做票04／票02：点外提交（capture 阶段，先于派发 click）——就地输入浮层与原位编辑卡；
+   Esc 取消编辑；卡头 Enter/Space 键盘收起。均为会话瞬态交互，零 save 决策在各自函数内。 */
 document.addEventListener('mousedown',e=>{
   const t=/** @type {any} */(e.target);
   const qk=$('#rsnQuick');
   if(qk&&!qk.hidden&&!qk.contains(t))snipQuickSave();   // 点浮层外＝存非空收起（空＝取消）
   if(S.ui&&S.ui.snipEdit){
-    const dt=$('#resPanel .res-snip-detail');
+    /* 点外判定以「编辑态词条卡」为边界：卡内（输入框／卡头／取消保存图标）都不算点外，卡外任意处才自动落定。 */
+    const dt=$('#resPanel .res-snip-card.editing');
     if(dt&&!dt.contains(t))snipEditCommit();   // 编辑点外＝自动保存（空＝放弃）
   }
 },true);
 document.addEventListener('keydown',e=>{
-  if(e.key!=='Escape')return;
-  if(S.ui&&S.ui.snipEdit&&e.target&&/** @type {any} */(e.target).id==='rsn-c'){S.ui.snipEdit=false;renderResPanel();return}
-  const qk=$('#rsnQuick');
-  if(qk&&!qk.hidden&&e.target&&/** @type {any} */(e.target).id==='rsnQkTxt'){snipQuickCancel();return}
+  if(e.key==='Escape'){
+    if(S.ui&&S.ui.snipEdit&&e.target&&/** @type {any} */(e.target).id==='rsn-c'){S.ui.snipEdit=false;S.ui.snipEditH=0;renderResPanel();return}   // 票02：Esc 取消回原文（只改内存前丢弃）
+    const qk=$('#rsnQuick');
+    if(qk&&!qk.hidden&&e.target&&/** @type {any} */(e.target).id==='rsnQkTxt'){snipQuickCancel();return}
+    return;
+  }
+  /* 票02：编辑态 Ctrl/⌘+Enter＝显式保存（与保存按钮同口径；空＝放弃、只读拒绝） */
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
+    if(S.ui&&S.ui.snipEdit&&e.target&&/** @type {any} */(e.target).id==='rsn-c'){
+      e.preventDefault();
+      const s=S.data.snippets.find(/** @param {any} x */ x=>x.id===S.ui.snipSel);
+      if(s)snipSaveDo(s);
+    }
+    return;
+  }
+  /* 票01 收口：卡头键盘收起——焦点在卡头本身（非内嵌图标按钮）时 Enter/Space 收起；编辑态不可收起。 */
+  if((e.key==='Enter'||e.key===' '||e.key==='Spacebar')&&S.ui&&!S.ui.snipEdit&&e.target
+     &&/** @type {any} */(e.target).classList&&/** @type {any} */(e.target).classList.contains('res-snip-card-head')){
+    const h=/** @type {any} */(e.target),id=h.dataset?h.dataset.id:'';
+    if(id&&S.ui.snipSel===id){e.preventDefault();S.ui.snipSel=null;S.ui.snipEdit=false;renderResPanel()}
+  }
 });
 /* 快捷键捕获（票04）：设置页「重新设置」后下一个按键即新快捷键（仅支持集合，Esc 取消）；
    capture 阶段拦截，捕获期间不向其他按键处理器扩散。 */
@@ -27519,16 +27570,10 @@ document.addEventListener('click',async e=>{
     renderResPanel();
     snipQuickOpen(e.clientX,e.clientY);break}
   case'rsn-edit':{const s5=S.data.snippets.find(x=>x.id===id&&x.novelId===nid);
-    if(!s5)break;S.ui.snipSel=s5.id;S.ui.snipEdit=true;S.ui.snipDel=null;renderResPanel();
-    const ta=$('#rsn-c');if(ta)ta.focus();break}
-  case'rsn-cancel':{if(!S.ui.snipEdit)break;S.ui.snipEdit=false;renderResPanel();break}
+    if(!s5)break;snipEditBegin(s5);break}   // 票02：原位编辑（卡身换 textarea，实测高度继承）
+  case'rsn-cancel':{if(!S.ui.snipEdit)break;S.ui.snipEdit=false;S.ui.snipEditH=0;renderResPanel();break}
   case'rsn-save':{const s5=S.data.snippets.find(x=>x.id===id&&x.novelId===nid);
-    if(!s5)break;
-    const c5=String($('#rsn-c')?$('#rsn-c').value:'');
-    if(!c5.trim()){S.ui.snipEdit=false;renderResPanel();toast('内容为空，未保存');break}   // 空内容不落盘
-    if(roReason()){roToast();break}   // 只读：明确拒绝保存，保留表单不假成功
-    Object.assign(s5,{content:c5});   // 票04：只改正文（标题不经手，自动命名保留）；tags 原样保留
-    save();S.ui.snipEdit=false;renderResPanel();toast('片段已保存');break}
+    if(!s5)break;snipSaveDo(s5);break}
   case'rsn-copy':{const s5=S.data.snippets.find(x=>x.id===id&&x.novelId===nid);S.ui.snipDel=null;if(s5)copyText(String(s5.content||''));break}
   case'rsn-tgl':{const s5=S.data.snippets.find(/** @param {any} x */ x=>x.id===id&&x.novelId===nid);   // 片段深化01：两层生命周期一键切换（操作行入口）
     if(!s5)break;
