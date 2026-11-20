@@ -13153,8 +13153,9 @@ function resSnippetsHTML(n){
   }).join('');
   return `<div class="res-snip-wrap" id="rsnWrap">`+search+`<div class="res-snip-scroll">`+groups+`<div class="res-empty" id="rsnNone"${hits.length?' hidden':''}>没有匹配的片段</div></div><div class="res-snip-blank" data-act="rsn-blank" title="点击记录片段">点击记录片段</div><div class="res-snip-quick" id="rsnQuick" hidden><textarea id="rsnQkTxt" placeholder="输入内容……" aria-label="记一条片段"></textarea></div></div>`;
 }
-/** 片段操作图标行（无模式词条卡卡头内；snip-card-nomode 01）：插入正文/复制全文/删除/标记已完成（或恢复待处理）——四枚常驻。
+/** 片段操作图标行（无模式词条卡卡头内；snip-card-nomode 01／04）：插入正文/复制全文/删除/标记已完成（或恢复待处理）——四枚常驻。
     文案沿用现行操作行（插入落点规则、删除回收站说明、完成／恢复换组说明原样搬运）；图标为 lucide 线风 SVG。
+    换组图标＝归档箱口径（04）：待处理显 archive、已完成显 unarchive，与对话窗口归档／移回按钮同键——防 ✓ 被误读为「编辑完成」。
     删除不再二次确认（点垃圾桶直接删，文件走数据夹回收站）。 @param {{id:string,status?:string}} s */
 function resSnipActHTML(s){
   const dis=S.ui.view!=='editor'||!scenesOf(S.ui.novelId).length;   // 写作页且本书有景才有可插位置（render 顺序上 renderRes 先于 vEditor 兜底选景，这里不依赖 S.ui.sceneId 当时是否已落位）
@@ -13164,7 +13165,7 @@ function resSnipActHTML(s){
   return `<button type="button" class="res-snip-ic" data-act="rsn-insert" data-id="${s.id}"${dis?' disabled':''} title="${esc(tip)}" aria-label="${esc(tip)}">${uiFigOf('corner-down-right')}</button>`
     +`<button type="button" class="res-snip-ic" data-act="rsn-copy" data-id="${s.id}" title="复制全文" aria-label="复制全文">${uiFigOf('copy')}</button>`
     +`<button type="button" class="res-snip-ic danger" data-act="rsn-del" data-id="${s.id}" title="${esc(delTip)}" aria-label="${esc(delTip)}">${uiFigOf('trash')}</button>`
-    +`<button type="button" class="res-snip-ic" data-act="rsn-tgl" data-id="${s.id}" title="${esc(tglTip)}" aria-label="${esc(tglTip)}">${uiFigOf(done?'revoke':'ok')}</button>`;
+    +`<button type="button" class="res-snip-ic" data-act="rsn-tgl" data-id="${s.id}" title="${esc(tglTip)}" aria-label="${esc(tglTip)}">${uiFigOf(done?'unarchive':'archive')}</button>`;
 }
 /** 无模式词条卡（snip-card-nomode 01／方案 D）：选中后预览行不再渲染，原位长成词条卡＝卡头＋永远可编辑的内容框。
     卡头＝标题（省略号）＋四枚常驻图标＋已完成小徽；点卡头空白＝收起（rsn-pick 同条再点语义；卡头 tabindex 可 Tab 聚焦、Enter/Space 收起）。
@@ -13506,9 +13507,11 @@ function pubCurBook(){
     if(cur!==dir){try{localStorage.setItem(MAIN_BOOK_KEY,dir)}catch(_e){}}
   }catch(_e){}
 }
-/* 速记体验重做票04／无模式卡身（snip-card-nomode 01／02）：点外提交（capture 阶段，先于派发 click）——
+/* 速记体验重做票04／无模式卡身（snip-card-nomode 01／02／04）：点外提交（capture 阶段，先于派发 click）——
    就地输入浮层与词条卡内容框；点内容框外（含卡头与卡外）立即落定，唯删除例外（未落定改动随删除消失）。
-   卡头 Enter/Space 键盘收起。均为会话瞬态交互，零 save 决策在各自函数内。 */
+   点外收卡（04）：点在 #resPanel 之外（正文区／顶栏／图标钮等）＝落定后收起词条卡（与点卡头同口径；
+   空放弃／只读拒绝照收）；面板内部点击各有自身 click 语义（选条／组折叠／搜索／空白即输入），
+   不在 mousedown 阶段重渲染面板打断它们。卡头 Enter/Space 键盘收起。均为会话瞬态交互，零 save 决策在各自函数内。 */
 document.addEventListener('mousedown',e=>{
   const t=/** @type {any} */(e.target);
   const qk=$('#rsnQuick');
@@ -13517,6 +13520,8 @@ document.addEventListener('mousedown',e=>{
   if(ta&&!ta.contains(t)){
     /* 点外判定以「内容框」为边界：点卡头／卡外任意处都算点框外，立即落定；删除是唯一例外（不额外保存）。 */
     if(!(t.closest&&t.closest('[data-act="rsn-del"]')))snipCommit();
+    const panel=$('#resPanel');
+    if(panel&&!panel.contains(t)){S.ui.snipSel=null;renderResPanel()}   // 点外收卡：落定已在前，收起与点卡头同口径
   }
 },true);
 document.addEventListener('keydown',e=>{
