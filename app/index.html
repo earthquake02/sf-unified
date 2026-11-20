@@ -13261,6 +13261,11 @@ function snipCommit(){
   Object.assign(s,{content:v});
   save();
 }
+/** 收起词条卡（snip-card-nomode 01／04）：先落定再清选中并重渲染面板——点卡头空白／卡头 Enter-Space 键盘收起／
+    点面板外三处共用的收口腿（空放弃、只读拒绝回退均照收，与切书清选中同口径）。 @returns {void} */
+function snipCollapse(){
+  snipCommit();S.ui.snipSel=null;renderResPanel();
+}
 /** 删除片段（snip-card-nomode 01／03）：点垃圾桶直接删，不再二次确认；内存移除＋save() 走投影删除腿
     （文件进数据夹回收站，可回溯）。不触发落定——未落定改动随删除消失。 @param {any} s */
 function snipRemove(s){
@@ -13519,9 +13524,9 @@ document.addEventListener('mousedown',e=>{
   const ta=$('#rsn-c');
   if(ta&&!ta.contains(t)){
     /* 点外判定以「内容框」为边界：点卡头／卡外任意处都算点框外，立即落定；删除是唯一例外（不额外保存）。 */
-    if(!(t.closest&&t.closest('[data-act="rsn-del"]')))snipCommit();
     const panel=$('#resPanel');
-    if(panel&&!panel.contains(t)){S.ui.snipSel=null;renderResPanel()}   // 点外收卡：落定已在前，收起与点卡头同口径
+    if(panel&&!panel.contains(t))snipCollapse();   // 点外收卡（04）：面板外无删除钮，落定＋收起一体（rsn-del 例外天然不达）
+    else if(!(t.closest&&t.closest('[data-act="rsn-del"]')))snipCommit();
   }
 },true);
 document.addEventListener('keydown',e=>{
@@ -13534,7 +13539,7 @@ document.addEventListener('keydown',e=>{
   if((e.key==='Enter'||e.key===' '||e.key==='Spacebar')&&S.ui&&e.target
      &&/** @type {any} */(e.target).classList&&/** @type {any} */(e.target).classList.contains('res-snip-card-head')){
     const h=/** @type {any} */(e.target),id=h.dataset?h.dataset.id:'';
-    if(id&&S.ui.snipSel===id){e.preventDefault();snipCommit();S.ui.snipSel=null;renderResPanel()}
+    if(id&&S.ui.snipSel===id){e.preventDefault();snipCollapse()}
   }
 });
 /* 快捷键捕获（票04）：设置页「重新设置」后下一个按键即新快捷键（仅支持集合，Esc 取消）；
@@ -27542,7 +27547,7 @@ document.addEventListener('click',async e=>{
      删除＝点垃圾桶直接删（文件走投影删除腿进回收站，不二次确认）；空白即输入（rsn-blank 就地浮层）。 */
   case'rsn-pick':{const s5=S.data.snippets.find(x=>x.id===id&&x.novelId===nid);
     if(!s5)break;
-    if(S.ui.snipSel===s5.id){snipCommit();S.ui.snipSel=null;renderResPanel();break}   // 再点同条＝收起词条卡（先落定）
+    if(S.ui.snipSel===s5.id){snipCollapse();break}   // 再点同条＝收起词条卡（先落定）
     snipCommit();   // 动作前兜底：切换选条前先落定当前改动，改动不串条
     S.ui.snipSel=s5.id;renderResPanel();snipFocusCard();break}
   case'rsn-blank':{if(!curNovel()){toast('请先选择一部小说');break}   // 空白即输入：浮层在点击处（票04）
