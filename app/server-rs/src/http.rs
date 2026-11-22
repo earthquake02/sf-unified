@@ -29,6 +29,8 @@ include!(concat!(env!("OUT_DIR"), "/guide_assets.rs"));
 // 发布形态（frozen）：内置技能编译期内嵌；空表合法（技能库可空、验证 demo 可摘除，ADR 0020）。
 #[cfg(feature = "frozen")]
 include!(concat!(env!("OUT_DIR"), "/skills_assets.rs"));
+#[cfg(feature = "frozen")]
+include!(concat!(env!("OUT_DIR"), "/mention_assets.rs"));
 
 pub(crate) struct Reply {
     status: u16,
@@ -185,6 +187,9 @@ fn route(app: &App, method: &Method, path: &str, query: &str, raw: &[u8]) -> Rep
     }
     if let Some(rest) = path.strip_prefix("/assets/skills/") {
         return skills(app, rest);
+    }
+    if let Some(name) = path.strip_prefix("/assets/mention/") {
+        return mention(name, app);
     }
     if path == "/index.html" {
         return match app_page_bytes(app) {
@@ -778,6 +783,66 @@ fn hex4(b: &[u8]) -> Option<u32> {
         return None;
     }
     u32::from_str_radix(std::str::from_utf8(b).ok()?, 16).ok()
+}
+
+fn mention(name: &str, app: &App) -> Reply {
+    let name = name.split('?').next().unwrap_or("");
+    if name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name == "."
+        || name == ".."
+        || !mention_name_ok(name)
+    {
+        return text(404, "not found");
+    }
+    match mention_bytes(name, app) {
+        Some((data, ctype)) => Reply {
+            status: 200,
+            body: data,
+            content_type: ctype,
+            close: false,
+            server_timing: None,
+        },
+        None => text(404, "not found"),
+    }
+}
+
+fn mention_name_ok(name: &str) -> bool {
+    matches!(name, "compounds.txt" | "char-freq.txt" | "SOURCES.md")
+}
+
+fn mention_ctype(name: &str) -> &'static str {
+    if name.ends_with(".md") {
+        "text/markdown; charset=utf-8"
+    } else {
+        "text/plain; charset=utf-8"
+    }
+}
+
+/// frozen：编译期内嵌表；非 frozen / `--app` 覆盖：从工作树 `assets/mention/` 读盘。
+#[cfg(feature = "frozen")]
+fn mention_bytes(name: &str, app: &App) -> Option<(Vec<u8>, &'static str)> {
+    if let Some(dir) = app.app_override.as_ref().and_then(|p| p.parent()).map(|d| d.join("assets").join("mention")) {
+        if let Some(data) = read_under(&dir.join(name), &dir) {
+            return Some((data, mention_ctype(name)));
+        }
+    }
+    MENTION_ASSETS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, bytes)| (bytes.to_vec(), mention_ctype(name)))
+}
+
+#[cfg(not(feature = "frozen"))]
+fn mention_bytes(name: &str, app: &App) -> Option<(Vec<u8>, &'static str)> {
+    if let Some(dir) = app.app_override.as_ref().and_then(|p| p.parent()).map(|d| d.join("assets").join("mention")) {
+        if let Some(data) = read_under(&dir.join(name), &dir) {
+            return Some((data, mention_ctype(name)));
+        }
+    }
+    let root = dev_app_dir().join("assets").join("mention");
+    read_under(&root.join(name), &root).map(|data| (data, mention_ctype(name)))
 }
 
 fn guide(name: &str) -> Reply {

@@ -1477,15 +1477,13 @@ function codexAiListTitle(e){
 /* 设定×AI P2：四态自动注入 + @ 并集去重（按 entry.id）+ 检测范围
    写作/生成：detectText=正文+指令（message）；助理：仅本条用户输入
    onDetectOff 永不进自动集；never 不进自动/@/lookup */
-function codexDetectNames(e){
-  if(!e)return [];
-  return [e.name,...(e.trackAlias===false?[]:(e.aliases||[]))].map(n=>String(n==null?'':n).trim()).filter(n=>n.length>=2);
-}
+function codexDetectNames(e){return mentionNamesOf(e)}
 function codexDetectHit(e,text){
   const t=String(text||'');
   if(!t)return false;
-  for(const n of codexDetectNames(e)) if(t.includes(n))return true;
-  return false;
+  const nid=(e&&e.novelId)||((typeof S!=='undefined'&&S.ui)?S.ui.novelId:'');
+  const ctx=typeof mentionFilterCtx==='function'?mentionFilterCtx(nid):{};
+  return mentionTextHitsEntry(e,t,Object.assign({},ctx,{forcePerson:mentionEntryForcePerson(e)}));
 }
 function codexAiVisible(e){return !!(e&&e.id)&&codexAiIncludeOf(e)!=='never'&&(typeof isSharedEntry!=='function'||!isSharedEntry(e))}
 function codexAtAllowed(e){return codexAiVisible(e)}
@@ -7263,6 +7261,9 @@ function g3ProjEntryMd(e){
   {const _ps=codexParentsOf(e);fm+=g3YamlLine('parents',_ps);fm+=g3YamlLine('parentId',_ps.length?_ps[0]:null)}
   fm+=g3YamlLine('aiInclude',codexAiIncludeOf(e));
   fm+=g3YamlLine('trackAlias',e.trackAlias!==false);
+  if(e.mentionForcePerson)fm+=g3YamlLine('mentionForcePerson',true);
+  {const cw=(Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords:[]).map(String).map(s=>s.trim()).filter(s=>s.length>=2);if(cw.length)fm+=g3YamlLine('mentionCompoundWords',cw)}
+  {const pw=(Array.isArray(e.mentionPersonWords)?e.mentionPersonWords:[]).map(String).map(s=>s.trim()).filter(Boolean);if(pw.length)fm+=g3YamlLine('mentionPersonWords',pw)}
   fm+=g3YamlLine('alwaysInclude',!!e.alwaysInclude);
   fm+=g3YamlLine('hideFromAi',!!e.hideFromAi);
   fm+=g3YamlLine('doNotTrack',!!e.doNotTrack);
@@ -7284,11 +7285,15 @@ function g3ProjEntryMd(e){
   return g3MdWrite(fm,[['描述',String(e.description==null?'':e.description)],['备注',String(e.notes==null?'':e.notes)]]);
 }
 function g3ProjProjJson(d,n){
-  return{_format:G3_FORMAT,schemaVersion:Number(d.schemaVersion)||DATA_SCHEMA_VERSION,
+  /** @type {any} */
+  const o={_format:G3_FORMAT,schemaVersion:Number(d.schemaVersion)||DATA_SCHEMA_VERSION,
     id:String(n.id||''),title:String(n.title==null?'':n.title),author:String(n.author||''),genre:String(n.genre||''),
     language:String(n.language||''),tense:String(n.tense||''),synopsis:String(n.synopsis==null?'':n.synopsis),
     targetWords:Number(n.targetWords)||0,cover:String(n.cover||''),createdAt:String(n.createdAt||''),
     styleSkillId:String(n.styleSkillId||'')};
+  const mex=typeof mentionExceptionsClean==='function'?mentionExceptionsClean(n.mentionExceptions):null;
+  if(mex)o.mentionExceptions=mex;
+  return o;
 }
 function g3ProjBook(d,n,out,used,paths,trace,cx){
   const bd=g3Name(used,n.title,'未命名书',n.id,paths);
@@ -7577,6 +7582,7 @@ function g3EntryFromMd(r,ctx){
     name:String(f.name!=null?f.name:ctx.name),aliases:Array.isArray(f.aliases)?f.aliases.map(String):[],
     tags:Array.isArray(f.tags)?f.tags.map(String):[],parents:Array.isArray(f.parents)?f.parents.map(String):[],parentId:f.parentId==null?null:String(f.parentId),
     alwaysInclude:!!f.alwaysInclude,hideFromAi:!!f.hideFromAi,doNotTrack:!!f.doNotTrack,trackAlias:f.trackAlias==null?true:!!f.trackAlias,
+    mentionForcePerson:!!f.mentionForcePerson,
     fields:(f.fields&&typeof f.fields==='object'&&!Array.isArray(f.fields))?Object.keys(f.fields).reduce((o,k)=>g3Set(o,k,String(f.fields[k]==null?'':f.fields[k])),{}):{},
     description:String((r.secs||{})['描述']==null?'':r.secs['描述']),notes:String((r.secs||{})['备注']==null?'':r.secs['备注']),
     connections:Array.isArray(f.connections)?f.connections:[],
@@ -7584,6 +7590,9 @@ function g3EntryFromMd(r,ctx){
     source:String(f.source||''),createdAt:String(f.createdAt||''),updatedAt:String(f.updatedAt||'')};
   {const hh=codexHistNorm(f.history);if(hh.length)e.history=hh}   // 票51：无场景历史读回（空/缺不落键，与写侧同口径）
   {const im=String(f.image==null?'':f.image);if(/^[A-Za-z0-9_-]{1,60}$/.test(im))e.image=im}   // 外观票04：只读身份；描述/备注不承载像素
+  if(f.mentionForcePerson)e.mentionForcePerson=true;
+  {const cw=Array.isArray(f.mentionCompoundWords)?f.mentionCompoundWords.map(String).map(s=>s.trim()).filter(s=>s.length>=2):[];if(cw.length)e.mentionCompoundWords=cw}
+  {const pw=Array.isArray(f.mentionPersonWords)?f.mentionPersonWords.map(String).map(s=>s.trim()).filter(Boolean):[];if(pw.length)e.mentionPersonWords=pw}
   if(f.forkedFrom!=null)e.forkedFrom=String(f.forkedFrom);
   if(f.packSource&&typeof f.packSource==='object'&&!Array.isArray(f.packSource))   // 票49：导入来源元数据读回（仅回溯/重复提示）
     e.packSource={novelId:String(f.packSource.novelId==null?'':f.packSource.novelId),title:String(f.packSource.title==null?'':f.packSource.title),entryId:String(f.packSource.entryId==null?'':f.packSource.entryId),exportedAt:String(f.packSource.exportedAt==null?'':f.packSource.exportedAt),createdAt:String(f.packSource.createdAt==null?'':f.packSource.createdAt),updatedAt:String(f.packSource.updatedAt==null?'':f.packSource.updatedAt)};
@@ -7641,6 +7650,7 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
     language:String(proj.language||''),tense:String(proj.tense||''),synopsis:String(proj.synopsis==null?'':proj.synopsis),
     targetWords:Number(proj.targetWords)||0,cover:String(proj.cover||''),createdAt:String(proj.createdAt||''),
     styleSkillId:String(proj.styleSkillId||'')};
+  {const mex=typeof mentionExceptionsClean==='function'?mentionExceptionsClean(proj.mentionExceptions):null;if(mex)n.mentionExceptions=mex}
   const out={novel:n,schemaVersion:Number(proj.schemaVersion)||0,acts:[],chapters:[],scenes:[],codexCategories:[],codexEntries:[],foreshadows:[],snippets:/** @type {any[]} */([]),chats:[],chatSessions:[],tagDefs:[],recycleBin:[]};   // 片段深化01：snippets 显式 any[]（新增 status 字段后免 never[] 推断报错）
   out.assistants=[];   // 助理票01：与固定功能会话分列；旧程序见不认识的 _format 会撤回认领，不删文件
   out.entryImages=[];   // 外观票04：像素与条目分列；身份在条目 image
@@ -9561,6 +9571,7 @@ let S;
    libText=库侧文档（G3 起由 g3Scan 扫描重建后传入的对象；G2 形态为 _工坊/书库.json 文本）、setText=设置文件文本；空/坏档 → 新库。 */
 function load(libText,setText){
   if(typeof mentionScanInvalidate==='function')mentionScanInvalidate();
+  try{if(typeof mentionLexEnsure==='function')mentionLexEnsure()}catch(_e){}
   let d=null,st=null;
   try{if(libText)d=(typeof libText==='object')?libText:JSON.parse(libText)}catch(e){d=null}   // G3：库侧既接扫描重建的对象，也接 G2 形态的 JSON 文本（迁移/仿真同径）
   try{if(setText)st=JSON.parse(setText)}catch(e){st=null}
@@ -10760,7 +10771,7 @@ function codexText(entries,sceneId){
 /** @typedef {{sceneId:string,title:string,count:number}} MentionHit */
 /** @typedef {{entry:any,total:number,hits:MentionHit[]}} MentionResult */
 /** @typedef {{next:Map<number,number>,fail:number,out:number[]}} MentionNode */
-/** @typedef {{length:number,owners:Map<string,number>}} MentionPattern */
+/** @typedef {{length:number,name:string,owners:Map<string,number>}} MentionPattern */
 /** @typedef {{nodes:MentionNode[],patterns:MentionPattern[]}} MentionMatcher */
 /** @type {Map<string,{signature:string,matcher:MentionMatcher,scenes:Map<string,{content:string,counts:Map<string,number>}>}>} */
 const _menScanCache=new Map();
@@ -10768,7 +10779,357 @@ const _menScanCache=new Map();
  * @type {Map<string,{sig:string,scenes:Map<string,{content:string,ids:string[]}>}>} */
 const _sceneMenCache=new Map();
 /** @returns {void} */
-function mentionScanInvalidate(){_menScanCache.clear();_sceneMenCache.clear();_graphCoCache=null}
+/* ---------- 单字名提及判定 ----------
+   双字及以上设定名/别名保持现行独立计数（互不让位，如 金灵月／灵月）。
+   单字命中事后过滤：①被任一更长设定名/别名覆盖则丢；②落在词表复合词中且该词不是某条设定名/别名则丢
+   （jieba 2–4 字频次≥20 ∪ 本书高频邻接词 ∪ 封闭时间词；小/老/阿＋本字默认不算复合词）；
+   ③按 Jun Da 字频分层收紧语境。用户可对某条设定「强制视为人名」，或把某个词标成「视为复合词／强制视为人名」。
+   高亮、提及列表、出场、自动注入、演进计数、矛盾摘录走同一套判定。 */
+const MEN_TIER_FN_MAX=50;
+const MEN_TIER_HIGH_MAX=800;
+const MEN_TIER_MID_MAX=2000;
+/** 本书高频邻接词默认启用；绝对频次阈值：非人称语境下邻接 2 字出现 ≥5 次才入表（收「明面」「红麦」，避免把偶发邻接当词）。只对 high/mid 层单字挖掘，rare（冥/辰/矩）不挖，以免「冥走」一类真出场被误删；「辰时」走封闭时间词。 */
+const MEN_BOOK_NEIGH_MIN=5;
+const MEN_PUNCT=new Set(' \t\n\r\u3000，。！？、；：「」『』（）()[]【】《》〈〉—…·,.!?;:/\\~`@#$%^&*+-=|_<>""\'\'“”‘’—–-•・'.split(''));
+const MEN_RIGHT_SPEECH=new Set('说道问答喊叫笑叹骂言云曰嚷回吼'.split(''));
+const MEN_LEFT_FUNC=new Set('把被让给向对与和跟替叫看听见找喊拉推抱扶随同令请帮代为'.split(''));
+const MEN_RIGHT_PARTICLE=new Set('也又却便就还已没不在都并再才忽先将正要能会可'.split(''));
+const MEN_NICK_PREFIX=new Set('小老阿'.split(''));
+const MEN_FUNCTION_CHARS=new Set('的了一是不在有我他她它这那你们和与就都也还要会能得着过么吧呢啊地得'.split(''));
+/** 挖掘本书邻字时不当成「语法邻接」而跳过的虚字（不含「一/半」，以便收「一明一暗」「半明半暗」）。 */
+const MEN_MINE_SKIP=new Set('的了是在着过地得么吧呢啊'.split(''));
+const MEN_TIME_WORDS=new Set(['子时','丑时','寅时','卯时','辰时','巳时','午时','未时','申时','酉时','戌时','亥时','时辰']);
+/** @type {{ready:boolean,loading:Promise<void>|null,ranks:Map<string,number>,compounds:Set<string>}} */
+const _mentionLex={ready:false,loading:null,ranks:new Map(),compounds:new Set()};
+/** @type {Map<string,{sig:string,words:Set<string>}>} */
+const _menBookCache=new Map();
+
+/** @param {Record<string,number>|Map<string,number>|null} [ranks] @param {Iterable<string>|null} [compounds] @returns {void} */
+function mentionLexInstall(ranks,compounds){
+  const r=new Map();
+  if(ranks instanceof Map){for(const [k,v] of ranks)r.set(String(k),Number(v))}
+  else if(ranks){for(const k of Object.keys(ranks))r.set(k,Number(ranks[k]))}
+  _mentionLex.ranks=r;
+  _mentionLex.compounds=new Set(compounds?Array.from(compounds,String):[]);
+  _mentionLex.ready=true;
+  _mentionLex.loading=null;
+  _menBookCache.clear();
+  if(typeof mentionScanInvalidate==='function')mentionScanInvalidate();
+}
+/** @param {string} freqText @param {string} compText @returns {void} */
+function mentionLexInstallText(freqText,compText){
+  const ranks=new Map();
+  for(const line of String(freqText||'').split(/\r?\n/)){
+    if(!line)continue;
+    const tab=line.indexOf('\t');
+    const ch=tab<0?line:line.slice(0,tab);
+    const rank=tab<0?NaN:Number(line.slice(tab+1));
+    if(ch.length===1&&Number.isFinite(rank))ranks.set(ch,rank);
+  }
+  const compounds=[];
+  for(const line of String(compText||'').split(/\r?\n/)){
+    const w=line.trim();
+    if(w.length>=2)compounds.push(w);
+  }
+  mentionLexInstall(ranks,compounds);
+}
+/** @returns {Promise<void>} */
+function mentionLexEnsure(){
+  if(_mentionLex.ready)return Promise.resolve();
+  if(_mentionLex.loading)return _mentionLex.loading;
+  if(typeof fetch!=='function')return Promise.resolve();
+  _mentionLex.loading=(async()=>{
+    try{
+      const [fr,cr]=await Promise.all([
+        fetch('/assets/mention/char-freq.txt'),
+        fetch('/assets/mention/compounds.txt')
+      ]);
+      const freq=fr&&fr.ok?await fr.text():'';
+      const comp=cr&&cr.ok?await cr.text():'';
+      mentionLexInstallText(freq,comp);
+    }catch(_e){
+      if(!_mentionLex.ready)mentionLexInstall(new Map(),[]);
+    }
+  })();
+  return _mentionLex.loading;
+}
+
+/** @param {string} ch @returns {'function'|'high'|'mid'|'rare'} */
+function mentionCharTier(ch){
+  const c=String(ch||'');
+  const rank=_mentionLex.ranks.get(c);
+  if(MEN_FUNCTION_CHARS.has(c)||(rank!=null&&rank<=MEN_TIER_FN_MAX))return 'function';
+  if(rank==null)return 'rare';
+  if(rank<=MEN_TIER_HIGH_MAX)return 'high';
+  if(rank<=MEN_TIER_MID_MAX)return 'mid';
+  return 'rare';
+}
+/** @param {string} ch @returns {boolean} */
+function mentionIsBoundary(ch){return !ch||MEN_PUNCT.has(ch)}
+/** @param {string} text @param {number} start @returns {[string,string]} */
+function mentionNeighbor(text,start){
+  const t=String(text||'');
+  return [start>0?t.charAt(start-1):'',start+1<t.length?t.charAt(start+1):''];
+}
+/** @param {string} text @param {number} start @param {'strict'|'loose'} mode @returns {boolean} */
+function mentionContextOk(text,start,mode){
+  const [left,right]=mentionNeighbor(text,start);
+  const lb=mentionIsBoundary(left),rb=mentionIsBoundary(right);
+  if(lb&&rb)return true;
+  if(rb&&MEN_RIGHT_SPEECH.has(right))return true;
+  if(lb||rb)return true;
+  if(MEN_LEFT_FUNC.has(left))return true;
+  if(MEN_NICK_PREFIX.has(left))return true;
+  if(mode==='loose'&&MEN_RIGHT_PARTICLE.has(right))return true;
+  return false;
+}
+/** 词表复合词覆盖（2–4 字窗口）。小/老/阿＋本字默认不当复合词（用户确认算人名），除非用户把它标成「视为复合词」。
+ * @param {string} text @param {number} start @param {string} ch @param {Set<string>} wordSet @param {Set<string>} [forceCompound] @returns {string} */
+function mentionCoveredByWordSet(text,start,ch,wordSet,forceCompound){
+  const t=String(text||'');
+  const hasForce=!!(forceCompound&&forceCompound.size);
+  const hasWords=!!(wordSet&&wordSet.size);
+  if(!hasForce&&!hasWords)return '';
+  for(let len=2;len<=4;len++){
+    for(let off=0;off<len;off++){
+      const s=start-off;
+      if(s<0||s+len>t.length)continue;
+      const w=t.slice(s,s+len);
+      if(forceCompound&&forceCompound.has(w))return w;
+      if(!wordSet.has(w))continue;
+      if(len===2&&off===1&&MEN_NICK_PREFIX.has(w.charAt(0))&&w.charAt(1)===ch&&!(forceCompound&&forceCompound.has(w)))continue;
+      return w;
+    }
+  }
+  return '';
+}
+/** @param {any} e @returns {string[]} */
+function mentionNamesOf(e){
+  if(!e)return [];
+  return [e.name,...(e.trackAlias===false?[]:(e.aliases||[]))].map(n=>String(n==null?'':n).trim()).filter(Boolean);
+}
+/** @param {any[]} entries @returns {Set<string>} */
+function mentionOfficialMultiNames(entries){
+  const out=new Set();
+  for(const e of entries||[]){
+    if(!e||(typeof codexAiIncludeOf==='function'&&codexAiIncludeOf(e)==='never'))continue;
+    for(const n of mentionNamesOf(e))if(n.length>=2)out.add(n);
+  }
+  return out;
+}
+/** @param {string} text @param {number} start @param {string} ch @param {Set<string>} official @returns {string} */
+function mentionOfficialCover(text,start,ch,official){
+  const t=String(text||'');
+  if(!official||!official.size)return '';
+  for(const name of official){
+    if(!name||name.length<2||name.indexOf(ch)<0)continue;
+    const L=name.length;
+    for(let off=0;off<L;off++){
+      if(name.charAt(off)!==ch)continue;
+      const s=start-off;
+      if(s>=0&&t.slice(s,s+L)===name)return name;
+    }
+  }
+  return '';
+}
+/** @param {any} e @returns {boolean} */
+function mentionEntryForcePerson(e){return !!(e&&e.mentionForcePerson)}
+/** @param {string} [nid] @returns {{compound:Set<string>,person:Set<string>}} */
+/** @param {any} v @returns {{compound:string[],person:string[]}|null} */
+function mentionExceptionsClean(v){
+  if(!v||typeof v!=='object'||Array.isArray(v))return null;
+  const compound=[...new Set((Array.isArray(v.compound)?v.compound:[]).map((/** @type {any} */ x)=>String(x||'').trim()).filter((/** @type {string} */ s)=>s.length>=2))];
+  const person=[...new Set((Array.isArray(v.person)?v.person:[]).map((/** @type {any} */ x)=>String(x||'').trim()).filter(Boolean))];
+  if(!compound.length&&!person.length)return null;
+  return{compound,person};
+}
+function mentionExceptionsOf(nid){
+  const compound=new Set(),person=new Set();
+  const want=nid||((typeof S!=='undefined'&&S.ui)?S.ui.novelId:'');
+  const nov=(typeof S!=='undefined'&&S.data&&Array.isArray(S.data.novels))?S.data.novels.find((/** @type {any} */ n)=>n&&n.id===want):null;
+  const raw=nov&&nov.mentionExceptions;
+  if(raw&&typeof raw==='object'){
+    for(const w of Array.isArray(raw.compound)?raw.compound:[]){const s=String(w||'').trim();if(s.length>=2)compound.add(s)}
+    for(const w of Array.isArray(raw.person)?raw.person:[]){const s=String(w||'').trim();if(s)person.add(s)}
+  }
+  if(typeof entriesOf==='function'&&want){
+    for(const e of entriesOf(want)){
+      for(const w of Array.isArray(e&&e.mentionCompoundWords)?e.mentionCompoundWords:[]){const s=String(w||'').trim();if(s.length>=2)compound.add(s)}
+      for(const w of Array.isArray(e&&e.mentionPersonWords)?e.mentionPersonWords:[]){const s=String(w||'').trim();if(s)person.add(s)}
+    }
+  }
+  return{compound,person};
+}
+/** @param {{official?:Set<string>,compounds?:Set<string>,forceCompound?:Set<string>,forcePersonWords?:Set<string>,forcePerson?:boolean,multiSpans?:[number,number][]}} [ctx]
+ * @param {string} text @param {number} start @param {string} ch @returns {boolean} */
+function mentionSingleAccept(text,start,ch,ctx){
+  ctx=ctx||{};
+  const t=String(text||'');
+  const c=String(ch||'');
+  if(c.length!==1||start<0||start>=t.length||t.charAt(start)!==c)return false;
+  if(ctx.multiSpans&&ctx.multiSpans.some(([a,b])=>start>=a&&start<b))return false;
+  if(!ctx.multiSpans&&mentionOfficialCover(t,start,c,ctx.official||new Set()))return false;
+  const forceWord=(ctx.forcePersonWords&&(ctx.forcePersonWords.has(c)||[...ctx.forcePersonWords].some(w=>w.length>=2&&mentionCoveredByWordSet(t,start,c,new Set([w])))))||!!ctx.forcePerson;
+  if(forceWord)return true;
+  const compounds=ctx.compounds||_mentionLex.compounds;
+  const hit=mentionCoveredByWordSet(t,start,c,compounds,ctx.forceCompound);
+  if(hit){
+    const official=ctx.official||new Set();
+    if(!official.has(hit))return false;
+  }
+  const tier=mentionCharTier(c);
+  if(tier==='function'){
+    const [left,right]=mentionNeighbor(t,start);
+    return mentionIsBoundary(left)&&mentionIsBoundary(right);
+  }
+  if(tier==='high')return mentionContextOk(t,start,'strict');
+  if(tier==='mid')return mentionContextOk(t,start,'loose');
+  return true;
+}
+/** @param {any[]} spans @param {string} text @param {{official?:Set<string>,compounds?:Set<string>,forceCompound?:Set<string>,forcePersonWords?:Set<string>,forcePersonOf?:(eid:string)=>boolean}} [ctx]
+ * @returns {any[]} */
+function mentionFilterSpans(spans,text,ctx){
+  ctx=ctx||{};
+  const multi=spans.filter((/** @type {any} */ s)=>s.length>=2).map((/** @type {any} */ s)=>[s.start,s.end]);
+  const out=[];
+  for(const s of spans){
+    if(s.length>=2){out.push(s);continue}
+    const forcePerson=ctx.forcePersonOf?!!ctx.forcePersonOf(s.eid):!!ctx.forcePerson;
+    if(mentionSingleAccept(text,s.start,s.name,{official:ctx.official,compounds:ctx.compounds,forceCompound:ctx.forceCompound,forcePersonWords:ctx.forcePersonWords,forcePerson,multiSpans:multi}))out.push(s);
+  }
+  return out;
+}
+
+/** 从全书正文挖掘 high/mid 层单字的本书邻接词（默认启用）。
+ * @param {string[]} plains @param {string[]} chars @param {Set<string>} official @param {Set<string>} baseCompounds @returns {Set<string>} */
+function mentionMineBookCompounds(plains,chars,official,baseCompounds){
+  const counts=new Map();
+  const mineChars=chars.filter(ch=>ch&&ch.length===1&&{high:1,mid:1}[mentionCharTier(ch)]);
+  if(!mineChars.length)return new Set();
+  for(const raw of plains||[]){
+    const text=String(raw||'');
+    for(const ch of mineChars){
+      let i=0;
+      while((i=text.indexOf(ch,i))>=0){
+        if(mentionOfficialCover(text,i,ch,official)||mentionCoveredByWordSet(text,i,ch,baseCompounds)){i++;continue}
+        if(mentionContextOk(text,i,'strict')){i++;continue}
+        const [left,right]=mentionNeighbor(text,i);
+        const bump=/** @param {string} w */(w)=>{
+          if(!w||w.length!==2)return;
+          if(official.has(w)||(baseCompounds&&baseCompounds.has(w)))return;
+          if(MEN_NICK_PREFIX.has(w.charAt(0))&&w.charAt(1)===ch)return;
+          const other=w.charAt(0)===ch?w.charAt(1):w.charAt(0);
+          if(MEN_MINE_SKIP.has(other))return;
+          counts.set(w,(counts.get(w)||0)+1);
+        };
+        if(left&&!mentionIsBoundary(left))bump(left+ch);
+        if(right&&!mentionIsBoundary(right))bump(ch+right);
+        i++;
+      }
+    }
+  }
+  const out=new Set();
+  for(const [w,n] of counts)if(n>=MEN_BOOK_NEIGH_MIN)out.add(w);
+  return out;
+}
+/** @param {string} nid @returns {Set<string>} */
+function mentionCompoundSetOf(nid){
+  const ex=mentionExceptionsOf(nid);
+  const official=typeof entriesOf==='function'?mentionOfficialMultiNames(entriesOf(nid)):new Set();
+  const base=new Set(_mentionLex.compounds);
+  for(const w of MEN_TIME_WORDS)base.add(w);
+  for(const w of ex.compound)base.add(w);
+  const plains=[];
+  let sig='';
+  if(typeof scenePos==='function'){
+    for(const {s} of scenePos(nid)){
+      const plain=typeof scenePlainText==='function'?scenePlainText(s):String((s&&s.content)||'');
+      plains.push(plain);
+      sig+=String(s&&s.id||'')+'\u0001'+plain.length+'\u0001';
+    }
+  }
+  const singles=[];
+  if(typeof entriesOf==='function'){
+    for(const e of entriesOf(nid)){
+      if(!e||(typeof codexAiIncludeOf==='function'&&codexAiIncludeOf(e)==='never'))continue;
+      for(const n of mentionNamesOf(e))if(n.length===1)singles.push(n);
+    }
+  }
+  sig+=singles.join('\u0002')+'\u0003'+[...ex.compound].join('\u0002')+'\u0003'+(_mentionLex.ready?'1':'0')+'\u0003'+_mentionLex.compounds.size;
+  let cache=_menBookCache.get(nid);
+  if(!cache||cache.sig!==sig){
+    const mined=mentionMineBookCompounds(plains,singles,official,base);
+    const words=new Set(base);
+    for(const w of mined)words.add(w);
+    cache={sig,words};_menBookCache.set(nid,cache);
+  }
+  return cache.words;
+}
+/** @param {string} nid @returns {{official:Set<string>,compounds:Set<string>,forceCompound:Set<string>,forcePersonWords:Set<string>,forcePersonOf:(eid:string)=>boolean}} */
+function mentionFilterCtx(nid){
+  const ex=mentionExceptionsOf(nid);
+  const official=typeof entriesOf==='function'?mentionOfficialMultiNames(entriesOf(nid)):new Set();
+  const byId=new Map();
+  if(typeof entriesOf==='function'){
+    for(const e of entriesOf(nid))if(e&&e.id)byId.set(e.id,e);
+  }
+  return{
+    official,
+    compounds:mentionCompoundSetOf(nid),
+    forceCompound:ex.compound,
+    forcePersonWords:ex.person,
+    forcePersonOf:(eid)=>{const e=byId.get(eid);return mentionEntryForcePerson(e)}
+  };
+}
+/** @param {string} text @param {string[]} names @param {any} [ctx] @returns {{start:number,end:number,name:string}|null} */
+function mentionFirstAccepted(text,names,ctx){
+  const t=String(text||'');
+  let best=null;
+  for(const n of names||[]){
+    const name=String(n||'');
+    if(!name)continue;
+    let from=0;
+    while(from<t.length){
+      const i=t.indexOf(name,from);
+      if(i<0)break;
+      if(name.length>=2){
+        if(!best||i<best.start)best={start:i,end:i+name.length,name};
+        break;
+      }
+      if(mentionSingleAccept(t,i,name,ctx)){
+        if(!best||i<best.start)best={start:i,end:i+1,name};
+        break;
+      }
+      from=i+1;
+    }
+  }
+  return best;
+}
+/** @param {any} e @param {string} text @param {any} [ctx] @returns {boolean} */
+function mentionTextHitsEntry(e,text,ctx){
+  const t=String(text||'');
+  if(!t||!e)return false;
+  for(const n of mentionNamesOf(e)){
+    if(n.length>=2){if(t.includes(n))return true;continue}
+    let from=0;
+    while((from=t.indexOf(n,from))>=0){
+      if(mentionSingleAccept(t,from,n,ctx))return true;
+      from++;
+    }
+  }
+  return false;
+}
+/** @param {any} e @returns {boolean} */
+function mentionNameNeedsAliasHint(e){
+  const name=String((e&&e.name)||'').trim();
+  if(name.length!==1)return false;
+  const aliases=(Array.isArray(e&&e.aliases)?e.aliases:[]).map((/** @type {any} */ a)=>String(a||'').trim()).filter(Boolean);
+  return !aliases.some((/** @type {string} */ a)=>a.length>=2);
+}
+
+try{if(typeof fetch==='function')mentionLexEnsure()}catch(_e){}
+/* ---------- 单字名提及判定结束 ---------- */
+function mentionScanInvalidate(){_menScanCache.clear();_sceneMenCache.clear();_graphCoCache=null;if(typeof _menBookCache!=='undefined')_menBookCache.clear()}
 /** @param {{id:string,names:string[]}[]} rules @returns {MentionMatcher} */
 function mentionMatcher(rules){
   /** @type {MentionNode[]} */
@@ -10780,7 +11141,7 @@ function mentionMatcher(rules){
   for(const rule of rules)for(const name of rule.names){
     let id=ids.get(name);
     if(id===undefined){
-      id=patterns.length;ids.set(name,id);patterns.push({length:name.length,owners:new Map()});
+      id=patterns.length;ids.set(name,id);patterns.push({length:name.length,name,owners:new Map()});
       let state=0;
       for(let i=0;i<name.length;i++){
         const ch=name.charCodeAt(i);let next=nodes[state].next.get(ch);
@@ -10803,10 +11164,10 @@ function mentionMatcher(rules){
   }
   return{nodes,patterns};
 }
-/** @param {MentionMatcher} matcher @param {string} text @returns {Map<string,number>} */
-function mentionMatchCounts({nodes,patterns},text){
-  /** @type {Map<string,number>} */
-  const counts=new Map();
+/** @param {MentionMatcher} matcher @param {string} text @returns {any[]} */
+function mentionMatchSpans({nodes,patterns},text){
+  /** @type {any[]} */
+  const spans=[];
   const ends=new Int32Array(patterns.length);
   let state=0;
   for(let i=0;i<text.length;i++){
@@ -10818,17 +11179,27 @@ function mentionMatchCounts({nodes,patterns},text){
       // 同一名称不自重叠；不同名称独立计数，重复别名保留原有权重。
       if(i+1-pattern.length<ends[id])continue;
       ends[id]=i+1;
-      for(const [eid,weight] of pattern.owners)counts.set(eid,(counts.get(eid)||0)+weight);
+      const start=i+1-pattern.length;
+      for(const [eid,weight] of pattern.owners)spans.push({eid,start,end:i+1,name:pattern.name,length:pattern.length,weight});
     }
   }
+  return spans;
+}
+/** @param {MentionMatcher} matcher @param {string} text @param {any} [ctx] @returns {Map<string,number>} */
+function mentionMatchCounts(matcher,text,ctx){
+  const spans=mentionFilterSpans(mentionMatchSpans(matcher,text),text,ctx);
+  /** @type {Map<string,number>} */
+  const counts=new Map();
+  for(const s of spans)counts.set(s.eid,(counts.get(s.eid)||0)+s.weight);
   return counts;
 }
 /** @param {string} nid @returns {Map<string,MentionResult>} */
 function mentionScan(nid){
   const entries=/** @type {any[]} */(entriesOf(nid)).filter(e=>codexAiIncludeOf(e)!=='never');
-  const rules=entries.map(e=>({id:e.id,names:[e.name,...(e.trackAlias===false?[]:(e.aliases||[]))].filter(n=>n&&n.length>=2).sort()}))
+  const rules=entries.map(e=>({id:e.id,names:mentionNamesOf(e).sort()}))
     .filter(r=>r.names.length).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
-  const signature=JSON.stringify(rules);
+  const ctx=mentionFilterCtx(nid);
+  const signature=JSON.stringify(rules)+'\u0000'+((typeof _menBookCache!=='undefined'&&_menBookCache.get(nid))?_menBookCache.get(nid).sig:'');
   let cache=_menScanCache.get(nid);
   if(!cache||cache.signature!==signature){
     cache={signature,matcher:mentionMatcher(rules),scenes:new Map()};_menScanCache.set(nid,cache);
@@ -10839,7 +11210,7 @@ function mentionScan(nid){
   const scenes=new Map();
   for(const {s} of scenePos(nid)){
     const content=String(s.content||'');let cached=cache.scenes.get(s.id);
-    if(!cached||cached.content!==content)cached={content,counts:mentionMatchCounts(cache.matcher,scenePlainText(s))};
+    if(!cached||cached.content!==content)cached={content,counts:mentionMatchCounts(cache.matcher,scenePlainText(s),ctx)};
     scenes.set(s.id,cached);
     for(const [eid,count] of cached.counts){
       const m=/** @type {MentionResult} */(res.get(eid));
@@ -10857,12 +11228,15 @@ function sceneMenRulesSig(entries){
   for(const e of entries){
     if(!e)continue;
     const part=String(e.id)+'\u0001'+String(e.name==null?'':e.name)+'\u0001'+(e.trackAlias===false?'0':'1')+'\u0001'+(codexAiIncludeOf(e)==='never'?'0':'1')+'\u0001'
-      +(e.trackAlias===false?'':(Array.isArray(e.aliases)?e.aliases.join('\u0002'):''));
+      +(e.trackAlias===false?'':(Array.isArray(e.aliases)?e.aliases.join('\u0002'):''))+'\u0001'+(e.mentionForcePerson?'1':'0')+'\u0001'+(Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords.join('\u0002'):'')+'\u0001'+(Array.isArray(e.mentionPersonWords)?e.mentionPersonWords.join('\u0002'):'');
     out+=part.length+':'+part;   // 长度前缀编码：名称/别名含分隔符也不会撞签
   }
+  const nov=(typeof S!=='undefined'&&S.data&&S.data.novels)?S.data.novels.find((/** @type {any} */ n)=>n&&n.id===(entries[0]&&entries[0].novelId)):null;
+  const ex=nov&&nov.mentionExceptions;
+  out+='\u0003'+((ex&&Array.isArray(ex.compound))?ex.compound.join('\u0002'):'')+'\u0003'+((ex&&Array.isArray(ex.person))?ex.person.join('\u0002'):'')+'\u0003'+(_mentionLex&&_mentionLex.ready?'1':'0')+'\u0003'+((_mentionLex&&_mentionLex.compounds)?_mentionLex.compounds.size:0);
   return out;
 }
-/** 当前场景出场设定（htmlToText 口径：保留 data-ai=off 块，与 mentionScan 的 scenePlainText 不同源）。
+/** 当前小节出场设定（htmlToText 口径：保留 data-ai=off 块，与 mentionScan 的 scenePlainText 不同源）。
  * @param {string} nid @param {string} sceneId @returns {any[]} */
 function sceneMentions(nid,sceneId){
   const sc=S.data.scenes.find(s=>s.id===sceneId);if(!sc)return[];
@@ -10874,9 +11248,10 @@ function sceneMentions(nid,sceneId){
   let hit=cache.scenes.get(sceneId);
   if(!hit||hit.content!==content){
     const txt=htmlToText(content),ids=[];
+    const ctx=mentionFilterCtx(nid);
     for(const e of entries){
       if(codexAiIncludeOf(e)==='never')continue;
-      for(const n of [e.name,...(e.trackAlias===false?[]:(e.aliases||[]))])if(n&&n.length>=2&&txt.includes(n)){ids.push(e.id);break}
+      if(mentionTextHitsEntry(e,txt,Object.assign({},ctx,{forcePerson:mentionEntryForcePerson(e)})))ids.push(e.id);
     }
     hit={content,ids};cache.scenes.set(sceneId,hit);
   }
@@ -20511,22 +20886,37 @@ function edEntryHlRanges(ent){
   for(const n of names.sort((a,b)=>b.length-a.length)){const k=n.toLowerCase();if(seen.has(k)||k.length<1)continue;seen.add(k);uniq.push(n)}
   /** @type {Range[]} */ const out=[];
   if(!uniq.length)return out;
+  const nid=(typeof S!=='undefined'&&S.ui)?S.ui.novelId:'';
+  const ctx=typeof mentionFilterCtx==='function'?mentionFilterCtx(nid):{};
   const roots=Array.from(document.querySelectorAll('#edArea .inner[contenteditable],#edContent'));
   /** @type {Element[]} */ const list=[];
   roots.forEach((/** @type {Element} */ el)=>{if(el&&list.indexOf(el)<0)list.push(el)});
   for(const root of list){
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);
+    /** @type {{node:Node,start:number,text:string}[]} */ const parts=[];
+    let acc='';
     /** @type {Node|null} */ let node;
     while((node=walker.nextNode())){
       const text=node.nodeValue||'';if(!text)continue;
-      const lower=text.toLowerCase();
-      for(const name of uniq){
-        const needle=name.toLowerCase();let from=0;
-        while(from<=lower.length-needle.length){
-          const at=lower.indexOf(needle,from);if(at<0)break;
-          const r=document.createRange();r.setStart(node,at);r.setEnd(node,at+needle.length);out.push(r);
-          from=at+Math.max(1,needle.length);
+      parts.push({node,start:acc.length,text});
+      acc+=text;
+    }
+    if(!acc)continue;
+    const lower=acc.toLowerCase();
+    for(const name of uniq){
+      const needle=name.toLowerCase();let from=0;
+      while(from<=lower.length-needle.length){
+        const at=lower.indexOf(needle,from);if(at<0)break;
+        if(name.length===1&&typeof mentionSingleAccept==='function'&&!mentionSingleAccept(acc,at,acc.charAt(at),Object.assign({},ctx,{forcePerson:mentionEntryForcePerson(ent)}))){from=at+1;continue}
+        let remain=name.length,pos=at;
+        for(const p of parts){
+          const a=Math.max(pos,p.start),b=Math.min(pos+remain,p.start+p.text.length);
+          if(a<b){
+            const r=document.createRange();
+            r.setStart(p.node,a-p.start);r.setEnd(p.node,b-p.start);out.push(r);
+          }
         }
+        from=at+Math.max(1,needle.length);
       }
     }
   }
@@ -23481,18 +23871,23 @@ function conflictEntrySettingText(e){
   const head=String(e.name||'')+((e.aliases||[]).length?('（又称：'+(e.aliases||[]).join('、')+'）'):'');
   return (head+'\n'+desc.replace(/\s+/g,' ').trim()).trim().slice(0,900);
 }
-function conflictExcerptAround(body,names,win){
+function conflictExcerptAround(body,names,win,ctx){
   win=win==null?52:win;
   const t=String(body||'');
-  let best=-1,mark='';
-  for(const n of names){
-    if(!n)continue;
-    const i=t.indexOf(n);
-    if(i>=0&&(best<0||i<best)){best=i;mark=n}
+  const hit=typeof mentionFirstAccepted==='function'?mentionFirstAccepted(t,names,ctx):null;
+  if(!hit){
+    let best=-1,mark='';
+    for(const n of names){
+      if(!n||String(n).length<2)continue;
+      const i=t.indexOf(n);
+      if(i>=0&&(best<0||i<best)){best=i;mark=n}
+    }
+    if(best<0)return{ex:t.slice(0,140).replace(/\s+/g,' ').trim(),mark:''};
+    const a=Math.max(0,best-win),b=Math.min(t.length,best+mark.length+win);
+    return{ex:t.slice(a,b).replace(/\s+/g,' ').trim(),mark};
   }
-  if(best<0)return{ex:t.slice(0,140).replace(/\s+/g,' ').trim(),mark:''};
-  const a=Math.max(0,best-win),b=Math.min(t.length,best+mark.length+win);
-  return{ex:t.slice(a,b).replace(/\s+/g,' ').trim(),mark};
+  const a=Math.max(0,hit.start-win),b=Math.min(t.length,hit.end+win);
+  return{ex:t.slice(a,b).replace(/\s+/g,' ').trim(),mark:hit.name};
 }
 /* 本地规则预筛：命中即进候选（仍可被决策层抬升／覆盖）；不再塞 demo */
 const CF_RULES=[
@@ -23585,13 +23980,13 @@ function conflictBuildCandidates(nid){
     const setting=conflictEntrySettingText(e);
     if(!String(e.description||'').trim()&&!(e.progressions||[]).length)continue;
     const m=men.get(e.id);if(!m||!m.hits||!m.hits.length)continue;
-    const names=[e.name,...(e.aliases||[])].filter(n=>n&&String(n).length>=2);
+    const names=mentionNamesOf(e);
     for(const h of m.hits){
       const p=byId.get(h.sceneId);if(!p||!p.c)continue;
       const ord=chOrd.get(p.c.id);if(ord==null||!allowOrd.has(ord))continue;
       const body=String(typeof scenePlainText==='function'?scenePlainText(p.s):htmlToText(p.s.content||''));
       if(!body.trim())continue;
-      const ex=conflictExcerptAround(body,names);
+      const ex=conflictExcerptAround(body,names,undefined,Object.assign({},mentionFilterCtx(nid),{forcePerson:mentionEntryForcePerson(e)}));
       const fp='dec|'+e.id+'|'+p.s.id+'|'+ex.mark;
       const sceneLabel=(nodeTitle(p.c)?(nodeTitle(p.c)+' \u00b7 '):'')+(p.s.title||unitEmptyTitle());
       const row={
@@ -24205,7 +24600,7 @@ function codexForm(e){
     :(codexAiIncludeOf(e)==='never'||e.doNotTrack)?`<div class="hint" title="可在「追踪」页签中改为其他纳入方式">${uiIc('ban')}从不包含 · 不追踪提及</div>`
     :men?`<div style="max-height:240px;overflow:auto">${men.hits.map(h=>`<div class="codexHit"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title||unitEmptyTitle())}</span><span class="hint">${h.count} 次</span><button class="btn sm" data-act="codex-mention-go" data-id="${h.sceneId}">打开写作</button></div>`).join('')}</div>
       <div class="hint" style="margin-top:8px">点「打开写作」可定位到该场景。</div>`
-    :`<div class="hint">正文里暂无名称/别名命中（名称与别名至少 2 字才参与扫描）。</div>`;
+    :`<div class="hint">正文里暂无名称/别名命中（单字名会按词表与语境过滤后再计入）。</div>`;
   const tabs=[['details','详情'],['research','笔记'],['relations','关系'],['mentions','提及'],['tracking','追踪']];
   /* 设定集优化跟进：名短＋标签同行右侧；提及折线在名下整宽，「N 次提及」在线右侧；输入透明 */
   return `<div class="row codexHead">
@@ -24225,6 +24620,7 @@ function codexForm(e){
   <div class="codexTabs">${tabs.map(([t,l],i)=>`<button class="codexTab${i===0?' on':''}" data-act="codex-tab" data-t="${t}">${l}</button>`).join('')}${e&&e.id?`<div class="codexTabMore"><button type="button" class="codexTabMenuBtn" data-act="codex-tab-menu" aria-label="更多" aria-expanded="false" title="更多">⋮</button><div class="codexTabMenu" hidden><button type="button" data-act="codex-card-clear-fig" data-id="${esc(e.id)}">清除附图</button><button type="button" class="danger" data-act="codex-card-del" data-id="${esc(e.id)}">删除词条</button></div></div>`:''}</div>
   <div class="cpan on" data-pan="details">
     <label class="f">别名${aiCtxMark()}（逗号分隔）</label><input type="text" id="c-aliases" value="${esc((e?.aliases||[]).join(', '))}">
+    <div id="c-alias-hint" class="hint" style="margin:4px 0 8px;${mentionNameNeedsAliasHint(e)?'':'display:none'}">名称只有一个字时，建议再补两个字以上的别名（如全名），不强制；正文里的单字名仍会按规则追踪。</div>
     <label class="f">描述${aiCtxMark()}</label><textarea id="c-desc" rows="3">${esc(e?.description||'')}</textarea>
     <label class="f" title="从所选场景起生效；AI 按当前写作位置自动采用">设定演进</label>
     <div id="c-progs">${(e?.progressions||[]).map(pg=>`<div class="progRow" data-prog-id="${pg.id||''}">
@@ -24250,17 +24646,24 @@ function codexForm(e){
   <div class="cpan" data-pan="mentions">${hitsHtml}</div>
   <div class="cpan" data-pan="tracking">
     <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:12.5px;margin:2px 0 14px"><input type="checkbox" id="c-track-alias" ${(!e||e.trackAlias!==false)?'checked':''} style="width:auto;margin-top:3px"> <span>追踪别名<div class="hint" style="margin-top:2px;font-weight:400">别名会出现在提及次数中。</div></span></label>
+    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:12.5px;margin:2px 0 10px"><input type="checkbox" id="c-mention-force" ${e&&e.mentionForcePerson?'checked':''} style="width:auto;margin-top:3px"> <span>强制视为人名<div class="hint" style="margin-top:2px;font-weight:400">单字名跳过词表与语境过滤，仍会给更长的设定名让位。</div></span></label>
+    <label class="f">视为复合词（逗号分隔）</label><input type="text" id="c-mention-compounds" value="${esc((e&&Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords:[]).join(', '))}" placeholder="如 明面、红麦">
+    <div class="hint" style="margin:-6px 0 10px">命中落在这些词里时不计入本条。可用来补本书用语。</div>
+    <label class="f">强制视为人名的词（逗号分隔）</label><input type="text" id="c-mention-person-words" value="${esc((e&&Array.isArray(e.mentionPersonWords)?e.mentionPersonWords:[]).join(', '))}" placeholder="如需覆盖词表时填写">
+    ${(()=>{const nov=curNovel&&curNovel();const ex=(nov&&nov.mentionExceptions)||{};return `<label class="f">本书共用复合词例外</label><input type="text" id="c-mention-book-compounds" value="${esc((Array.isArray(ex.compound)?ex.compound:[]).join(', '))}" placeholder="全书共用，如作品用语">
+    <label class="f">本书共用人名例外</label><input type="text" id="c-mention-book-person" value="${esc((Array.isArray(ex.person)?ex.person:[]).join(', '))}" placeholder="全书共用，强制视为人名的词">`})()}
     <div style="display:flex;flex-direction:column;gap:12px;font-size:12.5px">${(()=>{const cur=(e&&(e.id||CODEX_AI_INCLUDES.includes(e.aiInclude)||e.alwaysInclude||e.hideFromAi||e.doNotTrack))?codexAiIncludeOf(e):codexDefaultAiInclude();const opts=[['always',uiIc('globe')+'始终注入','将作为全局设定，每次调用AI时自动附带。'],['onDetect','检测到时包含','当在正文、指令、对话中检测到该条目时，它将自动被添加到上下文中。'],['onDetectOff','检测到时不包含','仅在对话中通过【@引用】手动添加时可以引入。'],['never',uiIc('ban')+'从不包含','该条目在【@引用】中不会作为可选项，适用于草稿、私人笔记或无关信息。']];return opts.map(([v,lab,hint])=>`<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="radio" name="c-ai-include" value="${v}" ${cur===v?'checked':''} style="width:auto;margin-top:3px"> <span>${lab}<div class="hint" style="margin-top:2px;font-weight:400">${hint}</div></span></label>`).join('')})()}
     </div>
   </div>`;
 }
 
 /* 设定卡实时保存：编辑／新建草稿无「保存」「取消」；改动 debounce 落盘，关窗前同步刷一次；无 toast */
-let _codexLiveTimer=null,_codexLiveId=null,_codexLiveDirty=false,_codexLiveCreate=false,_codexLiveFz=false;
-function codexLiveClear(){if(_codexLiveTimer){clearTimeout(_codexLiveTimer);_codexLiveTimer=null}_codexLiveId=null;_codexLiveDirty=false;_codexLiveCreate=false;_codexLiveFz=false}
+let _codexLiveTimer=null,_codexLiveId=null,_codexLiveDirty=false,_codexLiveCreate=false,_codexLiveFz=false,_codexAliasHintShown=false;
+function codexLiveClear(){if(_codexLiveTimer){clearTimeout(_codexLiveTimer);_codexLiveTimer=null}_codexLiveId=null;_codexLiveDirty=false;_codexLiveCreate=false;_codexLiveFz=false;_codexAliasHintShown=false}
 function codexLiveMarkDirty(){
   if(!_codexLiveId&&!_codexLiveCreate)return;
   if(!$('#c-name'))return;
+  try{mentionSyncAliasHint()}catch(_e){}
   _codexLiveDirty=true;
   if(_codexLiveTimer)clearTimeout(_codexLiveTimer);
   _codexLiveTimer=setTimeout(()=>codexLiveFlush(false),400);
@@ -24300,6 +24703,10 @@ function codexLiveFlush(sync){
     const h2=$('#modalRoot .modal>h2'); if(h2)h2.textContent='编辑设定：'+tgt.name;
     const menWrap=$('#c-mention'); if(menWrap){const men=mentionScan(nid).get(tgt.id);menWrap.innerHTML=cdxMentionOverviewHTML(tgt,men,nid)}
   }
+  const bookEx=mentionReadBookExceptions();
+  const nov=typeof curNovel==='function'?curNovel():null;
+  if(nov){if(bookEx)nov.mentionExceptions=bookEx;else delete nov.mentionExceptions}
+  if(!_codexAliasHintShown&&mentionNameNeedsAliasHint(data)){_codexAliasHintShown=true;try{toast('名称只有一个字：建议再补两个字以上的别名，不强制；正文仍会按规则追踪。',4000)}catch(_t){}}
   _codexLiveDirty=false;save();
   return true;
 }
@@ -24398,9 +24805,23 @@ function readCodexFormData(oldProgs){
     trackAlias:trackAliasEl?!!trackAliasEl.checked:true,
     aiInclude:aiFlags.aiInclude,alwaysInclude:aiFlags.alwaysInclude,hideFromAi:aiFlags.hideFromAi,doNotTrack:aiFlags.doNotTrack,
     description:$('#c-desc').value.trim(),notes:$('#c-notes').value.trim(),
+    mentionForcePerson:!!($('#c-mention-force')&&$('#c-mention-force').checked),
+    mentionCompoundWords:($('#c-mention-compounds')?$('#c-mention-compounds').value:'').split(/[,，]/).map(s=>s.trim()).filter(s=>s.length>=2),
+    mentionPersonWords:($('#c-mention-person-words')?$('#c-mention-person-words').value:'').split(/[,，]/).map(s=>s.trim()).filter(Boolean),
     progressions:rebuildProgressions(oldProgs||[],progRows),updatedAt:now()};
   if(colorEl&&colorEl.dataset.userSet==='1'){const ic=entryIconColorNorm(colorEl.value);out.iconColor=ic}
   return out;
+}
+function mentionSyncAliasHint(){
+  const el=$('#c-alias-hint');if(!el)return;
+  const name=($('#c-name')&&$('#c-name').value||'').trim();
+  const aliases=($('#c-aliases')&&$('#c-aliases').value||'').split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+  el.style.display=mentionNameNeedsAliasHint({name,aliases})?'':'none';
+}
+function mentionReadBookExceptions(){
+  const compound=($('#c-mention-book-compounds')?$('#c-mention-book-compounds').value:'').split(/[,，]/).map(s=>s.trim()).filter(s=>s.length>=2);
+  const person=($('#c-mention-book-person')?$('#c-mention-book-person').value:'').split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+  return mentionExceptionsClean({compound,person});
 }
 /* 设定编辑页演进重建：按行上 data-prog-id 与旧数组按 id 配对（作者删行/插行后下标错位也不会挂错 source/quote/adoptedAt，S6 复核 F3）；新行（无 id）标 author。 */
 function rebuildProgressions(oldProgs,rows){
@@ -30394,10 +30815,10 @@ function evolFirstSeenChapterMap(nid){
  * @param {string[]} keys
  * @returns {number}
  */
-function evolCountMentions(text,keys){
+function evolCountMentions(text,keys,ctx){
   const t=String(text||'');
-  /* 票10：最长优先 + 区间去重，避免别名是主名子串时同一次提及被计两次 */
-  const sorted=[...new Set((keys||[]).map(k=>String(k||'')).filter(k=>k.length>=2))].sort((a,b)=>b.length-a.length||a.localeCompare(b,'zh'));
+  /* 票10：最长优先 + 区间去重，避免别名是主名子串时同一次提及被计两次；单字键事后走同一套过滤，不占区间。 */
+  const sorted=[...new Set((keys||[]).map(k=>String(k||'')).filter(k=>k.length>=1))].sort((a,b)=>b.length-a.length||a.localeCompare(b,'zh'));
   /** @type {Array<[number,number]>} */
   const occupied=[];
   let n=0;
@@ -30407,7 +30828,9 @@ function evolCountMentions(text,keys){
       const i=t.indexOf(k,from);
       if(i<0)break;
       const end=i+k.length;
-      if(!occupied.some(([a,b])=>i<b&&end>a)){occupied.push([i,end]);n++}
+      if(!occupied.some(([a,b])=>i<b&&end>a)){
+        if(k.length>=2||(typeof mentionSingleAccept==='function'&&mentionSingleAccept(t,i,k,ctx))){occupied.push([i,end]);n++}
+      }
       from=i+1;
     }
   }
@@ -30418,13 +30841,14 @@ function evolCountMentions(text,keys){
  * @param {string} packText
  * @returns {{rosterLines:string,textForModel:string,clipped:any[],meta:object}}
  */
-function evolClipMentioned2(roster,packText){
+function evolClipMentioned2(roster,packText,nid){
   const text=String(packText||'');
+  const ctx=typeof mentionFilterCtx==='function'?mentionFilterCtx(nid||((typeof S!=='undefined'&&S.ui)?S.ui.novelId:'')):{};
   /** @type {any[]} */
   const clipped=[];
   for(const e of(roster||[])){
-    const keys=[e.name].concat(Array.isArray(e.aliases)?e.aliases:[]).filter(/** @type {(k:any)=>boolean} */(k=>k&&String(k).length>=2));
-    const count=evolCountMentions(text,keys);
+    const keys=[e.name].concat(Array.isArray(e.aliases)?e.aliases:[]).filter(/** @type {(k:any)=>boolean} */(k=>k&&String(k).length>=1));
+    const count=evolCountMentions(text,keys,Object.assign({},ctx,{forcePerson:mentionEntryForcePerson(e)}));
     if(count>=2)clipped.push(/** @type {any} */(Object.assign({},e,{_keys:keys,_count:count})));
   }
   clipped.sort(/** @type {(a:any,b:any)=>number} */((a,b)=>String(a.name).localeCompare(String(b.name),'zh')));
@@ -30433,7 +30857,7 @@ function evolClipMentioned2(roster,packText){
   const emptyMark='\uff08\u7a7a\uff09';
   const rosterLines=clipped.length
     ?clipped.map(/** @type {(e:any)=>string} */(e=>{
-      const als=(e.aliases||[]).filter(/** @type {(a:any)=>boolean} */(a=>a&&String(a).length>=2));
+      const als=(e.aliases||[]).filter(/** @type {(a:any)=>boolean} */(a=>a&&String(a).length>=1));
       const sum=String(e.description||'').replace(/[\r\n]+/g,' ').trim().slice(0,60);
       return e.name+'|'+(als.length?als.join(','):noneAlias)+'|'+(sum||noDesc);
     })).join('\n')
@@ -30449,7 +30873,9 @@ function evolClipMentioned2(roster,packText){
       while(from<text.length){
         const i=text.indexOf(k,from);
         if(i<0)break;
-        intervals.push([Math.max(0,i-EXT_EVOL_HIT_WIN),Math.min(text.length,i+k.length+EXT_EVOL_HIT_WIN)]);
+        if(String(k).length>=2||(typeof mentionSingleAccept==='function'&&mentionSingleAccept(text,i,k,ctx))){
+          intervals.push([Math.max(0,i-EXT_EVOL_HIT_WIN),Math.min(text.length,i+k.length+EXT_EVOL_HIT_WIN)]);
+        }
         from=i+k.length;
       }
     }
@@ -30646,7 +31072,7 @@ async function aiCharExtractRun(){
               const fs=firstMap.get(e.id);
               return fs!=null && fs<startCh;
             }).map(e=>({id:e.id,name:e.name,aliases:e.aliases||[],description:e.description||'',type:charEntryType(e)}));
-            const clip=evolClipMentioned2(rosterBefore,ch.text);
+            const clip=evolClipMentioned2(rosterBefore,ch.text,nid);
             if(!clip.clipped.length)continue;
             const PH2={'{input("roster")}':clip.rosterLines,'{input("text")}':clip.textForModel||'\uff08\u65e0\uff09'};
             const msgs2=ep.messages.map(/** @type {(m:any)=>any} */(m)=>({role:m.role,content:m.content.replace(/\{input\("(?:roster|text)"\)\}/g,/** @type {(mm:string)=>string} */(mm)=>PH2[/** @type {keyof typeof PH2} */(mm)])}));
@@ -30855,6 +31281,9 @@ function codexPackEntry(e){
     description:String(e.description==null?'':e.description),notes:String(e.notes==null?'':e.notes),
     aiInclude:codexAiIncludeOf(e),trackAlias:e.trackAlias!==false,
     alwaysInclude:!!e.alwaysInclude,hideFromAi:!!e.hideFromAi,doNotTrack:!!e.doNotTrack,
+    mentionForcePerson:!!e.mentionForcePerson,
+    mentionCompoundWords:(Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords:[]).map(String),
+    mentionPersonWords:(Array.isArray(e.mentionPersonWords)?e.mentionPersonWords:[]).map(String),
     parents:codexParentsOf(e),
     parentId:(codexParentsOf(e)[0]||null),
     connections:codexConnsOf(e).map(c=>c.note?{id:c.id,note:c.note}:c.id),
@@ -31072,6 +31501,7 @@ function codexPackImportRows(plan){
       description:String(e.description==null?'':e.description),notes:String(e.notes==null?'':e.notes),
       trackAlias:e.trackAlias==null?true:!!e.trackAlias,
       alwaysInclude:!!e.alwaysInclude,hideFromAi:!!e.hideFromAi,doNotTrack:!!e.doNotTrack,
+      mentionForcePerson:!!e.mentionForcePerson,
       parents:[],parentId:null,connections:[],
       progressions:pgs.map(pg=>({id:uid(),sceneId:null,content:String(pg.content==null?'':pg.content),
         source:String(pg.source==null?'':pg.source),quote:String(pg.quote==null?'':pg.quote),adoptedAt:String(pg.adoptedAt==null?'':pg.adoptedAt)})),
@@ -31080,6 +31510,8 @@ function codexPackImportRows(plan){
         createdAt:String(e.createdAt==null?'':e.createdAt),updatedAt:String(e.updatedAt==null?'':e.updatedAt)}};   // 源身份/原 id/导出时间/源书日期单列（仅回溯与重复提示）
     if(CODEX_AI_INCLUDES.includes(e.aiInclude))Object.assign(row,codexAiFlagsFromInclude(e.aiInclude));
     else codexApplyAiInclude(row);
+    {const cw=Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords.map(String).map(s=>s.trim()).filter(s=>s.length>=2):[];if(cw.length)row.mentionCompoundWords=cw}
+    {const pw=Array.isArray(e.mentionPersonWords)?e.mentionPersonWords.map(String).map(s=>s.trim()).filter(Boolean):[];if(pw.length)row.mentionPersonWords=pw}
     const hh51=codexPackHistoryOf(e);   // 票51：无场景历史随条目转存（只读回溯；与 progressions 分置、不进 AI/快照）
     if(hh51.length)row.history=hh51;
     idMap.set(String(e.id==null?'':e.id),row.id);   // 包内 id 索引（空 id 不进引用解析：引用空串已在读侧视作无引用）

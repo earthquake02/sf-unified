@@ -9,6 +9,7 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_FROZEN").is_some() {
         embed_guide(&manifest_dir);
         embed_skills(&manifest_dir);
+        embed_mention(&manifest_dir);
     }
     let attributes = tauri_build::Attributes::new()
         .app_manifest(
@@ -131,4 +132,38 @@ fn list_ref_files(dir: &std::path::Path) -> Vec<String> {
 
 fn skill_dir_ok(name: &str) -> bool {
     !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
+/// 发布形态（frozen）：单字名扫描词表编译期内嵌（裁剪后的 jieba 子集与 Jun Da 字频位次）。
+fn embed_mention(manifest_dir: &std::path::Path) {
+    let dir = manifest_dir.join("../assets/mention");
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let mut entries: Vec<(String, std::path::PathBuf)> = Vec::new();
+    if let Ok(read_dir) = std::fs::read_dir(&dir) {
+        for entry in read_dir.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if mention_name_ok(&name) && entry.path().is_file() {
+                entries.push((name, entry.path()));
+            }
+        }
+    }
+    entries.sort();
+    if !entries.iter().any(|(n, _)| n == "compounds.txt") || !entries.iter().any(|(n, _)| n == "char-freq.txt") {
+        panic!("frozen 构建缺少单字名词表：{}", dir.display());
+    }
+    let mut table = String::from(
+        "// build.rs 生成：单字名扫描词表内嵌表（frozen 形态专用）。\n\
+         pub(crate) static MENTION_ASSETS: &[(&str, &[u8])] = &[\n",
+    );
+    for (name, path) in &entries {
+        table.push_str(&format!("    ({name:?}, include_bytes!({path:?})),\n"));
+    }
+    table.push_str("];\n");
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let dest = std::path::Path::new(&out_dir).join("mention_assets.rs");
+    std::fs::write(&dest, table).expect("写 mention_assets.rs 失败");
+}
+
+fn mention_name_ok(name: &str) -> bool {
+    matches!(name, "compounds.txt" | "char-freq.txt" | "SOURCES.md")
 }
