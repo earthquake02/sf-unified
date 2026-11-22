@@ -1477,6 +1477,7 @@ function codexAiListTitle(e){
 /* 设定×AI P2：四态自动注入 + @ 并集去重（按 entry.id）+ 检测范围
    写作/生成：detectText=正文+指令（message）；助理：仅本条用户输入
    onDetectOff 永不进自动集；never 不进自动/@/lookup */
+/** @param {any} e @returns {string[]} */
 function codexDetectNames(e){return mentionNamesOf(e)}
 function codexDetectHit(e,text){
   const t=String(text||'');
@@ -7262,8 +7263,8 @@ function g3ProjEntryMd(e){
   fm+=g3YamlLine('aiInclude',codexAiIncludeOf(e));
   fm+=g3YamlLine('trackAlias',e.trackAlias!==false);
   if(e.mentionForcePerson)fm+=g3YamlLine('mentionForcePerson',true);
-  {const cw=(Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords:[]).map(String).map(s=>s.trim()).filter(s=>s.length>=2);if(cw.length)fm+=g3YamlLine('mentionCompoundWords',cw)}
-  {const pw=(Array.isArray(e.mentionPersonWords)?e.mentionPersonWords:[]).map(String).map(s=>s.trim()).filter(Boolean);if(pw.length)fm+=g3YamlLine('mentionPersonWords',pw)}
+  {const cw=(Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords:[]).map(String).map((/** @type {string} */ s)=>s.trim()).filter((/** @type {string} */ s)=>s.length>=2);if(cw.length)fm+=g3YamlLine('mentionCompoundWords',cw)}
+  {const pw=(Array.isArray(e.mentionPersonWords)?e.mentionPersonWords:[]).map(String).map((/** @type {string} */ s)=>s.trim()).filter(Boolean);if(pw.length)fm+=g3YamlLine('mentionPersonWords',pw)}
   fm+=g3YamlLine('alwaysInclude',!!e.alwaysInclude);
   fm+=g3YamlLine('hideFromAi',!!e.hideFromAi);
   fm+=g3YamlLine('doNotTrack',!!e.doNotTrack);
@@ -7582,7 +7583,6 @@ function g3EntryFromMd(r,ctx){
     name:String(f.name!=null?f.name:ctx.name),aliases:Array.isArray(f.aliases)?f.aliases.map(String):[],
     tags:Array.isArray(f.tags)?f.tags.map(String):[],parents:Array.isArray(f.parents)?f.parents.map(String):[],parentId:f.parentId==null?null:String(f.parentId),
     alwaysInclude:!!f.alwaysInclude,hideFromAi:!!f.hideFromAi,doNotTrack:!!f.doNotTrack,trackAlias:f.trackAlias==null?true:!!f.trackAlias,
-    mentionForcePerson:!!f.mentionForcePerson,
     fields:(f.fields&&typeof f.fields==='object'&&!Array.isArray(f.fields))?Object.keys(f.fields).reduce((o,k)=>g3Set(o,k,String(f.fields[k]==null?'':f.fields[k])),{}):{},
     description:String((r.secs||{})['描述']==null?'':r.secs['描述']),notes:String((r.secs||{})['备注']==null?'':r.secs['备注']),
     connections:Array.isArray(f.connections)?f.connections:[],
@@ -7590,9 +7590,7 @@ function g3EntryFromMd(r,ctx){
     source:String(f.source||''),createdAt:String(f.createdAt||''),updatedAt:String(f.updatedAt||'')};
   {const hh=codexHistNorm(f.history);if(hh.length)e.history=hh}   // 票51：无场景历史读回（空/缺不落键，与写侧同口径）
   {const im=String(f.image==null?'':f.image);if(/^[A-Za-z0-9_-]{1,60}$/.test(im))e.image=im}   // 外观票04：只读身份；描述/备注不承载像素
-  if(f.mentionForcePerson)e.mentionForcePerson=true;
-  {const cw=Array.isArray(f.mentionCompoundWords)?f.mentionCompoundWords.map(String).map(s=>s.trim()).filter(s=>s.length>=2):[];if(cw.length)e.mentionCompoundWords=cw}
-  {const pw=Array.isArray(f.mentionPersonWords)?f.mentionPersonWords.map(String).map(s=>s.trim()).filter(Boolean):[];if(pw.length)e.mentionPersonWords=pw}
+  mentionEntryKeysPut(e,f);   // 单字名例外：仅 true／非空才落键（false／空不写，旧条目键集不漂移）
   if(f.forkedFrom!=null)e.forkedFrom=String(f.forkedFrom);
   if(f.packSource&&typeof f.packSource==='object'&&!Array.isArray(f.packSource))   // 票49：导入来源元数据读回（仅回溯/重复提示）
     e.packSource={novelId:String(f.packSource.novelId==null?'':f.packSource.novelId),title:String(f.packSource.title==null?'':f.packSource.title),entryId:String(f.packSource.entryId==null?'':f.packSource.entryId),exportedAt:String(f.packSource.exportedAt==null?'':f.packSource.exportedAt),createdAt:String(f.packSource.createdAt==null?'':f.packSource.createdAt),updatedAt:String(f.packSource.updatedAt==null?'':f.packSource.updatedAt)};
@@ -7650,7 +7648,7 @@ async function g3ScanBook(files,warns,dir,proj,opts,paths){
     language:String(proj.language||''),tense:String(proj.tense||''),synopsis:String(proj.synopsis==null?'':proj.synopsis),
     targetWords:Number(proj.targetWords)||0,cover:String(proj.cover||''),createdAt:String(proj.createdAt||''),
     styleSkillId:String(proj.styleSkillId||'')};
-  {const mex=typeof mentionExceptionsClean==='function'?mentionExceptionsClean(proj.mentionExceptions):null;if(mex)n.mentionExceptions=mex}
+  {const mex=typeof mentionExceptionsClean==='function'?mentionExceptionsClean(proj.mentionExceptions):null;if(mex)(/** @type {any} */(n)).mentionExceptions=mex}
   const out={novel:n,schemaVersion:Number(proj.schemaVersion)||0,acts:[],chapters:[],scenes:[],codexCategories:[],codexEntries:[],foreshadows:[],snippets:/** @type {any[]} */([]),chats:[],chatSessions:[],tagDefs:[],recycleBin:[]};   // 片段深化01：snippets 显式 any[]（新增 status 字段后免 never[] 推断报错）
   out.assistants=[];   // 助理票01：与固定功能会话分列；旧程序见不认识的 _format 会撤回认领，不删文件
   out.entryImages=[];   // 外观票04：像素与条目分列；身份在条目 image
@@ -10934,7 +10932,23 @@ function mentionOfficialCover(text,start,ch,official){
 }
 /** @param {any} e @returns {boolean} */
 function mentionEntryForcePerson(e){return !!(e&&e.mentionForcePerson)}
-/** @param {string} [nid] @returns {{compound:Set<string>,person:Set<string>}} */
+/** 单字名条目级例外的落键口径：mentionForcePerson 仅 true 才写；两张词表清洗后非空才写；否则不落键（读回／导入导出／旧条目键集不漂移）。
+ * @param {any} dst @param {any} src @returns {any} */
+function mentionEntryKeysPut(dst,src){
+  src=src||{};
+  if(src.mentionForcePerson)dst.mentionForcePerson=true;
+  const cw=Array.isArray(src.mentionCompoundWords)?src.mentionCompoundWords.map(String).map((/** @type {string} */ s)=>s.trim()).filter((/** @type {string} */ s)=>s.length>=2):[];if(cw.length)dst.mentionCompoundWords=cw;
+  const pw=Array.isArray(src.mentionPersonWords)?src.mentionPersonWords.map(String).map((/** @type {string} */ s)=>s.trim()).filter(Boolean):[];if(pw.length)dst.mentionPersonWords=pw;
+  return dst;
+}
+/** 就地删掉空的单字名例外键（false／空表）；非空值保持原样。 @param {any} e @returns {any} */
+function mentionEntryKeysTidy(e){
+  if(!e)return e;
+  if(e.mentionForcePerson)e.mentionForcePerson=true;else delete e.mentionForcePerson;
+  if(!Array.isArray(e.mentionCompoundWords)||!e.mentionCompoundWords.length)delete e.mentionCompoundWords;
+  if(!Array.isArray(e.mentionPersonWords)||!e.mentionPersonWords.length)delete e.mentionPersonWords;
+  return e;
+}
 /** @param {any} v @returns {{compound:string[],person:string[]}|null} */
 function mentionExceptionsClean(v){
   if(!v||typeof v!=='object'||Array.isArray(v))return null;
@@ -10943,6 +10957,7 @@ function mentionExceptionsClean(v){
   if(!compound.length&&!person.length)return null;
   return{compound,person};
 }
+/** @param {string} [nid] @returns {{compound:Set<string>,person:Set<string>}} */
 function mentionExceptionsOf(nid){
   const compound=new Set(),person=new Set();
   const want=nid||((typeof S!=='undefined'&&S.ui)?S.ui.novelId:'');
@@ -10986,11 +11001,11 @@ function mentionSingleAccept(text,start,ch,ctx){
   if(tier==='mid')return mentionContextOk(t,start,'loose');
   return true;
 }
-/** @param {any[]} spans @param {string} text @param {{official?:Set<string>,compounds?:Set<string>,forceCompound?:Set<string>,forcePersonWords?:Set<string>,forcePersonOf?:(eid:string)=>boolean}} [ctx]
+/** @param {any[]} spans @param {string} text @param {{official?:Set<string>,compounds?:Set<string>,forceCompound?:Set<string>,forcePersonWords?:Set<string>,forcePerson?:boolean,forcePersonOf?:(eid:string)=>boolean}} [ctx]
  * @returns {any[]} */
 function mentionFilterSpans(spans,text,ctx){
   ctx=ctx||{};
-  const multi=spans.filter((/** @type {any} */ s)=>s.length>=2).map((/** @type {any} */ s)=>[s.start,s.end]);
+  const multi=spans.filter((/** @type {any} */ s)=>s.length>=2).map((/** @type {any} */ s)=>/** @type {[number,number]} */([s.start,s.end]));
   const out=[];
   for(const s of spans){
     if(s.length>=2){out.push(s);continue}
@@ -11004,7 +11019,7 @@ function mentionFilterSpans(spans,text,ctx){
  * @param {string[]} plains @param {string[]} chars @param {Set<string>} official @param {Set<string>} baseCompounds @returns {Set<string>} */
 function mentionMineBookCompounds(plains,chars,official,baseCompounds){
   const counts=new Map();
-  const mineChars=chars.filter(ch=>ch&&ch.length===1&&{high:1,mid:1}[mentionCharTier(ch)]);
+  const mineChars=chars.filter(ch=>ch&&ch.length===1&&(/** @type {Record<string,number>} */({high:1,mid:1}))[mentionCharTier(ch)]);
   if(!mineChars.length)return new Set();
   for(const raw of plains||[]){
     const text=String(raw||'');
@@ -11199,7 +11214,8 @@ function mentionScan(nid){
   const rules=entries.map(e=>({id:e.id,names:mentionNamesOf(e).sort()}))
     .filter(r=>r.names.length).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
   const ctx=mentionFilterCtx(nid);
-  const signature=JSON.stringify(rules)+'\u0000'+((typeof _menBookCache!=='undefined'&&_menBookCache.get(nid))?_menBookCache.get(nid).sig:'');
+  const bookC=(typeof _menBookCache!=='undefined')?_menBookCache.get(nid):undefined;
+  const signature=JSON.stringify(rules)+'\u0000'+(bookC?bookC.sig:'');
   let cache=_menScanCache.get(nid);
   if(!cache||cache.signature!==signature){
     cache={signature,matcher:mentionMatcher(rules),scenes:new Map()};_menScanCache.set(nid,cache);
@@ -23871,6 +23887,7 @@ function conflictEntrySettingText(e){
   const head=String(e.name||'')+((e.aliases||[]).length?('（又称：'+(e.aliases||[]).join('、')+'）'):'');
   return (head+'\n'+desc.replace(/\s+/g,' ').trim()).trim().slice(0,900);
 }
+/** @param {any} body @param {any} names @param {any} [win] @param {any} [ctx] */
 function conflictExcerptAround(body,names,win,ctx){
   win=win==null?52:win;
   const t=String(body||'');
@@ -24658,7 +24675,11 @@ function codexForm(e){
 }
 
 /* 设定卡实时保存：编辑／新建草稿无「保存」「取消」；改动 debounce 落盘，关窗前同步刷一次；无 toast */
-let _codexLiveTimer=null,_codexLiveId=null,_codexLiveDirty=false,_codexLiveCreate=false,_codexLiveFz=false,_codexAliasHintShown=false;
+/** @type {any} */
+let _codexLiveTimer=null;
+/** @type {any} */
+let _codexLiveId=null;
+let _codexLiveDirty=false,_codexLiveCreate=false,_codexLiveFz=false,_codexAliasHintShown=false;
 function codexLiveClear(){if(_codexLiveTimer){clearTimeout(_codexLiveTimer);_codexLiveTimer=null}_codexLiveId=null;_codexLiveDirty=false;_codexLiveCreate=false;_codexLiveFz=false;_codexAliasHintShown=false}
 function codexLiveMarkDirty(){
   if(!_codexLiveId&&!_codexLiveCreate)return;
@@ -24688,7 +24709,7 @@ function codexLiveFlush(sync){
     /* 新建：首次 flush 才物化；空开空关（未脏）不建行 */
     if(!_codexLiveDirty&&sync)return false;
     if(_codexLiveFz&&selCodexFz&&typeof selCodexFrozenOk==='function'&&!selCodexFrozenOk(selCodexFz)){toast(typeof SEL_CODEX_STALE!=='undefined'?SEL_CODEX_STALE:'源场景已变，草稿未写入',4000);_codexLiveDirty=false;return false}
-    const made=Object.assign({id:uid(),novelId:nid,scope:'book',parents:[],parentId:null,connections:[],createdAt:now()},data);
+    const made=mentionEntryKeysTidy(Object.assign({id:uid(),novelId:nid,scope:'book',parents:[],parentId:null,connections:[],createdAt:now()},data));
     S.data.codexEntries.push(made);entryImageTakeStaging(made);selCodexFz=null;
     _codexLiveId=made.id;_codexLiveCreate=false;
     const root=$('#modalRoot'); if(root)root.dataset.codexLiveId=made.id;
@@ -24698,7 +24719,7 @@ function codexLiveFlush(sync){
   }else{
     const tgt=S.data.codexEntries.find(x=>x.id===_codexLiveId&&x.novelId===nid&&!isSharedEntry(x));
     if(!tgt){_codexLiveDirty=false;return false}
-    const _oldInc=codexAiIncludeOf(tgt);Object.assign(tgt,data);delete tgt.fields;entryImageTakeStaging(tgt);
+    const _oldInc=codexAiIncludeOf(tgt);mentionEntryKeysTidy(Object.assign(tgt,data));delete tgt.fields;entryImageTakeStaging(tgt);
     const _newInc=data.aiInclude;if((_newInc==='onDetect'||_newInc==='onDetectOff')&&(_oldInc==='always'||_oldInc==='never'||_oldInc!==_newInc))codexMarkAiDetectTouched();
     const h2=$('#modalRoot .modal>h2'); if(h2)h2.textContent='编辑设定：'+tgt.name;
     const menWrap=$('#c-mention'); if(menWrap){const men=mentionScan(nid).get(tgt.id);menWrap.innerHTML=cdxMentionOverviewHTML(tgt,men,nid)}
@@ -24805,22 +24826,23 @@ function readCodexFormData(oldProgs){
     trackAlias:trackAliasEl?!!trackAliasEl.checked:true,
     aiInclude:aiFlags.aiInclude,alwaysInclude:aiFlags.alwaysInclude,hideFromAi:aiFlags.hideFromAi,doNotTrack:aiFlags.doNotTrack,
     description:$('#c-desc').value.trim(),notes:$('#c-notes').value.trim(),
-    mentionForcePerson:!!($('#c-mention-force')&&$('#c-mention-force').checked),
-    mentionCompoundWords:($('#c-mention-compounds')?$('#c-mention-compounds').value:'').split(/[,，]/).map(s=>s.trim()).filter(s=>s.length>=2),
-    mentionPersonWords:($('#c-mention-person-words')?$('#c-mention-person-words').value:'').split(/[,，]/).map(s=>s.trim()).filter(Boolean),
     progressions:rebuildProgressions(oldProgs||[],progRows),updatedAt:now()};
   if(colorEl&&colorEl.dataset.userSet==='1'){const ic=entryIconColorNorm(colorEl.value);out.iconColor=ic}
-  return out;
+  /* 单字名例外：表单总带三键（false／[] 用来覆盖旧值），落到条目后由 mentionEntryKeysTidy 删空键 */
+  return Object.assign(out,{
+    mentionForcePerson:!!($('#c-mention-force')&&$('#c-mention-force').checked),
+    mentionCompoundWords:($('#c-mention-compounds')?$('#c-mention-compounds').value:'').split(/[,，]/).map((/** @type {string} */ s)=>s.trim()).filter((/** @type {string} */ s)=>s.length>=2),
+    mentionPersonWords:($('#c-mention-person-words')?$('#c-mention-person-words').value:'').split(/[,，]/).map((/** @type {string} */ s)=>s.trim()).filter(Boolean)});
 }
 function mentionSyncAliasHint(){
   const el=$('#c-alias-hint');if(!el)return;
   const name=($('#c-name')&&$('#c-name').value||'').trim();
-  const aliases=($('#c-aliases')&&$('#c-aliases').value||'').split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+  const aliases=($('#c-aliases')&&$('#c-aliases').value||'').split(/[,，]/).map((/** @type {string} */ s)=>s.trim()).filter(Boolean);
   el.style.display=mentionNameNeedsAliasHint({name,aliases})?'':'none';
 }
 function mentionReadBookExceptions(){
-  const compound=($('#c-mention-book-compounds')?$('#c-mention-book-compounds').value:'').split(/[,，]/).map(s=>s.trim()).filter(s=>s.length>=2);
-  const person=($('#c-mention-book-person')?$('#c-mention-book-person').value:'').split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+  const compound=($('#c-mention-book-compounds')?$('#c-mention-book-compounds').value:'').split(/[,，]/).map((/** @type {string} */ s)=>s.trim()).filter((/** @type {string} */ s)=>s.length>=2);
+  const person=($('#c-mention-book-person')?$('#c-mention-book-person').value:'').split(/[,，]/).map((/** @type {string} */ s)=>s.trim()).filter(Boolean);
   return mentionExceptionsClean({compound,person});
 }
 /* 设定编辑页演进重建：按行上 data-prog-id 与旧数组按 id 配对（作者删行/插行后下标错位也不会挂错 source/quote/adoptedAt，S6 复核 F3）；新行（无 id）标 author。 */
@@ -28621,11 +28643,11 @@ document.addEventListener('click',async e=>{
     if(!data.name){toast('请填写名称');break}
     if(act==='codex-create'){
       if(roReason()){roToast();break}   // 体验修补票14：只读拒建——创建落库前先过既有只读闸（roReason/roToast 与「建设定」拒建、片段保存同族），零内存行、零打戳、草稿保留，不出现「条目已进列表却没写盘」的假成功
-      const made=Object.assign({id:uid(),novelId:nid,scope:'book',parents:[],parentId:null,connections:[],createdAt:now()},data);
+      const made=mentionEntryKeysTidy(Object.assign({id:uid(),novelId:nid,scope:'book',parents:[],parentId:null,connections:[],createdAt:now()},data));
       S.data.codexEntries.push(made);entryImageTakeStaging(made);selCodexFz=null}   // 票37：提交成功即弃冻结态；外观票04：暂存的条目配图此时才落身份与像素
     else{const tgt=S.data.codexEntries.find(x=>x.id===id&&x.novelId===nid&&!isSharedEntry(x));   // 双键+所有权（票33：本书保存永不落共享行）
       if(!tgt){toast('条目不存在');break}
-      const _oldInc=codexAiIncludeOf(tgt);Object.assign(tgt,data);delete tgt.fields;entryImageTakeStaging(tgt);const _newInc=data.aiInclude;if((_newInc==='onDetect'||_newInc==='onDetectOff')&&(_oldInc==='always'||_oldInc==='never'||_oldInc!==_newInc))codexMarkAiDetectTouched()}   // 票31：明确保存＝旧自定义字段退役；外观票04：只读时配图暂存不落（takeStaging 先看 roReason）
+      const _oldInc=codexAiIncludeOf(tgt);mentionEntryKeysTidy(Object.assign(tgt,data));delete tgt.fields;entryImageTakeStaging(tgt);const _newInc=data.aiInclude;if((_newInc==='onDetect'||_newInc==='onDetectOff')&&(_oldInc==='always'||_oldInc==='never'||_oldInc!==_newInc))codexMarkAiDetectTouched()}   // 票31：明确保存＝旧自定义字段退役；外观票04：只读时配图暂存不落（takeStaging 先看 roReason）
     save();closeModal();render();
     if(act==='codex-save'&&S.ui._asstCxResume)asstCxResumePicker();
     break}
@@ -30813,6 +30835,7 @@ function evolFirstSeenChapterMap(nid){
 /**
  * @param {string} text
  * @param {string[]} keys
+ * @param {any} [ctx]
  * @returns {number}
  */
 function evolCountMentions(text,keys,ctx){
@@ -30839,6 +30862,7 @@ function evolCountMentions(text,keys,ctx){
 /**
  * @param {any[]} roster
  * @param {string} packText
+ * @param {string} [nid]
  * @returns {{rosterLines:string,textForModel:string,clipped:any[],meta:object}}
  */
 function evolClipMentioned2(roster,packText,nid){
@@ -31281,9 +31305,6 @@ function codexPackEntry(e){
     description:String(e.description==null?'':e.description),notes:String(e.notes==null?'':e.notes),
     aiInclude:codexAiIncludeOf(e),trackAlias:e.trackAlias!==false,
     alwaysInclude:!!e.alwaysInclude,hideFromAi:!!e.hideFromAi,doNotTrack:!!e.doNotTrack,
-    mentionForcePerson:!!e.mentionForcePerson,
-    mentionCompoundWords:(Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords:[]).map(String),
-    mentionPersonWords:(Array.isArray(e.mentionPersonWords)?e.mentionPersonWords:[]).map(String),
     parents:codexParentsOf(e),
     parentId:(codexParentsOf(e)[0]||null),
     connections:codexConnsOf(e).map(c=>c.note?{id:c.id,note:c.note}:c.id),
@@ -31294,6 +31315,7 @@ function codexPackEntry(e){
       at:String(pg.adoptedAt==null?'':pg.adoptedAt),from:{id:String(pg.sceneId),title:sceneTitle(pg.sceneId)}}))),
     source:String(e.source==null?'':e.source),createdAt:String(e.createdAt||''),updatedAt:String(e.updatedAt||'')};
   {const im=String(e.image||'');if(/^[A-Za-z0-9_-]{1,60}$/.test(im))out.image=im}
+  mentionEntryKeysPut(out,e);   // 单字名例外：空则省略
   return out;
 }
 function codexPackOf(nid,scope){
@@ -31501,7 +31523,6 @@ function codexPackImportRows(plan){
       description:String(e.description==null?'':e.description),notes:String(e.notes==null?'':e.notes),
       trackAlias:e.trackAlias==null?true:!!e.trackAlias,
       alwaysInclude:!!e.alwaysInclude,hideFromAi:!!e.hideFromAi,doNotTrack:!!e.doNotTrack,
-      mentionForcePerson:!!e.mentionForcePerson,
       parents:[],parentId:null,connections:[],
       progressions:pgs.map(pg=>({id:uid(),sceneId:null,content:String(pg.content==null?'':pg.content),
         source:String(pg.source==null?'':pg.source),quote:String(pg.quote==null?'':pg.quote),adoptedAt:String(pg.adoptedAt==null?'':pg.adoptedAt)})),
@@ -31510,8 +31531,7 @@ function codexPackImportRows(plan){
         createdAt:String(e.createdAt==null?'':e.createdAt),updatedAt:String(e.updatedAt==null?'':e.updatedAt)}};   // 源身份/原 id/导出时间/源书日期单列（仅回溯与重复提示）
     if(CODEX_AI_INCLUDES.includes(e.aiInclude))Object.assign(row,codexAiFlagsFromInclude(e.aiInclude));
     else codexApplyAiInclude(row);
-    {const cw=Array.isArray(e.mentionCompoundWords)?e.mentionCompoundWords.map(String).map(s=>s.trim()).filter(s=>s.length>=2):[];if(cw.length)row.mentionCompoundWords=cw}
-    {const pw=Array.isArray(e.mentionPersonWords)?e.mentionPersonWords.map(String).map(s=>s.trim()).filter(Boolean):[];if(pw.length)row.mentionPersonWords=pw}
+    mentionEntryKeysPut(row,e);   // 单字名例外：仅 true／非空才落键
     const hh51=codexPackHistoryOf(e);   // 票51：无场景历史随条目转存（只读回溯；与 progressions 分置、不进 AI/快照）
     if(hh51.length)row.history=hh51;
     idMap.set(String(e.id==null?'':e.id),row.id);   // 包内 id 索引（空 id 不进引用解析：引用空串已在读侧视作无引用）
